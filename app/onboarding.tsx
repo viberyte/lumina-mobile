@@ -265,10 +265,9 @@ export default function OnboardingScreen() {
   const handleSkip = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
-    // Set defaults if skipping
     const currentQuestion = questions[step];
     if (currentQuestion.id === 'scenes' && scenes.length === 0) {
-      setScenes(['mixed']); // Default to open to everything
+      setScenes(['mixed']);
     }
     
     if (step < questions.length - 1) {
@@ -314,20 +313,16 @@ export default function OnboardingScreen() {
     }).start();
 
     try {
-      // Generate unique user_id
       let userId = await AsyncStorage.getItem('@lumina_user_id');
       if (!userId) {
         userId = String(Date.now());
         await AsyncStorage.setItem('@lumina_user_id', userId);
-      await AsyncStorage.setItem('@lumina_persona', 'completed');
       }
 
-      // Defaults
       const finalGender = gender || 'other';
       const finalAge = ageRange || '26-34';
       const finalScenes = scenes.length > 0 ? scenes : ['mixed'];
 
-      // Call backend API
       const response = await fetch(`${API_BASE}/api/onboarding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -362,11 +357,14 @@ export default function OnboardingScreen() {
       } else {
         console.log('⚠️ Backend returned:', data);
         await AsyncStorage.setItem('@lumina_user_id', userId);
-      await AsyncStorage.setItem('@lumina_persona', 'completed');
+        await AsyncStorage.setItem('@lumina_persona', 'completed');
       }
 
       await new Promise(resolve => setTimeout(resolve, 2500));
       clearInterval(stageInterval);
+
+      // CRITICAL FIX: Ensure AsyncStorage writes complete before navigation
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       if (isMounted.current) {
         router.replace('/(tabs)');
@@ -382,6 +380,9 @@ export default function OnboardingScreen() {
       await AsyncStorage.setItem('@lumina_user_id', userId);
       await AsyncStorage.setItem('@lumina_persona', 'completed');
       await AsyncStorage.removeItem('@lumina_onboarding_v3');
+      
+      // CRITICAL FIX: Ensure AsyncStorage writes complete before navigation
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       if (isMounted.current) {
         router.replace('/(tabs)');
@@ -418,7 +419,6 @@ export default function OnboardingScreen() {
     return 0;
   };
 
-  // Building screen
   if (isBuilding) {
     const progressWidth = progressAnim.interpolate({
       inputRange: [0, 1],
@@ -476,7 +476,6 @@ export default function OnboardingScreen() {
           style={StyleSheet.absoluteFill}
         />
         
-        {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity 
             style={styles.backButton}
@@ -504,7 +503,6 @@ export default function OnboardingScreen() {
           <View style={styles.backButton} />
         </View>
         
-        {/* Content */}
         <Animated.View 
           style={[
             styles.content,
@@ -519,7 +517,6 @@ export default function OnboardingScreen() {
             <Text style={styles.questionSubtitle}>{currentQuestion.subtitle}</Text>
           </View>
           
-          {/* Single select */}
           {currentQuestion.type === 'single' && (
             <View style={styles.optionsContainer}>
               {currentQuestion.options.map((option: any) => {
@@ -563,7 +560,6 @@ export default function OnboardingScreen() {
             </View>
           )}
           
-          {/* Multi-select */}
           {currentQuestion.type === 'multi' && (
             <View style={styles.multiContainer}>
               <ScrollView 
@@ -606,7 +602,6 @@ export default function OnboardingScreen() {
                 })}
               </ScrollView>
               
-              {/* Continue button */}
               <TouchableOpacity
                 style={[
                   styles.continueButton, 
@@ -638,7 +633,6 @@ export default function OnboardingScreen() {
                 </LinearGradient>
               </TouchableOpacity>
               
-              {/* Skip */}
               <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
                 <Text style={styles.skipText}>Skip for now</Text>
               </TouchableOpacity>
@@ -651,243 +645,48 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  progressDotWrapper: {
-    padding: 4,
-  },
-  progressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  progressDotActive: {
-    width: 24,
-    backgroundColor: '#8b5cf6',
-  },
-  progressDotCompleted: {
-    backgroundColor: '#8b5cf6',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-  },
-  questionHeader: {
-    marginBottom: 32,
-  },
-  stepIndicator: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8b5cf6',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  questionTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  questionSubtitle: {
-    fontSize: 16,
-    color: '#71717a',
-    lineHeight: 22,
-  },
-  optionsContainer: {
-    gap: 12,
-  },
-  optionButton: {
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    overflow: 'hidden',
-  },
-  optionButtonSelected: {
-    borderColor: '#8b5cf6',
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 14,
-  },
-  optionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  optionIconSelected: {
-    backgroundColor: '#8b5cf6',
-  },
-  optionEmoji: {
-    fontSize: 24,
-  },
-  optionTextContainer: {
-    flex: 1,
-  },
-  optionLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#a1a1aa',
-  },
-  optionLabelSelected: {
-    color: '#fff',
-  },
-  optionSubtitle: {
-    fontSize: 13,
-    color: '#52525b',
-    marginTop: 2,
-  },
-  checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#8b5cf6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  // Multi-select styles
-  multiContainer: {
-    flex: 1,
-  },
-  multiGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    paddingBottom: 20,
-  },
-  multiChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 100,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    gap: 8,
-  },
-  multiChipText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6b7280',
-  },
-  multiCheck: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 2,
-  },
-  continueButton: {
-    marginTop: 20,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  continueButtonDisabled: {
-    opacity: 0.7,
-  },
-  continueGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  continueText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  skipText: {
-    fontSize: 14,
-    color: '#52525b',
-    fontWeight: '500',
-  },
-  
-  // Building screen
-  buildingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  orbContainer: {
-    position: 'relative',
-    marginBottom: 32,
-  },
-  buildingOrb: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  orbGlow: {
-    position: 'absolute',
-    top: -20,
-    left: -20,
-    right: -20,
-    bottom: -20,
-    borderRadius: 70,
-    backgroundColor: '#8b5cf6',
-    opacity: 0.15,
-  },
-  buildingTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: -0.5,
-    marginBottom: 8,
-  },
-  buildingSubtitle: {
-    fontSize: 16,
-    color: '#71717a',
-    marginBottom: 32,
-  },
-  progressBarContainer: {
-    width: '100%',
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
+  container: { flex: 1, backgroundColor: '#09090b' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  progressContainer: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  progressDotWrapper: { padding: 4 },
+  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.15)' },
+  progressDotActive: { width: 24, backgroundColor: '#8b5cf6' },
+  progressDotCompleted: { backgroundColor: '#8b5cf6' },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
+  questionHeader: { marginBottom: 32 },
+  stepIndicator: { fontSize: 13, fontWeight: '600', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  questionTitle: { fontSize: 32, fontWeight: '700', color: '#fff', marginBottom: 8, letterSpacing: -0.5 },
+  questionSubtitle: { fontSize: 16, color: '#71717a', lineHeight: 22 },
+  optionsContainer: { gap: 12 },
+  optionButton: { borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
+  optionButtonSelected: { borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.08)' },
+  optionContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
+  optionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+  optionIconSelected: { backgroundColor: '#8b5cf6' },
+  optionEmoji: { fontSize: 24 },
+  optionTextContainer: { flex: 1 },
+  optionLabel: { fontSize: 17, fontWeight: '600', color: '#a1a1aa' },
+  optionLabelSelected: { color: '#fff' },
+  optionSubtitle: { fontSize: 13, color: '#52525b', marginTop: 2 },
+  checkCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#8b5cf6', justifyContent: 'center', alignItems: 'center' },
+  multiContainer: { flex: 1 },
+  multiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20 },
+  multiChip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)', gap: 8 },
+  multiChipText: { fontSize: 14, fontWeight: '500', color: '#6b7280' },
+  multiCheck: { width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginLeft: 2 },
+  continueButton: { marginTop: 20, borderRadius: 14, overflow: 'hidden' },
+  continueButtonDisabled: { opacity: 0.7 },
+  continueGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
+  continueText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  skipButton: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  skipText: { fontSize: 14, color: '#52525b', fontWeight: '500' },
+  buildingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  orbContainer: { position: 'relative', marginBottom: 32 },
+  buildingOrb: { width: 100, height: 100, borderRadius: 50 },
+  orbGlow: { position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, borderRadius: 70, backgroundColor: '#8b5cf6', opacity: 0.15 },
+  buildingTitle: { fontSize: 26, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 8 },
+  buildingSubtitle: { fontSize: 16, color: '#71717a', marginBottom: 32 },
+  progressBarContainer: { width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 2 },
 });
