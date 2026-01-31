@@ -1,0 +1,84 @@
+{
+  "categories": [
+    "restaurant",
+    "nightclub", 
+    "lounge",
+    "bar",
+    "live_music",
+    "club"
+  ],
+  
+  "music_genres": [
+    "Afrobeats",
+    "Hip-Hop",
+    "House",
+    "EDM",
+    "Latin",
+    "Reggae",
+    "R&B",
+    "Jazz",
+    "Live Music",
+    "Electronic",
+    "Pop",
+    "Rock",
+    "Techno",
+    "Dancehall",
+    "Amapiano"
+  ],
+  
+  "vibes": [
+    "upscale",
+    "casual",
+    "romantic",
+    "lively",
+    "chill",
+    "trendy",
+    "intimate",
+    "rooftop",
+    "speakeasy",
+    "dive",
+    "lounge",
+    "club",
+    "warehouse",
+    "boutique",
+    "neighborhood",
+    "waterfront"
+  ],
+  
+  "moods": [
+    "energetic",
+    "relaxed",
+    "social",
+    "romantic",
+    "celebratory",
+    "intimate",
+    "party",
+    "lowkey"
+  ],
+  
+  "best_for": [
+    "date night",
+    "girls night",
+    "guys night",
+    "anniversary",
+    "birthday",
+    "pregame",
+    "late night",
+    "after work",
+    "brunch",
+    "business meeting"
+  ],
+  
+  "dress_codes": [
+    "casual",
+    "smart casual",
+    "upscale",
+    "dressy"
+  ],
+  
+  "energy_levels": [
+    "low",
+    "medium", 
+    "high"
+  ]
+}

@@ -1,0 +1,633 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  TouchableOpacity,
+  Dimensions,
+  Modal,
+  FlatList,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+  Linking,
+  Share,
+  ScrollView,
+} from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { Image } from 'expo-image';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import AddToPlanSheet from '../../components/AddToPlanSheet';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_MAX_HEIGHT = 350;
+
+const colors = {
+  background: '#0A0A0F',
+  card: '#16161F',
+  cardBorder: '#2A2A3A',
+  accent: '#8B5CF6',
+  accentDim: 'rgba(139, 92, 246, 0.12)',
+  white: '#FFFFFF',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#9CA3AF',
+  textMuted: '#6B7280',
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  restaurant: 'Restaurant',
+  lounge: 'Lounge',
+  bar: 'Bar',
+  cocktail_bar: 'Cocktails',
+  rooftop: 'Rooftop',
+  club: 'Club',
+  night_club: 'Club',
+  diner: 'Late Night Eats',
+};
+
+interface MediaItem {
+  id: string;
+  type: 'image' | 'video';
+  url: string;
+  thumbnail?: string;
+}
+
+interface NextStop {
+  id: string;
+  name: string;
+  category: string;
+  neighborhood?: string;
+  rating?: number;
+  distance_miles?: number;
+  walk_time_minutes?: number;
+  reason?: {
+    type: string;
+    label: string;
+  };
+  flow_type?: string;
+  confidence?: number;
+  rank?: number;
+}
+}
+
+export default function VenueDetailScreen() {
+  const { id } = useLocalSearchParams();
+  const [venue, setVenue] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [addToPlanVisible, setAddToPlanVisible] = useState(false);
+  const [galleryVisible, setGalleryVisible] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [mediaToShow, setMediaToShow] = useState(9);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    fetchVenueDetails();
+  }, [id]);
+
+  const fetchVenueDetails = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`https://lumina.viberyte.com/api/venues/${id}`);
+      const data = await response.json();
+      setVenue(data);
+    } catch (error) {
+      console.error('Error fetching venue:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out ${venue?.name} on Lumina!`,
+        url: `https://lumina.viberyte.com/venue/${id}`,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  const handleCall = () => {
+    if (venue?.phone) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(`tel:${venue.phone}`);
+    }
+  };
+
+  const handleDirections = () => {
+    if (venue?.address) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
+      Linking.openURL(`https://maps.apple.com/?q=${query}`);
+    }
+  };
+
+  const handleWebsite = () => {
+    if (venue?.website) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(venue.website);
+    }
+  };
+
+  const handleInstagram = () => {
+    if (venue?.instagram_handle) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
+    }
+  };
+
+  const handleUber = () => {
+    if (venue?.address) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
+      Linking.openURL(`uber://?action=setPickup&pickup=my_location&dropoff[formatted_address]=${query}`);
+    }
+  };
+
+  const openGallery = (index: number) => {
+    setGalleryIndex(index);
+    setGalleryVisible(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  if (loading || !venue) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  const heroImage = venue.google_photos?.[0] || venue.instagram_media?.[0]?.url || null;
+
+  const allMedia: MediaItem[] = [
+    ...(venue.google_photos?.slice(0, 10).map((url: string, i: number) => ({
+      id: `gp-${i}`,
+      type: 'image' as const,
+      url,
+    })) || []),
+    ...(venue.instagram_media?.map((item: any) => ({
+      id: item.id,
+      type: item.type,
+      url: item.url,
+      thumbnail: item.thumbnail || item.url,
+    })) || []),
+  ];
+
+  const displayedMedia = allMedia.slice(0, mediaToShow);
+
+  const headerHeight = scrollY.interpolate({
+    inputRange: [0, 250],
+    outputRange: [HEADER_MAX_HEIGHT, 100],
+    extrapolate: 'clamp',
+  });
+
+  const imageOpacity = scrollY.interpolate({
+    inputRange: [0, 125, 250],
+    outputRange: [1, 1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const imageScale = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: [1.5, 1],
+    extrapolate: 'clamp',
+  });
+
+  const renderMediaItem = ({ item, index }: { item: MediaItem; index: number }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => openGallery(index)}
+      style={styles.mediaItem}
+    >
+      <Image
+        source={{ uri: item.thumbnail || item.url }}
+        style={styles.mediaThumbnail}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
+      {item.type === 'video' && (
+        <View style={styles.videoIndicator}>
+          <Ionicons name="play-circle" size={40} color="white" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderGalleryItem = ({ item }: { item: MediaItem }) => (
+    <View style={styles.gallerySlide}>
+      <Image
+        source={{ uri: item.url }}
+        style={styles.galleryImage}
+        contentFit="contain"
+        cachePolicy="memory-disk"
+        transition={200}
+      />
+    </View>
+  );
+
+  const isRestaurant = ['restaurant', 'diner'].includes((venue.category || '').toLowerCase());
+  const currentHour = new Date().getHours();
+  const isEvening = currentHour >= 17;
+  const shouldTruncate = venue.description && venue.description.length > 150;
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      <View style={styles.topBar}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
+            <Ionicons name="arrow-back" size={22} color="white" />
+          </BlurView>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
+            <Ionicons name="share-outline" size={22} color="white" />
+          </BlurView>
+        </TouchableOpacity>
+      </View>
+
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
+      >
+        <Animated.View style={[styles.heroContainer, { height: headerHeight }]}>
+          {heroImage && (
+            <Animated.View style={{ opacity: imageOpacity, transform: [{ scale: imageScale }], flex: 1 }}>
+              <Image
+                source={{ uri: heroImage }}
+                style={styles.heroImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            </Animated.View>
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(10,10,15,0.8)', colors.background]}
+            style={styles.heroGradient}
+          />
+        </Animated.View>
+        
+        <View style={styles.content}>
+          <Text style={styles.venueName}>{venue.name}</Text>
+          
+          <View style={styles.metaRow}>
+            {venue.neighborhood && <Text style={styles.metaText}>{venue.neighborhood}</Text>}
+            {venue.city && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.metaText}>{venue.city}</Text>
+              </>
+            )}
+            {venue.rating && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={12} color="#FCD34D" />
+                  <Text style={styles.ratingText}>{venue.rating.toFixed(1)}</Text>
+                </View>
+              </>
+            )}
+            {venue.price_tier && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.priceText}>{venue.price_tier}</Text>
+              </>
+            )}
+            {isEvening && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.tonightBadge}>Good tonight</Text>
+              </>
+            )}
+          </View>
+
+          {venue.description && (
+            <View style={styles.bioSection}>
+              <Text 
+                style={styles.bioText}
+                numberOfLines={descriptionExpanded ? undefined : 3}
+              >
+                {venue.description}
+              </Text>
+              {shouldTruncate && !descriptionExpanded && (
+                <TouchableOpacity onPress={() => setDescriptionExpanded(true)}>
+                  <Text style={styles.readMoreText}>Read more</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {venue.vibe_tags && venue.vibe_tags.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.tagsContainer}>
+                {venue.vibe_tags.slice(0, 5).map((tag: string, index: number) => (
+                  <View key={index} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          {venue.music_genres && venue.music_genres.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.musicRow}>
+                <Ionicons name="musical-notes" size={16} color={colors.accent} />
+                <Text style={styles.musicText}>
+                  {venue.music_genres.slice(0, 3).join(', ')}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {isRestaurant && (
+            <TouchableOpacity
+              style={styles.budgetButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                alert('Budget Meal Builder - Set your budget and get AI meal recommendations!');
+              }}
+            >
+              <View style={styles.budgetButtonIcon}>
+                <Ionicons name="restaurant-outline" size={20} color={colors.accent} />
+              </View>
+              <View style={styles.budgetButtonContent}>
+                <Text style={styles.budgetButtonTitle}>Budget Meal Builder</Text>
+                <Text style={styles.budgetButtonSubtitle}>AI meal recommendations</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+
+          {(venue.address || venue.phone || venue.website) && (
+            <View style={styles.section}>
+              {venue.address && (
+                <View style={styles.contactItem}>
+                  <Ionicons name="location" size={18} color={colors.textSecondary} />
+                  <Text style={styles.contactText}>{venue.address}</Text>
+                </View>
+              )}
+              {venue.phone && (
+                <TouchableOpacity style={styles.contactItem} onPress={handleCall}>
+                  <Ionicons name="call" size={18} color={colors.textSecondary} />
+                  <Text style={[styles.contactText, styles.linkText]}>{venue.phone}</Text>
+                </TouchableOpacity>
+              )}
+              {venue.website && (
+                <TouchableOpacity style={styles.contactItem} onPress={handleWebsite}>
+                  <Ionicons name="globe" size={18} color={colors.textSecondary} />
+                  <Text style={[styles.contactText, styles.linkText]} numberOfLines={1}>
+                    {venue.website}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          <View style={styles.actionButtons}>
+            {venue.address && (
+              <TouchableOpacity style={styles.actionButtonPrimary} onPress={handleDirections}>
+                <Ionicons name="navigate" size={20} color={colors.accent} />
+                <Text style={styles.actionButtonTextPrimary}>Directions</Text>
+              </TouchableOpacity>
+            )}
+            {venue.phone && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+                <Ionicons name="call" size={20} color={colors.white} />
+                <Text style={styles.actionButtonText}>Call</Text>
+              </TouchableOpacity>
+            )}
+            {venue.instagram_handle && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleInstagram}>
+                <Ionicons name="logo-instagram" size={20} color={colors.white} />
+                <Text style={styles.actionButtonText}>Instagram</Text>
+              </TouchableOpacity>
+            )}
+            {venue.address && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleUber}>
+                <Ionicons name="car" size={20} color={colors.white} />
+                <Text style={styles.actionButtonText}>Uber</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {allMedia.length > 0 ? (
+            <View style={styles.section}>
+              <TouchableOpacity 
+                style={styles.sectionHeader}
+                onPress={() => openGallery(0)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sectionTitle}>Photos & Videos</Text>
+                <View style={styles.mediaCountBadge}>
+                  <Text style={styles.sectionCount}>{allMedia.length}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
+              
+              <FlatList
+                data={displayedMedia}
+                renderItem={renderMediaItem}
+                keyExtractor={item => item.id}
+                numColumns={3}
+                scrollEnabled={false}
+                contentContainerStyle={styles.mediaGrid}
+              />
+
+              {mediaToShow < allMedia.length && (
+                <TouchableOpacity
+                  style={styles.showMoreButton}
+                  onPress={() => setMediaToShow(prev => Math.min(prev + 9, allMedia.length))}
+                >
+                  <Text style={styles.showMoreText}>
+                    See All {allMedia.length - mediaToShow} More
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.accent} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>More coming soon</Text>
+            </View>
+          )}
+
+          {venue.next_stops && venue.next_stops.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Continue the Night</Text>
+              
+              {venue.next_stops.map((stop: NextStop) => (
+                <TouchableOpacity
+                  key={stop.id}
+                  style={styles.nextStopCard}
+                  onPress={() => router.push(`/venue/${stop.id}`)}
+                >
+                  <View style={styles.nextStopContent}>
+                    <Text style={styles.nextStopName}>{stop.name}</Text>
+                    <Text style={styles.nextStopCategory}>
+                      {CATEGORY_LABELS[stop.category] || stop.category}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <View style={{ height: 120 }} />
+        </View>
+      </Animated.ScrollView>
+
+      <View style={styles.stickyCtaContainer}>
+        <LinearGradient
+          colors={['transparent', colors.background]}
+          style={styles.ctaGradient}
+        />
+        <TouchableOpacity
+          style={styles.ctaButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setAddToPlanVisible(true);
+          }}
+        >
+          <Ionicons name="add-circle" size={24} color="white" />
+          <Text style={styles.ctaButtonText}>
+            {isEvening ? 'Add to Tonight' : 'Add to Plans'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Modal
+        visible={galleryVisible}
+        animationType="fade"
+        onRequestClose={() => setGalleryVisible(false)}
+      >
+        <View style={styles.galleryContainer}>
+          <View style={styles.galleryHeader}>
+            <TouchableOpacity
+              onPress={() => setGalleryVisible(false)}
+              style={styles.galleryCloseButton}
+            >
+              <Ionicons name="close" size={28} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.galleryCounter}>
+              {galleryIndex + 1} / {allMedia.length}
+            </Text>
+          </View>
+
+          <FlatList
+            data={allMedia}
+            renderItem={renderGalleryItem}
+            keyExtractor={item => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={galleryIndex}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+            onMomentumScrollEnd={e => {
+              const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              setGalleryIndex(newIndex);
+            }}
+          />
+        </View>
+      </Modal>
+
+      <AddToPlanSheet
+        visible={addToPlanVisible}
+        onClose={() => setAddToPlanVisible(false)}
+        venue={venue}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  topBar: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, zIndex: 100 },
+  backButton: { borderRadius: 12, overflow: 'hidden' },
+  shareButton: { borderRadius: 12, overflow: 'hidden' },
+  blurButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12 },
+  heroContainer: { width: '100%', overflow: 'hidden' },
+  heroImage: { width: '100%', height: '100%' },
+  heroGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 150 },
+  content: { paddingHorizontal: 20, paddingTop: 20 },
+  venueName: { fontSize: 32, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 },
+  metaText: { fontSize: 14, color: colors.textSecondary },
+  metaDot: { fontSize: 14, color: colors.textMuted, marginHorizontal: 6 },
+  ratingBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  priceText: { fontSize: 14, color: colors.textSecondary },
+  tonightBadge: { fontSize: 14, color: colors.accent, fontWeight: '500' },
+  bioSection: { marginTop: 8, marginBottom: 16 },
+  bioText: { fontSize: 15, lineHeight: 22, color: colors.textSecondary },
+  readMoreText: { fontSize: 15, color: colors.accent, marginTop: 4, fontWeight: '500' },
+  tagsContainer: { flexDirection: 'row', gap: 8, paddingVertical: 8 },
+  tag: { backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.cardBorder },
+  tagText: { fontSize: 13, color: colors.textPrimary },
+  section: { marginTop: 24 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  sectionCount: { fontSize: 14, color: colors.textSecondary, marginRight: 4 },
+  mediaCountBadge: { flexDirection: 'row', alignItems: 'center' },
+  musicRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  musicText: { fontSize: 14, color: colors.textSecondary },
+  budgetButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.cardBorder, gap: 12, marginTop: 24 },
+  budgetButtonIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' },
+  budgetButtonContent: { flex: 1 },
+  budgetButtonTitle: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 },
+  budgetButtonSubtitle: { fontSize: 13, color: colors.textSecondary },
+  contactItem: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  contactText: { fontSize: 14, color: colors.textSecondary, flex: 1 },
+  linkText: { color: colors.accent },
+  actionButtons: { flexDirection: 'row', gap: 12, marginTop: 20, flexWrap: 'wrap' },
+  actionButtonPrimary: { flex: 1, minWidth: 100, backgroundColor: colors.accentDim, paddingVertical: 12, borderRadius: 12, alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.accent },
+  actionButtonTextPrimary: { fontSize: 13, color: colors.accent, fontWeight: '600' },
+  actionButton: { flex: 1, minWidth: 80, backgroundColor: colors.card, paddingVertical: 12, borderRadius: 12, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.cardBorder },
+  actionButtonText: { fontSize: 13, color: colors.white, fontWeight: '600' },
+  mediaGrid: { gap: 8 },
+  mediaItem: { width: (SCREEN_WIDTH - 56) / 3, height: (SCREEN_WIDTH - 56) / 3, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.card },
+  mediaThumbnail: { width: '100%', height: '100%' },
+  videoIndicator: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  showMoreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16, marginTop: 8 },
+  showMoreText: { fontSize: 14, color: colors.accent, fontWeight: '600' },
+  emptyState: { marginTop: 24, alignItems: 'center', paddingVertical: 32 },
+  emptyStateText: { fontSize: 14, color: colors.textMuted },
+  nextStopCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder },
+  nextStopContent: { flex: 1, gap: 4 },
+  nextStopName: { fontSize: 18, fontWeight: '600', color: colors.textPrimary },
+  nextStopCategory: { fontSize: 13, color: colors.textSecondary },
+  stickyCtaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: Platform.OS === 'ios' ? 34 : 20, paddingHorizontal: 20, paddingTop: 20, zIndex: 10 },
+  ctaGradient: { position: 'absolute', top: -40, left: 0, right: 0, height: 40 },
+  ctaButton: { backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
+  ctaButtonText: { fontSize: 16, fontWeight: '700', color: colors.white },
+  galleryContainer: { flex: 1, backgroundColor: 'black' },
+  galleryHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 16, paddingBottom: 16 },
+  galleryCloseButton: { padding: 8 },
+  galleryCounter: { fontSize: 16, color: 'white', fontWeight: '600' },
+  gallerySlide: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, justifyContent: 'center', alignItems: 'center' },
+  galleryImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+});

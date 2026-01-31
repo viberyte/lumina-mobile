@@ -1,0 +1,632 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, typography, spacing } from '../theme';
+import { glassStyles } from '../theme/vibeGradients';
+
+const API_BASE = 'https://lumina.viberyte.com';
+
+interface Venue {
+  id: number;
+  name: string;
+  neighborhood?: string;
+  cuisine_primary?: string;
+  image_url?: string;
+  google_rating?: number;
+  score?: number;
+}
+
+interface Event {
+  id: number;
+  name?: string;
+  title?: string;
+  venue_name?: string;
+  image_url?: string;
+  cover_image_url?: string;
+  music_genre?: string;
+  score?: number;
+}
+
+export default function SearchScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [parsedIntent, setParsedIntent] = useState<any>(null);
+  
+  const [trendingSearches] = useState([
+    'Afrobeats',
+    'Rooftop',
+    'Sushi',
+    'Hip-Hop',
+    'Happy Hour',
+    'Latin Night',
+    'House Music',
+    'Date Night',
+  ]);
+
+  const searchInputRef = useRef<TextInput>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+    loadRecentSearches();
+    
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  // Debounced live search
+  useEffect(() => {
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    
+    if (searchQuery.length >= 2) {
+      searchTimeout.current = setTimeout(() => {
+        performSearch(searchQuery);
+      }, 300);
+    } else {
+      setVenues([]);
+      setEvents([]);
+      setParsedIntent(null);
+    }
+    
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+  }, [searchQuery]);
+
+  const performSearch = async (query: string) => {
+    setIsSearching(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=10`);
+      const data = await response.json();
+      
+      if (data.venues) setVenues(data.venues);
+      if (data.events) setEvents(data.events);
+      if (data.parsed) setParsedIntent(data.parsed);
+      
+      console.log('Search results:', data.total, 'items');
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const loadRecentSearches = async () => {
+    try {
+      const recent = await AsyncStorage.getItem('@lumina_recent_searches');
+      if (recent) {
+        setRecentSearches(JSON.parse(recent));
+      }
+    } catch (error) {
+      console.log('Could not load recent searches');
+    }
+  };
+
+  const saveRecentSearch = async (query: string) => {
+    try {
+      const updated = [query, ...recentSearches.filter(s => s !== query)].slice(0, 10);
+      setRecentSearches(updated);
+      await AsyncStorage.setItem('@lumina_recent_searches', JSON.stringify(updated));
+    } catch (error) {
+      console.log('Could not save recent search');
+    }
+  };
+
+  const handleVenuePress = (venue: Venue) => {
+    saveRecentSearch(venue.name);
+    router.push(`/venue/${venue.id}`);
+  };
+
+  const handleEventPress = (event: Event) => {
+    saveRecentSearch(event.name || event.title || '');
+    router.push(`/event/${event.id}`);
+  };
+
+  const handleQuickSearch = (query: string) => {
+    setSearchQuery(query);
+    saveRecentSearch(query);
+  };
+
+  const clearRecentSearches = async () => {
+    try {
+      setRecentSearches([]);
+      await AsyncStorage.removeItem('@lumina_recent_searches');
+    } catch (error) {
+      console.log('Could not clear recent searches');
+    }
+  };
+
+  const hasResults = venues.length > 0 || events.length > 0;
+
+  return (
+    <LinearGradient
+      colors={[colors.gradientStart, colors.gradientEnd]}
+      style={styles.container}
+    >
+      <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Search</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        {/* Search Input */}
+        <View style={[styles.searchContainer, glassStyles.liquid]}>
+          <Ionicons name="search" size={20} color={colors.zinc[400]} style={styles.searchIcon} />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder="Search vibes, venues, events, DJs..."
+            placeholderTextColor={colors.zinc[500]}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {isSearching && (
+            <ActivityIndicator size="small" color={colors.violet[400]} />
+          )}
+          {searchQuery.length > 0 && !isSearching && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color={colors.zinc[400]} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Parsed Intent Badge */}
+        {parsedIntent && (parsedIntent.vibes.length > 0 || parsedIntent.music.length > 0 || parsedIntent.occasion) && (
+          <View style={styles.intentBadges}>
+            {parsedIntent.vibes.map((v: string, i: number) => (
+              <View key={`vibe-${i}`} style={[styles.intentBadge, styles.vibeBadge]}>
+                <Text style={styles.intentBadgeText}>✨ {v}</Text>
+              </View>
+            ))}
+            {parsedIntent.music.map((m: string, i: number) => (
+              <View key={`music-${i}`} style={[styles.intentBadge, styles.musicBadge]}>
+                <Text style={styles.intentBadgeText}>🎧 {m}</Text>
+              </View>
+            ))}
+            {parsedIntent.occasion && (
+              <View style={[styles.intentBadge, styles.occasionBadge]}>
+                <Text style={styles.intentBadgeText}>🎯 {parsedIntent.occasion.replace('_', ' ')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Live Search Results */}
+          {hasResults && (
+            <>
+              {/* Venues */}
+              {venues.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Ionicons name="location" size={20} color={colors.violet[400]} />
+                    <Text style={styles.sectionTitle}>Venues</Text>
+                    <Text style={styles.resultCount}>{venues.length}</Text>
+                  </View>
+                  <View style={styles.resultsList}>
+                    {venues.map((venue) => (
+                      <TouchableOpacity
+                        key={venue.id}
+                        style={[styles.resultItem, glassStyles.liquid]}
+                        onPress={() => handleVenuePress(venue)}
+                        activeOpacity={0.7}
+                      >
+                        {venue.image_url ? (
+                          <Image source={{ uri: venue.image_url }} style={styles.resultImage} />
+                        ) : (
+                          <View style={[styles.resultImage, styles.placeholderImage]}>
+                            <Ionicons name="restaurant" size={20} color={colors.zinc[600]} />
+                          </View>
+                        )}
+                        <View style={styles.resultInfo}>
+                          <Text style={styles.resultName} numberOfLines={1}>{venue.name}</Text>
+                          <Text style={styles.resultMeta} numberOfLines={1}>
+                            {[venue.cuisine_primary, venue.neighborhood].filter(Boolean).join(' • ')}
+                          </Text>
+                        </View>
+                        {venue.google_rating && (
+                          <View style={styles.ratingBadge}>
+                            <Ionicons name="star" size={12} color={colors.yellow[500]} />
+                            <Text style={styles.ratingText}>{venue.google_rating.toFixed(1)}</Text>
+                          </View>
+                        )}
+                        <Ionicons name="chevron-forward" size={20} color={colors.zinc[500]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Events */}
+              {events.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Ionicons name="calendar" size={20} color={colors.orange[400]} />
+                    <Text style={styles.sectionTitle}>Events</Text>
+                    <Text style={styles.resultCount}>{events.length}</Text>
+                  </View>
+                  <View style={styles.resultsList}>
+                    {events.map((event) => (
+                      <TouchableOpacity
+                        key={event.id}
+                        style={[styles.resultItem, glassStyles.liquid]}
+                        onPress={() => handleEventPress(event)}
+                        activeOpacity={0.7}
+                      >
+                        {(event.image_url || event.cover_image_url) ? (
+                          <Image source={{ uri: event.image_url || event.cover_image_url }} style={styles.resultImage} />
+                        ) : (
+                          <View style={[styles.resultImage, styles.placeholderImage]}>
+                            <Ionicons name="musical-notes" size={20} color={colors.zinc[600]} />
+                          </View>
+                        )}
+                        <View style={styles.resultInfo}>
+                          <Text style={styles.resultName} numberOfLines={1}>{event.name || event.title}</Text>
+                          <Text style={styles.resultMeta} numberOfLines={1}>
+                            {[event.venue_name, event.music_genre].filter(Boolean).join(' • ')}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.zinc[500]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* No Results */}
+          {searchQuery.length >= 2 && !isSearching && !hasResults && (
+            <View style={styles.noResults}>
+              <Ionicons name="search-outline" size={48} color={colors.zinc[600]} />
+              <Text style={styles.noResultsText}>No results for "{searchQuery}"</Text>
+              <Text style={styles.noResultsHint}>Try a different vibe, venue, or event name</Text>
+            </View>
+          )}
+
+          {/* Default State - Trending & Recent */}
+          {!hasResults && searchQuery.length < 2 && (
+            <>
+              {/* Trending Searches */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="flame" size={20} color={colors.violet[400]} />
+                  <Text style={styles.sectionTitle}>Trending</Text>
+                </View>
+                <View style={styles.chipContainer}>
+                  {trendingSearches.map((term, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[styles.chip, glassStyles.liquid]}
+                      onPress={() => handleQuickSearch(term)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.chipText}>{term}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Recent Searches */}
+              {recentSearches.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Ionicons name="time" size={20} color={colors.zinc[400]} />
+                    <Text style={styles.sectionTitle}>Recent</Text>
+                    <TouchableOpacity onPress={clearRecentSearches} style={styles.clearButton}>
+                      <Text style={styles.clearButtonText}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.recentList}>
+                    {recentSearches.map((term, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.recentItem}
+                        onPress={() => handleQuickSearch(term)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="search" size={18} color={colors.zinc[500]} />
+                        <Text style={styles.recentItemText}>{term}</Text>
+                        <Ionicons name="arrow-forward" size={18} color={colors.zinc[600]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Quick Categories */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="grid" size={20} color={colors.zinc[400]} />
+                  <Text style={styles.sectionTitle}>Quick Categories</Text>
+                </View>
+                <View style={styles.categoryGrid}>
+                  <TouchableOpacity
+                    style={[styles.categoryCard, glassStyles.liquid]}
+                    onPress={() => handleQuickSearch('Nightlife')}
+                  >
+                    <Text style={styles.categoryEmoji}>🎉</Text>
+                    <Text style={styles.categoryText}>Nightlife</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.categoryCard, glassStyles.liquid]}
+                    onPress={() => handleQuickSearch('Dining')}
+                  >
+                    <Text style={styles.categoryEmoji}>🍽️</Text>
+                    <Text style={styles.categoryText}>Dining</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.categoryCard, glassStyles.liquid]}
+                    onPress={() => handleQuickSearch('Rooftop')}
+                  >
+                    <Text style={styles.categoryEmoji}>🏙️</Text>
+                    <Text style={styles.categoryText}>Rooftop</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.categoryCard, glassStyles.liquid]}
+                    onPress={() => handleQuickSearch('Live Music')}
+                  >
+                    <Text style={styles.categoryEmoji}>🎵</Text>
+                    <Text style={styles.categoryText}>Live Music</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </Animated.View>
+    </LinearGradient>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  backButton: {
+    width: 24,
+  },
+  headerTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 16,
+  },
+  searchIcon: {
+    marginRight: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.sizes.md,
+    color: colors.white,
+    paddingVertical: spacing.sm,
+  },
+  intentBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  intentBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  vibeBadge: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  musicBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+  },
+  occasionBadge: {
+    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+  },
+  intentBadgeText: {
+    fontSize: typography.sizes.xs,
+    color: colors.white,
+    fontWeight: '600',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  resultCount: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[500],
+    marginRight: spacing.sm,
+  },
+  resultsList: {
+    gap: spacing.sm,
+  },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: 12,
+    gap: spacing.md,
+  },
+  resultImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: colors.zinc[800],
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resultInfo: {
+    flex: 1,
+  },
+  resultName: {
+    fontSize: typography.sizes.md,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: 2,
+  },
+  resultMeta: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  ratingText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: '600',
+    color: colors.yellow[500],
+  },
+  noResults: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  noResultsText: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '600',
+    color: colors.white,
+    marginTop: spacing.md,
+  },
+  noResultsHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[500],
+    marginTop: spacing.xs,
+  },
+  clearButton: {
+    paddingHorizontal: spacing.sm,
+  },
+  clearButtonText: {
+    fontSize: typography.sizes.sm,
+    color: colors.violet[400],
+    fontWeight: '600',
+  },
+  chipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+  },
+  chipText: {
+    fontSize: typography.sizes.sm,
+    color: colors.white,
+    fontWeight: '600',
+  },
+  recentList: {
+    gap: spacing.xs,
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  recentItemText: {
+    flex: 1,
+    fontSize: typography.sizes.md,
+    color: colors.white,
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  categoryCard: {
+    width: '48%',
+    padding: spacing.lg,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  categoryEmoji: {
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  categoryText: {
+    fontSize: typography.sizes.md,
+    fontWeight: '600',
+    color: colors.white,
+  },
+});

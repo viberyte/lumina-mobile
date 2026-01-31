@@ -1,0 +1,334 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { colors, typography, spacing } from '../../theme';
+import luminaApi from '../../services/luminaApi';
+import { getPhotoUrl, parseVibeTags } from "../../utils/photoHelper";
+
+const CARD_WIDTH = 160;
+
+interface Venue {
+  id: number;
+  name: string;
+  category: string;
+  image_url?: string;
+  professional_photo_url?: string;
+  professional_photos?: string;
+  google_photos?: string;
+  rating?: number;
+  google_rating?: number;
+  music_vibe?: string;
+  music_genres?: string;
+  neighborhood?: string;
+  price_level?: string;
+  price_tier?: string;
+  vibe_tags?: string | string[];
+}
+
+interface NightlifeFilters {
+  city?: string;
+  music?: string[];
+  vibe?: string[];
+  price?: string[];
+}
+
+interface NightlifeTabProps {
+  filters?: NightlifeFilters;
+}
+
+export default function NightlifeTab({ filters = {} }: NightlifeTabProps) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [allVenues, setAllVenues] = useState<Venue[]>([]);
+
+  useEffect(() => {
+    fetchNightlifeVenues();
+  }, [filters.city]);
+
+  const fetchNightlifeVenues = async () => {
+    try {
+      setLoading(true);
+      const city = filters.city || 'Manhattan';
+      
+      const venues = await luminaApi.getVenues(city, {
+        category: 'nightlife',
+      });
+      
+      const nightlifeVenues = venues.filter((v: Venue) =>
+        v.category?.toLowerCase().includes('nightlife') ||
+        v.category?.toLowerCase().includes('lounge') ||
+        v.category?.toLowerCase().includes('bar') ||
+        v.category?.toLowerCase().includes('club')
+      );
+      setAllVenues(nightlifeVenues);
+    } catch (error) {
+      console.error('Error fetching nightlife venues:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyFilters = (venues: Venue[]) => {
+    let filtered = venues;
+
+    if (filters.vibe && filters.vibe.length > 0) {
+      filtered = filtered.filter(v => {
+        const vibeTags = parseVibeTags(v.vibe_tags);
+        if (vibeTags.length === 0) return false;
+        
+        return filters.vibe!.some((filterVibe: string) =>
+          vibeTags.some((venueVibe: string) =>
+            venueVibe.toLowerCase().includes(filterVibe.toLowerCase())
+          )
+        );
+      });
+    }
+
+    if (filters.price && filters.price.length > 0) {
+      filtered = filtered.filter(v =>
+        filters.price!.includes(v.price_level || v.price_tier || '')
+      );
+    }
+
+    return filtered;
+  };
+
+  const filteredVenues = useMemo(() => applyFilters(allVenues), [allVenues, filters]);
+
+  const sections = useMemo(() => {
+    const getRating = (v: Venue) => v.google_rating || v.rating || 0;
+    
+    return [
+      {
+        title: 'Top Rated',
+        data: filteredVenues.filter(v => getRating(v) >= 4.5).slice(0, 10),
+      },
+      {
+        title: 'Trendy Spots',
+        data: filteredVenues.filter(v => {
+          const vibeTags = parseVibeTags(v.vibe_tags);
+          return vibeTags.some(tag => 
+            tag.toLowerCase().includes('trendy') ||
+            tag.toLowerCase().includes('hip') ||
+            tag.toLowerCase().includes('upscale')
+          );
+        }).slice(0, 10),
+      },
+      {
+        title: 'Lounges',
+        data: filteredVenues.filter(v => 
+          v.category?.toLowerCase().includes('lounge')
+        ).slice(0, 10),
+      },
+      {
+        title: 'Date Night',
+        data: filteredVenues.filter(v => {
+          const vibeTags = parseVibeTags(v.vibe_tags);
+          return vibeTags.some(tag => 
+            tag.toLowerCase().includes('romantic') ||
+            tag.toLowerCase().includes('intimate') ||
+            tag.toLowerCase().includes('cozy')
+          );
+        }).slice(0, 10),
+      },
+      {
+        title: 'High Energy',
+        data: filteredVenues.filter(v => {
+          const vibeTags = parseVibeTags(v.vibe_tags);
+          return vibeTags.some(tag => 
+            tag.toLowerCase().includes('club') ||
+            tag.toLowerCase().includes('dance') ||
+            tag.toLowerCase().includes('party') ||
+            tag.toLowerCase().includes('lively')
+          );
+        }).slice(0, 10),
+      },
+    ].filter(section => section.data.length > 0);
+  }, [filteredVenues]);
+
+  const renderVenueCard = (venue: Venue) => {
+    console.log("VENUE PHOTO DEBUG:", venue.name, "google_photos:", venue.google_photos?.substring(0,50), "photoUrl:", getPhotoUrl(venue));
+    console.log("VENUE PHOTO DEBUG:", venue.name, "google_photos:", venue.google_photos?.substring(0,50), "photoUrl:", getPhotoUrl(venue));
+    const photoUrl = getPhotoUrl(venue);
+    const rating = venue.google_rating || venue.rating;
+    
+    return (
+      <TouchableOpacity
+        key={venue.id}
+        style={styles.card}
+        onPress={() => router.push(`/venue/${venue.id}`)}
+        activeOpacity={0.8}
+      >
+        <View style={styles.imageContainer}>
+          {photoUrl ? (
+            <Image source={{ uri: photoUrl }} style={styles.image} />
+          ) : (
+            <View style={styles.placeholderImage}>
+              <Ionicons name="wine-outline" size={32} color={colors.zinc[600]} />
+            </View>
+          )}
+          {rating && (
+            <View style={styles.ratingBadge}>
+              <Text style={styles.ratingText}>⭐ {rating.toFixed(1)}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.cardContent}>
+          <Text style={styles.venueName} numberOfLines={1}>{venue.name}</Text>
+          <Text style={styles.venueInfo} numberOfLines={1}>
+            {venue.category}
+            {venue.neighborhood ? ` • ${venue.neighborhood}` : ''}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.violet[500]} />
+        <Text style={styles.loadingText}>Finding nightlife spots...</Text>
+      </View>
+    );
+  }
+
+  if (sections.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="wine-outline" size={48} color={colors.zinc[600]} />
+        <Text style={styles.emptyText}>No nightlife venues found</Text>
+        <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {sections.map((section, index) => (
+        <View key={index} style={styles.section}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {section.data.map(renderVenueCard)}
+            <TouchableOpacity 
+              style={styles.seeMoreButton}
+              onPress={() => router.push({ pathname: "/nightlife/see-more", params: { category: section.title } })}
+            >
+              <View style={styles.seeMoreInner}>
+                <Ionicons name="arrow-forward" size={24} color={colors.violet[400]} />
+                <Text style={styles.seeMoreText}>See All</Text>
+              </View>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      ))}
+      <View style={styles.bottomPadding} />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    color: colors.zinc[400],
+    fontSize: typography.sizes.md,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyText: {
+    marginTop: spacing.md,
+    color: colors.white,
+    fontSize: typography.sizes.lg,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    marginTop: spacing.xs,
+    color: colors.zinc[500],
+    fontSize: typography.sizes.sm,
+  },
+  section: {
+    marginTop: spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  horizontalScroll: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  card: {
+    width: CARD_WIDTH,
+    backgroundColor: colors.zinc[900],
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  imageContainer: {
+    width: '100%',
+    height: 120,
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.zinc[800],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ratingBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  ratingText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  cardContent: {
+    padding: spacing.sm,
+  },
+  venueName: {
+    fontSize: typography.sizes.sm,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: 2,
+  },
+  venueInfo: {
+    fontSize: typography.sizes.xs,
+    color: colors.zinc[400],
+  },
+  bottomPadding: {
+    height: 100,
+  },
+});

@@ -1,0 +1,572 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  Dimensions,
+  Animated,
+  RefreshControl,
+  Alert,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colors, typography, spacing } from '../theme';
+import { glassStyles } from '../theme/vibeGradients';
+
+const { width } = Dimensions.get('window');
+
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  city: string;
+}
+
+export default function ProfileScreen() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [savedVenuesCount, setSavedVenuesCount] = useState(0);
+  const [savedEventsCount, setSavedEventsCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const statsScale = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    loadProfile();
+    animateIn();
+  }, []);
+
+  const animateIn = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(statsScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const loadProfile = async () => {
+    try {
+      const profileData = await AsyncStorage.getItem('@lumina_profile');
+      if (profileData) {
+        const parsed = JSON.parse(profileData);
+        setProfile(parsed);
+        
+        // Load saved counts
+        const userId = parsed.id || 'guest';
+        await loadSavedCounts(userId);
+      } else {
+        // Guest user
+        setProfile({
+          id: 'guest',
+          name: 'Guest',
+          email: '',
+          city: 'New York',
+        });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const loadSavedCounts = async (userId: string) => {
+    try {
+      // Load venues count
+      const venuesResponse = await fetch(
+        `https://lumina.viberyte.com/api/favorites?userId=${userId}&type=venue`
+      );
+      const venuesData = await venuesResponse.json();
+      setSavedVenuesCount(venuesData.items?.length || 0);
+
+      // Load events count
+      const eventsResponse = await fetch(
+        `https://lumina.viberyte.com/api/favorites?userId=${userId}&type=event`
+      );
+      const eventsData = await eventsResponse.json();
+      setSavedEventsCount(eventsData.items?.length || 0);
+    } catch (error) {
+      console.log('Could not load saved counts');
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadProfile();
+    setRefreshing(false);
+  };
+
+  const handleStatPress = (stat: string) => {
+    if (stat === 'saved') {
+      router.push('/saved');
+    } else {
+      Alert.alert('Coming Soon', `${stat} feature is coming soon!`);
+    }
+  };
+
+  const handleSettingsPress = () => {
+    router.push('/settings');
+  };
+
+  const renderQuickAction = (
+    icon: string,
+    title: string,
+    onPress: () => void,
+    delay: number = 0
+  ) => {
+    const actionAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      Animated.timing(actionAnim, {
+        toValue: 1,
+        duration: 400,
+        delay,
+        useNativeDriver: true,
+      }).start();
+    }, []);
+
+    return (
+      <Animated.View
+        style={{
+          opacity: actionAnim,
+          transform: [
+            {
+              translateX: actionAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [20, 0],
+              }),
+            },
+          ],
+        }}
+      >
+        <TouchableOpacity
+          style={[styles.actionButton, glassStyles.matte]}
+          onPress={onPress}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actionLeft}>
+            <View style={styles.actionIcon}>
+              <Ionicons name={icon as any} size={20} color={colors.violet[400]} />
+            </View>
+            <Text style={styles.actionText}>{title}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.zinc[600]} />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const getCityEmoji = (city: string) => {
+    const cityMap: { [key: string]: string } = {
+      'New York': '🗽',
+      'NYC': '🗽',
+      'Manhattan': '🗽',
+      'Brooklyn': '🌉',
+      'DC': '🏛️',
+      'Washington': '🏛️',
+      'Philadelphia': '🔔',
+      'Baltimore': '🦀',
+      'Richmond': '🌳',
+      'Norfolk': '⚓',
+    };
+    return cityMap[city] || '🌃';
+  };
+
+  const getPersonalizedTitle = (city: string) => {
+    return `${city} Night Explorer`;
+  };
+
+  if (!profile) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Animated.View style={{ opacity: fadeAnim }}>
+          <View style={styles.shimmerAvatar} />
+          <View style={styles.shimmerText} />
+        </Animated.View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.violet[500]}
+          />
+        }
+      >
+        {/* Header */}
+        <Animated.View
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.headerTop}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={24} color={colors.white} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={handleSettingsPress}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="settings-outline" size={24} color={colors.white} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.profileInfo}>
+            <LinearGradient
+              colors={[colors.violet[600], colors.pink[500]]}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>
+                {getCityEmoji(profile.city)}
+              </Text>
+            </LinearGradient>
+            <Text style={styles.name}>
+              {profile.name || 'Lumina Member'}
+            </Text>
+            <Text style={styles.subtitle}>
+              {getPersonalizedTitle(profile.city)}
+            </Text>
+          </View>
+
+          {/* Stats */}
+          <Animated.View
+            style={[
+              styles.stats,
+              {
+                transform: [{ scale: statsScale }],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={() => handleStatPress('saved')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.statNumber}>
+                {savedVenuesCount + savedEventsCount}
+              </Text>
+              <Text style={styles.statLabel}>Saved</Text>
+            </TouchableOpacity>
+
+            <View style={styles.statDivider} />
+
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={() => handleStatPress('visited')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Visited</Text>
+            </TouchableOpacity>
+
+            <View style={styles.statDivider} />
+
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={() => handleStatPress('reviews')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Reviews</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+
+        {/* Quick Stats Cards */}
+        <Animated.View
+          style={[
+            styles.quickStatsSection,
+            {
+              opacity: fadeAnim,
+              transform: [
+                {
+                  translateY: fadeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [30, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[styles.quickStatCard, glassStyles.liquid]}
+            onPress={() => router.push('/saved')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.quickStatIcon}>
+              <Ionicons name="location" size={24} color={colors.violet[400]} />
+            </View>
+            <View style={styles.quickStatInfo}>
+              <Text style={styles.quickStatNumber}>{savedVenuesCount}</Text>
+              <Text style={styles.quickStatLabel}>Saved Venues</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.zinc[600]} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickStatCard, glassStyles.liquid]}
+            onPress={() => router.push('/saved')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.quickStatIcon}>
+              <Ionicons name="calendar" size={24} color={colors.pink[400]} />
+            </View>
+            <View style={styles.quickStatInfo}>
+              <Text style={styles.quickStatNumber}>{savedEventsCount}</Text>
+              <Text style={styles.quickStatLabel}>Saved Events</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.zinc[600]} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+
+          {renderQuickAction(
+            'notifications-outline',
+            'Notifications',
+            () => Alert.alert('Coming Soon', 'Notification preferences coming soon!'),
+            100
+          )}
+
+          {renderQuickAction(
+            'location-outline',
+            'Change City',
+            () => Alert.alert('Coming Soon', 'City switching coming soon!'),
+            200
+          )}
+
+          {renderQuickAction(
+            'musical-notes-outline',
+            'Music Preferences',
+            () => Alert.alert('Coming Soon', 'Music preferences coming soon!'),
+            300
+          )}
+
+          {renderQuickAction(
+            'share-social-outline',
+            'Share Lumina',
+            () => Alert.alert('Share Lumina', 'Sharing functionality coming soon!'),
+            400
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.zinc[900],
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.zinc[900],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shimmerAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.zinc[800],
+    marginBottom: spacing.md,
+  },
+  shimmerText: {
+    width: 120,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.zinc[800],
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+  },
+  header: {
+    paddingTop: 60,
+    paddingBottom: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.zinc[800],
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileInfo: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  avatarText: {
+    fontSize: 40,
+  },
+  name: {
+    fontSize: typography.sizes.xxl,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+    fontStyle: 'italic',
+  },
+  stats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.xl,
+  },
+  stat: {
+    alignItems: 'center',
+    padding: spacing.sm,
+  },
+  statNumber: {
+    fontSize: typography.sizes.xxl,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.zinc[500],
+    textTransform: 'uppercase',
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: colors.zinc[800],
+  },
+  quickStatsSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    gap: spacing.md,
+  },
+  quickStatCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderRadius: 16,
+    gap: spacing.md,
+  },
+  quickStatIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.violet[500] + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickStatInfo: {
+    flex: 1,
+  },
+  quickStatNumber: {
+    fontSize: typography.sizes.xl,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  quickStatLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+  },
+  section: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.md,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderRadius: 16,
+    marginBottom: spacing.sm,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.violet[600] + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionText: {
+    fontSize: typography.sizes.md,
+    fontWeight: '600',
+    color: colors.white,
+  },
+});

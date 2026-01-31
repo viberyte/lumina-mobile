@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Lumina",
+    "slug": "lumina-mobile",
+    "scheme": "lumina",
+    "version": "1.0.7",
+    "extra": {
+      "eas": {
+        "projectId": "1492b684-7c3d-4a06-a448-cd633001b45f"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.viberyte.luminamobile",
+      "buildNumber": "10",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "splash": {
+      "image": "./assets/images/splash-screen.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
+    "icon": "./assets/images/lumina-icon.png",
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/lumina-icon.png",
+        "backgroundColor": "#0a0a0f"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      "expo-video"
+    ]
+  }
+}

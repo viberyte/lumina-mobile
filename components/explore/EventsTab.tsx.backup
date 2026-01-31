@@ -1,0 +1,310 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { colors, typography, spacing } from '../../theme';
+import luminaApi from '../../services/luminaApi';
+
+const CARD_WIDTH = 160;
+
+interface Event {
+  id: number;
+  name: string;
+  music_genre?: string;
+  music_genres?: string;
+  image_url?: string;
+  cover_image_url?: string;
+  date?: string;
+  event_date?: string;
+  venue_name?: string;
+  price?: string;
+  description?: string;
+}
+
+interface EventFilters {
+  city?: string;
+  genre?: string[];
+  type?: string[];
+}
+
+interface EventsTabProps {
+  filters?: EventFilters;
+}
+
+export default function EventsTab({ filters = {} }: EventsTabProps) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [allEvents, setAllEvents] = useState<Event[]>([]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [filters.city]);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      const city = filters.city || 'New York';
+      
+      // ✅ Pass limit option
+      const events = await luminaApi.getEvents(city, {
+        limit: 50,
+      });
+      
+      console.log('📅 Fetched events:', events.length);
+      setAllEvents(events);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const parseGenres = (event: Event): string[] => {
+    if (event.music_genres) {
+      try {
+        const parsed = typeof event.music_genres === 'string' 
+          ? JSON.parse(event.music_genres) 
+          : event.music_genres;
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    if (event.music_genre) {
+      return [event.music_genre];
+    }
+    return [];
+  };
+
+  const applyFilters = (events: Event[]) => {
+    let filtered = events;
+
+    // Filter by genre
+    if (filters.genre && filters.genre.length > 0) {
+      filtered = filtered.filter(e => {
+        const genres = parseGenres(e);
+        return filters.genre!.some((g: string) => 
+          genres.some(genre => genre.toLowerCase().includes(g.toLowerCase()))
+        );
+      });
+    }
+
+    // Filter by event type - search in name and description
+    if (filters.type && filters.type.length > 0) {
+      filtered = filtered.filter(e => 
+        filters.type!.some((t: string) => 
+          e.name?.toLowerCase().includes(t.toLowerCase()) ||
+          e.description?.toLowerCase().includes(t.toLowerCase())
+        )
+      );
+    }
+
+    return filtered;
+  };
+
+  // ✅ useMemo - only re-filter when data or filters actually change
+  const filteredEvents = useMemo(
+    () => applyFilters(allEvents),
+    [allEvents, filters.genre, filters.type]
+  );
+
+  const categories = useMemo(() => [
+    {
+      title: 'All Events',
+      data: filteredEvents.slice(0, 20),
+      filter: 'all'
+    },
+    {
+      title: 'Afrobeats',
+      data: filteredEvents.filter(e => {
+        const genres = parseGenres(e);
+        return genres.some(g => g.toLowerCase().includes('afrobeat'));
+      }).slice(0, 10),
+      filter: 'afrobeats'
+    },
+    {
+      title: 'Hip-Hop',
+      data: filteredEvents.filter(e => {
+        const genres = parseGenres(e);
+        return genres.some(g => g.toLowerCase().includes('hip-hop') || g.toLowerCase().includes('hiphop'));
+      }).slice(0, 10),
+      filter: 'hip-hop'
+    },
+    {
+      title: 'Latin',
+      data: filteredEvents.filter(e => {
+        const genres = parseGenres(e);
+        return genres.some(g => g.toLowerCase().includes('latin') || g.toLowerCase().includes('reggaeton'));
+      }).slice(0, 10),
+      filter: 'latin'
+    },
+    {
+      title: 'EDM / House',
+      data: filteredEvents.filter(e => {
+        const genres = parseGenres(e);
+        return genres.some(g => 
+          g.toLowerCase().includes('edm') || 
+          g.toLowerCase().includes('house') ||
+          g.toLowerCase().includes('techno')
+        );
+      }).slice(0, 10),
+      filter: 'edm'
+    },
+  ], [filteredEvents]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.violet[500]} />
+        <Text style={styles.loadingText}>Loading events...</Text>
+      </View>
+    );
+  }
+
+  if (filteredEvents.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="calendar-outline" size={64} color={colors.zinc[600]} />
+        <Text style={styles.emptyText}>No events match your filters</Text>
+        <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      {categories.map((category, idx) => (
+        category.data.length > 0 && (
+          <View key={idx} style={styles.section}>
+            <Text style={styles.sectionTitle}>{category.title}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
+            >
+              {category.data.map((event) => (
+                <TouchableOpacity
+                  key={event.id}
+                  style={styles.card}
+                  onPress={() => router.push(`/event/${event.id}`)}
+                  activeOpacity={0.8}
+                >
+                  <Image
+                    source={{ 
+                      uri: event.cover_image_url || event.image_url || 'https://via.placeholder.com/160x200' 
+                    }}
+                    style={styles.image}
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.8)']}
+                    style={styles.gradient}
+                  >
+                    <View style={styles.content}>
+                      <Text style={styles.name} numberOfLines={2}>{event.name}</Text>
+                      {event.venue_name && (
+                        <Text style={styles.venue} numberOfLines={1}>
+                          <Ionicons name="location" size={10} color={colors.zinc[400]} />
+                          {' '}{event.venue_name}
+                        </Text>
+                      )}
+                      {(event.date || event.event_date) && (
+                        <Text style={styles.date}>
+                          <Ionicons name="calendar" size={10} color={colors.zinc[400]} />
+                          {' '}{new Date(event.date || event.event_date || '').toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        </Text>
+                      )}
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )
+      ))}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  card: {
+    width: CARD_WIDTH,
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '70%',
+    justifyContent: 'flex-end',
+  },
+  content: {
+    padding: spacing.sm,
+  },
+  name: {
+    fontSize: typography.sizes.sm,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: 4,
+  },
+  venue: {
+    fontSize: typography.sizes.xs,
+    color: colors.zinc[300],
+    marginBottom: 2,
+  },
+  date: {
+    fontSize: typography.sizes.xs,
+    color: colors.zinc[400],
+  },
+  loadingContainer: {
+    padding: spacing.xxl,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.sizes.md,
+    color: colors.zinc[400],
+  },
+  emptyContainer: {
+    padding: spacing.xxl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: spacing.md,
+    fontSize: typography.sizes.lg,
+    fontWeight: '600',
+    color: colors.zinc[400],
+  },
+  emptySubtext: {
+    marginTop: spacing.xs,
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[500],
+  },
+});

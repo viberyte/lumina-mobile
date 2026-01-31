@@ -1,0 +1,863 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { requireAuth } from '../../utils/authGate';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  TouchableOpacity,
+  Dimensions,
+  Modal,
+  FlatList,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+  Linking,
+  Share,
+  ScrollView,
+} from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { Image } from 'expo-image';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { api, trackBehavior } from '../../lib/api';
+import AddToPlanSheet from '../../components/AddToPlanSheet';
+import VibeMediaViewer from '../../components/VibeMediaViewer';
+import NextStopCard from '../../components/NextStopCard';
+import { getPhotoUrl, getAllPhotos, getAllMedia, getTikTokVideos, MediaItem } from '../../utils/photoHelper';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_MAX_HEIGHT = 350;
+
+const colors = {
+  background: '#0A0A0F',
+  card: '#16161F',
+  cardBorder: '#2A2A3A',
+  accent: '#8B5CF6',
+  accentDim: 'rgba(139, 92, 246, 0.12)',
+  white: '#FFFFFF',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#9CA3AF',
+  textMuted: '#6B7280',
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  restaurant: 'Restaurant',
+  lounge: 'Lounge',
+  bar: 'Bar',
+  cocktail_bar: 'Cocktails',
+  rooftop: 'Rooftop',
+  club: 'Club',
+  night_club: 'Club',
+  nightclub: 'Club',
+  diner: 'Late Night Eats',
+  cafe: 'Café',
+  wine_bar: 'Wine Bar',
+};
+
+const WEATHER_ICONS: Record<string, string> = {
+  'clear': 'sunny',
+  'clouds': 'cloudy',
+  'rain': 'rainy',
+  'snow': 'snow',
+  'thunderstorm': 'thunderstorm',
+  'drizzle': 'rainy',
+  'mist': 'cloudy',
+  'fog': 'cloudy',
+};
+
+const safeParseArray = (data: any): any[] => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+interface MediaItem {
+  id: string;
+  type: 'image' | 'video';
+  url: string;
+  thumbnail?: string;
+}
+
+interface NextStop {
+  id: string;
+  name: string;
+  full_name?: string;
+  category: string;
+  address?: string;
+  image_url?: string;
+  energy_level?: string;
+  travel_time?: number;
+  transport_mode?: "walk" | "rideshare";
+  distance_meters?: number;
+  compatibility_score?: number;
+  transition_type?: string;
+  transition_message?: string;
+  venue_insight?: string;
+  insight_voice?: string;
+}
+interface WeatherData {
+  temp: number;
+  condition: string;
+  icon: string;
+}
+
+interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+  onPress: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+}
+
+export default function VenueDetailScreen() {
+  const { id } = useLocalSearchParams();
+  const [venue, setVenue] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [addToPlanVisible, setAddToPlanVisible] = useState(false);
+  const [galleryVisible, setGalleryVisible] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [mediaToShow, setMediaToShow] = useState(9);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    fetchVenueDetails();
+  }, [id]);
+
+  useEffect(() => {
+    if (venue?.city) {
+      fetchWeather(venue.city);
+    }
+  }, [venue?.city]);
+
+  const fetchVenueDetails = async () => {
+    try {
+      setLoading(true);
+      const data = await api.getVenue(id as string);
+      setVenue(data);
+      // Track view behavior
+      if (data?.id) {
+        trackBehavior(Number(data.id), "view", "detail");
+      }
+    } catch (error) {
+      console.error("Error fetching venue:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+
+
+
+
+
+
+
+
+
+
+  const fetchWeather = async (city: string) => {
+    try {
+      const geoResponse = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
+      );
+      const geoData = await geoResponse.json();
+      
+      if (geoData.results && geoData.results.length > 0) {
+        const { latitude, longitude } = geoData.results[0];
+        
+        const weatherResponse = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=fahrenheit`
+        );
+        const weatherData = await weatherResponse.json();
+        
+        if (weatherData.current) {
+          const weatherCode = weatherData.current.weather_code;
+          let condition = 'clear';
+          if (weatherCode >= 0 && weatherCode <= 3) condition = 'clear';
+          else if (weatherCode >= 45 && weatherCode <= 48) condition = 'fog';
+          else if (weatherCode >= 51 && weatherCode <= 67) condition = 'rain';
+          else if (weatherCode >= 71 && weatherCode <= 77) condition = 'snow';
+          else if (weatherCode >= 80 && weatherCode <= 82) condition = 'rain';
+          else if (weatherCode >= 95) condition = 'thunderstorm';
+          else condition = 'clouds';
+          
+          setWeather({
+            temp: Math.round(weatherData.current.temperature_2m),
+            condition: condition.charAt(0).toUpperCase() + condition.slice(1),
+            icon: WEATHER_ICONS[condition] || 'cloudy',
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Weather fetch failed:', error);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out ${venue?.name} on Lumina!`,
+        url: `https://lumina.viberyte.com/venue/${id}`,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  const handleCall = () => {
+    if (venue?.phone) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(`tel:${venue.phone}`);
+    }
+  };
+
+  const handleDirections = () => {
+    if (venue?.address) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
+      Linking.openURL(`https://maps.apple.com/?q=${query}`);
+    }
+  };
+
+  const handleWebsite = () => {
+    if (venue?.website) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(venue.website);
+    }
+  };
+
+  const handleInstagram = () => {
+    if (venue?.instagram_handle) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
+    }
+  };
+
+  const handleUber = () => {
+    if (venue?.address) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
+      Linking.openURL(`uber://?action=setPickup&pickup=my_location&dropoff[formatted_address]=${query}`);
+    }
+  };
+
+  const handleMenu = () => {
+    if (venue?.menu_url) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Linking.openURL(venue.menu_url);
+    }
+  };
+
+  const handleBudgetMeal = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ 
+      pathname: "/budget-meal", 
+      params: { venue_id: id, venue_name: venue?.name || "" } 
+    });
+  };
+
+  const openGallery = (index: number) => {
+    setGalleryIndex(index);
+    setGalleryVisible(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  if (loading || !venue) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  // USE CENTRALIZED PHOTO HELPER - This is the key fix!
+  const heroImage = getPhotoUrl(venue);
+  const allPhotos = getAllPhotos(venue);
+  
+  // USE CENTRALIZED MEDIA HELPER - includes photos + videos
+  const allMedia = getAllMedia(venue);
+  
+  // Debug logging for media health
+  console.log('[Media]', venue.name, {
+    photos: allMedia.filter(m => m.type === 'image').length,
+    videos: allMedia.filter(m => m.type === 'video').length,
+    heroImage: !!heroImage,
+  });
+
+  const displayedMedia = allMedia.slice(0, mediaToShow);
+  // Transform media for VibeMediaViewer
+  const viewerMedia = allMedia.map((item) => ({
+    id: item.id,
+    url: item.url,
+    thumbnailUrl: item.thumbnail || item.url,
+    isVideo: item.type === 'video',
+    type: item.type === 'video' ? 'instagram' : 'google',
+  }));
+
+
+  const headerHeight = scrollY.interpolate({
+    inputRange: [0, 250],
+    outputRange: [HEADER_MAX_HEIGHT, 100],
+    extrapolate: 'clamp',
+  });
+
+  const imageOpacity = scrollY.interpolate({
+    inputRange: [0, 125, 250],
+    outputRange: [1, 1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const imageScale = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: [1.5, 1],
+    extrapolate: 'clamp',
+  });
+
+  const renderMediaItem = ({ item, index }: { item: MediaItem; index: number }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => openGallery(index)}
+      style={styles.mediaItem}
+    >
+      <Image
+        source={{ uri: item.thumbnail || item.url }}
+        style={styles.mediaThumbnail}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
+      {item.type === 'video' && (
+        <View style={styles.videoIndicator}>
+          <Ionicons name="play-circle" size={40} color="white" />
+        </View>
+      )}
+      {item.source === 'tiktok' && (
+        <View style={styles.tiktokBadge}>
+          <Ionicons name="logo-tiktok" size={12} color="#fff" />
+        </View>
+      )}
+      {item.source === 'instagram' && item.type === 'video' && (
+        <View style={styles.instagramBadge}>
+          <Ionicons name="logo-instagram" size={12} color="#fff" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  // renderGalleryItem removed - using VibeMediaViewer
+
+  // Use centralized photo helper for next stops too
+  const getNextStopImage = (stop: NextStop): string | null => {
+    return getPhotoUrl(stop);
+  };
+
+  const isRestaurant = ['restaurant', 'diner', 'cafe'].includes((venue.category || '').toLowerCase());
+  const hasFood = isRestaurant || ['bar', 'lounge', 'rooftop'].includes((venue.category || '').toLowerCase());
+  const currentHour = new Date().getHours();
+  const isEvening = currentHour >= 17;
+  const shouldTruncate = venue.description && venue.description.length > 120;
+  
+  const hoursArray = safeParseArray(venue.hours_json);
+  const todayIndex = new Date().getDay();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const todayHours = hoursArray.find((h: any) => typeof h === 'string' && h.startsWith(dayNames[todayIndex]));
+
+  const displayDescription = venue.description || venue.bio || null;
+  const categoryLabel = CATEGORY_LABELS[venue.category?.toLowerCase()] || venue.category || 'Venue';
+  const nextStops = safeParseArray(venue.next_stops);
+
+  // Build quick actions array
+  const quickActions: QuickAction[] = [
+    {
+      id: 'directions',
+      label: 'Directions',
+      icon: 'navigate-outline',
+      onPress: handleDirections,
+      disabled: !venue.address,
+      primary: true,
+    },
+    {
+      id: 'call',
+      label: 'Call',
+      icon: 'call-outline',
+      onPress: handleCall,
+      disabled: !venue.phone,
+    },
+    {
+      id: 'instagram',
+      label: 'Instagram',
+      icon: 'logo-instagram',
+      onPress: handleInstagram,
+      disabled: !venue.instagram_handle,
+    },
+    ...(hasFood ? [{
+      id: 'menu',
+      label: 'Menu',
+      icon: 'restaurant-outline',
+      onPress: handleMenu,
+      disabled: !venue.menu_url,
+    }] : []),
+    ...(isRestaurant ? [{
+      id: 'budget',
+      label: 'Budget Meal',
+      icon: 'wallet-outline',
+      onPress: handleBudgetMeal,
+      disabled: false,
+    }] : []),
+    {
+      id: 'uber',
+      label: 'Ride',
+      icon: 'car-outline',
+      onPress: handleUber,
+      disabled: !venue.address,
+    },
+    {
+      id: 'website',
+      label: 'Website',
+      icon: 'globe-outline',
+      onPress: handleWebsite,
+      disabled: !venue.website,
+    },
+  ].filter(action => !action.disabled);
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      <View style={styles.topBar}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
+            <Ionicons name="arrow-back" size={22} color="white" />
+          </BlurView>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
+            <Ionicons name="share-outline" size={22} color="white" />
+          </BlurView>
+        </TouchableOpacity>
+      </View>
+
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
+      >
+        <Animated.View style={[styles.heroContainer, { height: headerHeight }]}>
+          {heroImage ? (
+            <Animated.View style={{ opacity: imageOpacity, transform: [{ scale: imageScale }], flex: 1 }}>
+              <Image
+                source={{ uri: heroImage.startsWith('/') ? `https://lumina.viberyte.com${heroImage}` : heroImage }}
+                style={styles.heroImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            </Animated.View>
+          ) : (
+            <View style={styles.heroPlaceholder}>
+              <Ionicons name="image-outline" size={48} color={colors.textMuted} />
+            </View>
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(10,10,15,0.8)', colors.background]}
+            style={styles.heroGradient}
+          />
+        </Animated.View>
+        
+        <View style={styles.content}>
+          {/* Venue Name */}
+          <Text style={styles.venueName}>{venue.name}</Text>
+          
+          {/* Meta Row */}
+          <View style={styles.metaRow}>
+            {venue.neighborhood && <Text style={styles.metaText}>{venue.neighborhood}</Text>}
+            {venue.city && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.metaText}>{venue.city}</Text>
+              </>
+            )}
+            {venue.rating && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={12} color="#FCD34D" />
+                  <Text style={styles.ratingText}>{venue.rating.toFixed(1)}</Text>
+                </View>
+              </>
+            )}
+            {venue.price_tier && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.priceText}>{venue.price_tier}</Text>
+              </>
+            )}
+          </View>
+
+          {/* Weather + Tonight Badge Row */}
+          <View style={styles.badgeRow}>
+            {weather && (
+              <View style={styles.weatherBadge}>
+                <Ionicons name={weather.icon as any} size={14} color={colors.accent} />
+                <Text style={styles.weatherText}>{weather.temp}°</Text>
+              </View>
+            )}
+            {isEvening && (
+              <View style={styles.tonightBadge}>
+                <Ionicons name="sparkles" size={12} color={colors.accent} />
+                <Text style={styles.tonightText}>Good tonight</Text>
+              </View>
+            )}
+            {todayHours && (
+              <View style={styles.hoursBadge}>
+                <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
+                <Text style={styles.hoursText} numberOfLines={1}>
+                  {todayHours.replace(dayNames[todayIndex] + ': ', '')}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Bio Section */}
+          <View style={styles.bioSection}>
+            {displayDescription ? (
+              <>
+                <Text 
+                  style={styles.bioText}
+                  numberOfLines={descriptionExpanded ? undefined : 2}
+                >
+                  {displayDescription}
+                </Text>
+                {shouldTruncate && (
+                  <TouchableOpacity onPress={() => setDescriptionExpanded(!descriptionExpanded)}>
+                    <Text style={styles.readMoreText}>
+                      {descriptionExpanded ? 'Show less' : 'Read more'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            ) : (
+              <Text style={styles.bioTextMuted}>
+                {categoryLabel} in {venue.neighborhood || venue.city || 'the area'}
+              </Text>
+            )}
+          </View>
+
+          {/* Vibe Tags */}
+          {(venue.vibe_tags || venue.primary_vibes) && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll}>
+              <View style={styles.tagsContainer}>
+                {safeParseArray(venue.vibe_tags || venue.primary_vibes).slice(0, 5).map((tag: string, index: number) => (
+                  <View key={index} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          {/* Music Genres */}
+          {venue.music_genres && safeParseArray(venue.music_genres).length > 0 && (
+            <View style={styles.musicRow}>
+              <Ionicons name="musical-notes" size={14} color={colors.accent} />
+              <Text style={styles.musicText}>
+                {safeParseArray(venue.music_genres).slice(0, 3).join(', ')}
+              </Text>
+            </View>
+          )}
+
+          {/* Quick Actions - Horizontal Swipeable Row */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.actionsScroll}
+            contentContainerStyle={styles.actionsContainer}
+          >
+            {quickActions.map((action) => (
+              <TouchableOpacity
+                key={action.id}
+                style={[
+                  styles.actionPill,
+                  action.primary && styles.actionPillPrimary,
+                ]}
+                onPress={action.onPress}
+                activeOpacity={0.7}
+              >
+                <Ionicons 
+                  name={action.icon as any} 
+                  size={18} 
+                  color={action.primary ? colors.accent : colors.white} 
+                />
+                <Text style={[
+                  styles.actionPillText,
+                  action.primary && styles.actionPillTextPrimary,
+                ]}>
+                  {action.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Photos & Videos */}
+          {allMedia.length > 0 ? (
+            <View style={styles.section}>
+              <TouchableOpacity 
+                style={styles.sectionHeader}
+                onPress={() => openGallery(0)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sectionTitle}>Photos & Videos</Text>
+                <View style={styles.mediaCountBadge}>
+                  <Text style={styles.sectionCount}>{allMedia.length}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
+              
+              <FlatList
+                data={displayedMedia}
+                renderItem={renderMediaItem}
+                keyExtractor={(item, index) => `${item.id}-${index}`}
+                numColumns={3}
+                scrollEnabled={false}
+                contentContainerStyle={styles.mediaGrid}
+              />
+
+              {mediaToShow < allMedia.length && (
+                <TouchableOpacity
+                  style={styles.showMoreButton}
+                  onPress={() => setMediaToShow(prev => Math.min(prev + 9, allMedia.length))}
+                >
+                  <Text style={styles.showMoreText}>
+                    Show {Math.min(9, allMedia.length - mediaToShow)} More
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.accent} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Photos & Videos</Text>
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>Photos coming soon</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Continue the Night */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Continue the Night</Text>
+            
+            {nextStops.length > 0 ? (
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.nextStopsScroll}
+              >
+                {nextStops.map((stop: NextStop) => (
+                  <NextStopCard
+                    key={stop.id}
+                    stop={stop}
+                    getImage={getNextStopImage}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.nextStopsEmpty}>
+                <Ionicons name="compass-outline" size={28} color={colors.textMuted} />
+                <Text style={styles.nextStopsEmptyText}>Suggestions coming soon</Text>
+              </View>
+            )}
+          </View>
+
+          {/* View Full Profile */}
+          <TouchableOpacity
+            style={styles.viewProfileButton}
+            onPress={async () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push(`/venue/${id}/profile`);
+            }}
+          >
+            <View style={styles.viewProfileContent}>
+              <Ionicons name="expand-outline" size={20} color={colors.accent} />
+              <View style={styles.viewProfileText}>
+                <Text style={styles.viewProfileTitle}>View Full Profile</Text>
+                <Text style={styles.viewProfileSubtitle}>Events · Reviews · More</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <View style={{ height: 120 }} />
+        </View>
+      </Animated.ScrollView>
+
+      {/* Sticky CTA */}
+      <View style={styles.stickyCtaContainer}>
+        <LinearGradient
+          colors={['transparent', colors.background]}
+          style={styles.ctaGradient}
+        />
+        <TouchableOpacity
+          style={styles.ctaButton}
+          onPress={async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            const isAuthed = await requireAuth('add this to your plans');
+            if (!isAuthed) return;
+            setAddToPlanVisible(true);
+          }}
+        >
+          <Ionicons name="add-circle" size={24} color="white" />
+          <Text style={styles.ctaButtonText}>
+            {isEvening ? 'Add to Tonight' : 'Add to Plans'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Gallery Modal - Using VibeMediaViewer */}
+      <VibeMediaViewer
+        visible={galleryVisible}
+        items={viewerMedia}
+        initialIndex={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+      />
+
+      {/* Add to Plan Sheet */}
+      <AddToPlanSheet
+        visible={addToPlanVisible}
+        onClose={() => setAddToPlanVisible(false)}
+        venue={venue}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  topBar: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, zIndex: 100 },
+  backButton: { borderRadius: 12, overflow: 'hidden' },
+  shareButton: { borderRadius: 12, overflow: 'hidden' },
+  blurButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12 },
+  heroContainer: { width: '100%', overflow: 'hidden' },
+  heroImage: { width: '100%', height: '100%' },
+  heroPlaceholder: { flex: 1, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center' },
+  heroGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 150 },
+  content: { paddingHorizontal: 20, paddingTop: 16 },
+  
+  // Header
+  venueName: { fontSize: 28, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 },
+  metaText: { fontSize: 14, color: colors.textSecondary },
+  metaDot: { fontSize: 14, color: colors.textMuted, marginHorizontal: 6 },
+  ratingBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  priceText: { fontSize: 14, color: colors.textSecondary },
+  
+  // Badge Row (Weather, Tonight, Hours)
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
+  weatherBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  weatherText: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
+  tonightBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.accentDim, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  tonightText: { fontSize: 13, color: colors.accent, fontWeight: '500' },
+  hoursBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, maxWidth: 180 },
+  hoursText: { fontSize: 12, color: colors.textSecondary },
+  
+  // Bio
+  bioSection: { marginBottom: 12 },
+  bioText: { fontSize: 15, lineHeight: 22, color: colors.textSecondary },
+  bioTextMuted: { fontSize: 15, lineHeight: 22, color: colors.textMuted, fontStyle: 'italic' },
+  readMoreText: { fontSize: 14, color: colors.accent, marginTop: 4, fontWeight: '500' },
+  
+  // Tags
+  tagsScroll: { marginBottom: 12 },
+  tagsContainer: { flexDirection: 'row', gap: 8 },
+  tag: { backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.cardBorder },
+  tagText: { fontSize: 13, color: colors.textPrimary },
+  
+  // Music
+  musicRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  musicText: { fontSize: 13, color: colors.textSecondary },
+  
+  // Quick Actions - Horizontal Swipeable
+  actionsScroll: { marginBottom: 24 },
+  actionsContainer: { flexDirection: 'row', gap: 10, paddingRight: 20 },
+  actionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, borderWidth: 1, borderColor: colors.cardBorder },
+  actionPillPrimary: { backgroundColor: colors.accentDim, borderColor: colors.accent },
+  actionPillText: { fontSize: 13, color: colors.white, fontWeight: '500' },
+  actionPillTextPrimary: { color: colors.accent },
+  
+  // Section
+  section: { marginBottom: 24 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  sectionCount: { fontSize: 14, color: colors.textSecondary, marginRight: 4 },
+  mediaCountBadge: { flexDirection: 'row', alignItems: 'center' },
+  
+  // Media Grid
+  mediaGrid: { gap: 6 },
+  mediaItem: { width: (SCREEN_WIDTH - 52) / 3, height: (SCREEN_WIDTH - 52) / 3, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.card },
+  mediaThumbnail: { width: '100%', height: '100%' },
+  videoIndicator: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  tiktokBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#000', borderRadius: 4, padding: 4 },
+  instagramBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#E1306C', borderRadius: 4, padding: 4 },
+  showMoreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
+  showMoreText: { fontSize: 14, color: colors.accent, fontWeight: '500' },
+  emptyState: { alignItems: 'center', paddingVertical: 20 },
+  emptyStateText: { fontSize: 14, color: colors.textMuted },
+  
+  // Next Stops
+  nextStopsScroll: { paddingRight: 20 },
+  nextStopCard: { width: 140, marginRight: 12, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.card },
+  nextStopImageContainer: { width: '100%', height: 90, position: 'relative' },
+  nextStopImage: { width: '100%', height: '100%' },
+  nextStopImagePlaceholder: { width: '100%', height: '100%', backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center' },
+  nextStopGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 40 },
+  nextStopInfo: { padding: 10 },
+  nextStopName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 },
+  nextStopCategory: { fontSize: 11, color: colors.textSecondary },
+  nextStopsEmpty: { alignItems: 'center', paddingVertical: 24, backgroundColor: colors.card, borderRadius: 12 },
+  nextStopsEmptyText: { fontSize: 14, color: colors.textMuted, marginTop: 8 },
+  
+  // View Profile
+  viewProfileButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.cardBorder },
+  viewProfileContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  viewProfileText: { gap: 2 },
+  viewProfileTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  viewProfileSubtitle: { fontSize: 12, color: colors.textSecondary },
+  
+  // Sticky CTA
+  stickyCtaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: Platform.OS === 'ios' ? 34 : 20, paddingHorizontal: 20, paddingTop: 16, zIndex: 10 },
+  ctaGradient: { position: 'absolute', top: -30, left: 0, right: 0, height: 30 },
+  ctaButton: { backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, gap: 8 },
+  ctaButtonText: { fontSize: 16, fontWeight: '700', color: colors.white },
+  
+  // Gallery
+  galleryContainer: { flex: 1, backgroundColor: 'black' },
+  galleryHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 16, paddingBottom: 16 },
+  galleryCloseButton: { padding: 8 },
+  galleryCounter: { fontSize: 16, color: 'white', fontWeight: '600' },
+  gallerySlide: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, justifyContent: 'center', alignItems: 'center' },
+  galleryImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+});

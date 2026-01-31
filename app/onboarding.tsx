@@ -1,0 +1,893 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+  Animated,
+  StatusBar,
+  BackHandler,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '../contexts/ToastContext';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const API_BASE = 'https://lumina.viberyte.com';
+
+// Types
+type Gender = 'male' | 'female' | 'other';
+type AgeRange = '21-25' | '26-34' | '35-44' | '45+';
+type MusicGenre = 'hiphop' | 'latin' | 'afrobeats' | 'edm' | 'rnb' | 'house' | 'pop' | 'live';
+type SceneType = 'straight' | 'lgbtq' | 'mixed';
+
+interface UserProfile {
+  user_id: number;
+  gender: Gender;
+  age_range: AgeRange;
+  music_preferences: MusicGenre[];
+  allowed_scenes: SceneType[];
+  voice_key: string;
+  onboarded_at: string;
+}
+
+const questions = [
+  {
+    id: 'gender',
+    title: 'First things first',
+    subtitle: 'This helps us personalize your experience',
+    type: 'single',
+    options: [
+      { value: 'male', label: 'Man', emoji: '👔' },
+      { value: 'female', label: 'Woman', emoji: '👗' },
+      { value: 'other', label: 'Other', emoji: '✨' },
+    ],
+  },
+  {
+    id: 'age',
+    title: 'What\'s your era?',
+    subtitle: 'We\'ll match you with the right crowd',
+    type: 'single',
+    options: [
+      { value: '21-25', label: '21 - 25', subtitle: 'Just getting started', icon: 'flame-outline' },
+      { value: '26-34', label: '26 - 34', subtitle: 'In your prime', icon: 'rocket-outline' },
+      { value: '35-44', label: '35 - 44', subtitle: 'Refined taste', icon: 'wine-outline' },
+      { value: '45+', label: '45+', subtitle: 'Classic sophistication', icon: 'diamond-outline' },
+    ],
+  },
+  {
+    id: 'music',
+    title: 'Your soundtrack',
+    subtitle: 'Pick a few — we\'ll find your scene',
+    type: 'multi',
+    options: [
+      { value: 'hiphop', label: 'Hip-Hop', icon: 'mic', color: '#f59e0b' },
+      { value: 'latin', label: 'Latin', icon: 'flame', color: '#ef4444' },
+      { value: 'afrobeats', label: 'Afrobeats', icon: 'globe', color: '#22c55e' },
+      { value: 'edm', label: 'EDM', icon: 'flash', color: '#3b82f6' },
+      { value: 'rnb', label: 'R&B', icon: 'heart', color: '#ec4899' },
+      { value: 'house', label: 'House', icon: 'radio', color: '#8b5cf6' },
+      { value: 'pop', label: 'Pop', icon: 'star', color: '#f472b6' },
+      { value: 'live', label: 'Live / Jazz', icon: 'musical-notes', color: '#14b8a6' },
+    ],
+  },
+  {
+    id: 'scenes',
+    title: 'Which spaces feel right?',
+    subtitle: 'So we only show you places you\'ll enjoy',
+    type: 'multi',
+    options: [
+      { value: 'straight', label: 'Straight / mixed crowds', icon: 'people', color: '#3b82f6' },
+      { value: 'lgbtq', label: 'LGBTQ+ spaces', icon: 'rainbow', color: '#ec4899' },
+      { value: 'mixed', label: 'Open to everything', icon: 'globe', color: '#8b5cf6' },
+    ],
+  },
+];
+
+export default function OnboardingScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
+  const [step, setStep] = useState(0);
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [buildingStage, setBuildingStage] = useState(0);
+  const isMounted = useRef(true);
+  
+  // Form state
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [ageRange, setAgeRange] = useState<AgeRange | null>(null);
+  const [music, setMusic] = useState<MusicGenre[]>([]);
+  const [scenes, setScenes] = useState<SceneType[]>([]);
+  
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const buildingAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const buildingMessages = [
+    'Analyzing your vibe...',
+    'Finding your scenes...',
+    'Curating your nights...',
+    'Almost ready...',
+  ];
+
+  useEffect(() => {
+    isMounted.current = true;
+    restoreProgress();
+    return () => { isMounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (step > 0 && !isBuilding) {
+          handleGoBack();
+          return true;
+        }
+        return false;
+      });
+      return () => backHandler.remove();
+    }
+  }, [step, isBuilding]);
+
+  useEffect(() => {
+    if (!isBuilding) saveProgress();
+  }, [step, gender, ageRange, music, scenes]);
+
+  const restoreProgress = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('@lumina_onboarding_v3');
+      if (saved) {
+        const progress = JSON.parse(saved);
+        const startedAt = new Date(progress.started_at).getTime();
+        const hourAgo = Date.now() - (60 * 60 * 1000);
+        
+        if (startedAt > hourAgo) {
+          setStep(progress.step || 0);
+          setGender(progress.gender);
+          setAgeRange(progress.age_range);
+          setMusic(progress.music || []);
+          setScenes(progress.scenes || []);
+        } else {
+          await AsyncStorage.removeItem('@lumina_onboarding_v3');
+        }
+      }
+    } catch (error) {
+      console.log('Could not restore progress');
+    }
+  };
+
+  const saveProgress = async () => {
+    try {
+      await AsyncStorage.setItem('@lumina_onboarding_v3', JSON.stringify({
+        step,
+        gender,
+        age_range: ageRange,
+        music,
+        scenes,
+        started_at: new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.log('Could not save progress');
+    }
+  };
+
+  const animateToNextStep = (nextStep: number) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: -30, duration: 150, useNativeDriver: true }),
+    ]).start(() => {
+      if (!isMounted.current) return;
+      setStep(nextStep);
+      slideAnim.setValue(30);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, friction: 10, tension: 50, useNativeDriver: true }),
+      ]).start();
+    });
+  };
+
+  const animateToPreviousStep = (prevStep: number) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 30, duration: 150, useNativeDriver: true }),
+    ]).start(() => {
+      if (!isMounted.current) return;
+      setStep(prevStep);
+      slideAnim.setValue(-30);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, friction: 10, tension: 50, useNativeDriver: true }),
+      ]).start();
+    });
+  };
+
+  const handleGoBack = () => {
+    if (step > 0 && !isBuilding) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      animateToPreviousStep(step - 1);
+    }
+  };
+
+  const handleSingleSelect = async (questionId: string, value: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (questionId === 'gender') setGender(value as Gender);
+    else if (questionId === 'age') setAgeRange(value as AgeRange);
+    
+    await new Promise(r => setTimeout(r, 200));
+    
+    if (step < questions.length - 1) {
+      animateToNextStep(step + 1);
+    } else {
+      await finishOnboarding();
+    }
+  };
+
+  const handleMultiToggle = (questionId: string, value: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (questionId === 'music') {
+      setMusic(prev => 
+        prev.includes(value as MusicGenre) 
+          ? prev.filter(m => m !== value) 
+          : [...prev, value as MusicGenre]
+      );
+    } else if (questionId === 'scenes') {
+      setScenes(prev => 
+        prev.includes(value as SceneType) 
+          ? prev.filter(s => s !== value) 
+          : [...prev, value as SceneType]
+      );
+    }
+  };
+
+  const handleMultiContinue = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    if (step < questions.length - 1) {
+      animateToNextStep(step + 1);
+    } else {
+      await finishOnboarding();
+    }
+  };
+
+  const handleSkip = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    // Set defaults if skipping
+    const currentQuestion = questions[step];
+    if (currentQuestion.id === 'scenes' && scenes.length === 0) {
+      setScenes(['mixed']); // Default to open to everything
+    }
+    
+    if (step < questions.length - 1) {
+      animateToNextStep(step + 1);
+    } else {
+      await finishOnboarding();
+    }
+  };
+
+  const finishOnboarding = async () => {
+    setIsBuilding(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    Animated.timing(buildingAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+
+    const stageInterval = setInterval(() => {
+      setBuildingStage(prev => {
+        if (prev >= buildingMessages.length - 1) {
+          clearInterval(stageInterval);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 600);
+
+    const pulse = () => {
+      if (!isMounted.current) return;
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ]).start(() => isMounted.current && pulse());
+    };
+    pulse();
+
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 2500,
+      useNativeDriver: false,
+    }).start();
+
+    try {
+      // Generate unique user_id
+      let userId = await AsyncStorage.getItem('@lumina_user_id');
+      if (!userId) {
+        userId = String(Date.now());
+        await AsyncStorage.setItem('@lumina_user_id', userId);
+      await AsyncStorage.setItem('@lumina_persona', 'completed');
+      }
+
+      // Defaults
+      const finalGender = gender || 'other';
+      const finalAge = ageRange || '26-34';
+      const finalScenes = scenes.length > 0 ? scenes : ['mixed'];
+
+      // Call backend API
+      const response = await fetch(`${API_BASE}/api/onboarding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: Number(userId),
+          gender: finalGender,
+          age_range: finalAge,
+          preferred_scenes: music.length > 0 ? music : null,
+          allowed_scenes: finalScenes,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.profile) {
+        const profile: UserProfile = {
+          user_id: Number(userId),
+          gender: finalGender,
+          age_range: finalAge,
+          music_preferences: music,
+          allowed_scenes: finalScenes,
+          voice_key: data.profile.voice_key,
+          onboarded_at: new Date().toISOString(),
+        };
+        
+        await AsyncStorage.setItem('@lumina_profile', JSON.stringify(profile));
+        await AsyncStorage.setItem('@lumina_persona', 'completed');
+        await AsyncStorage.setItem('@lumina_voice_key', data.profile.voice_key);
+        await AsyncStorage.removeItem('@lumina_onboarding_v3');
+        
+        console.log('✅ Profile saved:', profile);
+      } else {
+        console.log('⚠️ Backend returned:', data);
+        await AsyncStorage.setItem('@lumina_user_id', userId);
+      await AsyncStorage.setItem('@lumina_persona', 'completed');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      clearInterval(stageInterval);
+
+      if (isMounted.current) {
+        router.replace('/(tabs)');
+        setTimeout(() => {
+          showToast('Your Lumina is ready ✨', 'success');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Onboarding error:', error);
+      clearInterval(stageInterval);
+      
+      const userId = String(Date.now());
+      await AsyncStorage.setItem('@lumina_user_id', userId);
+      await AsyncStorage.setItem('@lumina_persona', 'completed');
+      await AsyncStorage.removeItem('@lumina_onboarding_v3');
+      
+      if (isMounted.current) {
+        router.replace('/(tabs)');
+        showToast('Welcome to Lumina', 'success');
+      }
+    }
+  };
+
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX(50)
+    .onEnd((event) => {
+      if (event.translationX > 100 && step > 0 && !isBuilding) {
+        handleGoBack();
+      }
+    });
+
+  const currentQuestion = questions[step];
+  
+  const getCurrentValue = () => {
+    if (currentQuestion.id === 'gender') return gender;
+    if (currentQuestion.id === 'age') return ageRange;
+    return null;
+  };
+  
+  const getCurrentMultiValue = (): string[] => {
+    if (currentQuestion.id === 'music') return music;
+    if (currentQuestion.id === 'scenes') return scenes;
+    return [];
+  };
+
+  const getMinSelection = () => {
+    if (currentQuestion.id === 'music') return 1;
+    if (currentQuestion.id === 'scenes') return 1;
+    return 0;
+  };
+
+  // Building screen
+  if (isBuilding) {
+    const progressWidth = progressAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0%', '100%'],
+    });
+
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient
+          colors={['#0f0f14', '#09090b', '#0a0a10']}
+          style={StyleSheet.absoluteFill}
+        />
+        
+        <Animated.View 
+          style={[
+            styles.buildingContainer,
+            { opacity: buildingAnim, transform: [{ scale: pulseAnim }] }
+          ]}
+        >
+          <View style={styles.orbContainer}>
+            <LinearGradient
+              colors={['#8b5cf6', '#a855f7', '#d946ef']}
+              style={styles.buildingOrb}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+            <View style={styles.orbGlow} />
+          </View>
+          
+          <Text style={styles.buildingTitle}>Building your Lumina</Text>
+          <Text style={styles.buildingSubtitle}>{buildingMessages[buildingStage]}</Text>
+          
+          <View style={styles.progressBarContainer}>
+            <Animated.View style={[styles.progressBarFill, { width: progressWidth }]}>
+              <LinearGradient
+                colors={['#8b5cf6', '#d946ef']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Animated.View>
+          </View>
+        </Animated.View>
+      </View>
+    );
+  }
+
+  return (
+    <GestureDetector gesture={swipeGesture}>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient
+          colors={['#0f0f14', '#09090b', '#0a0a10']}
+          style={StyleSheet.absoluteFill}
+        />
+        
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleGoBack}
+            disabled={step === 0}
+            activeOpacity={0.7}
+          >
+            {step > 0 && (
+              <Ionicons name="chevron-back" size={28} color="rgba(255,255,255,0.8)" />
+            )}
+          </TouchableOpacity>
+          
+          <View style={styles.progressContainer}>
+            {questions.map((_, i) => (
+              <View key={i} style={styles.progressDotWrapper}>
+                <View style={[
+                  styles.progressDot,
+                  i === step && styles.progressDotActive,
+                  i < step && styles.progressDotCompleted,
+                ]} />
+              </View>
+            ))}
+          </View>
+          
+          <View style={styles.backButton} />
+        </View>
+        
+        {/* Content */}
+        <Animated.View 
+          style={[
+            styles.content,
+            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
+          ]}
+        >
+          <View style={styles.questionHeader}>
+            <Text style={styles.stepIndicator}>
+              {step + 1} of {questions.length}
+            </Text>
+            <Text style={styles.questionTitle}>{currentQuestion.title}</Text>
+            <Text style={styles.questionSubtitle}>{currentQuestion.subtitle}</Text>
+          </View>
+          
+          {/* Single select */}
+          {currentQuestion.type === 'single' && (
+            <View style={styles.optionsContainer}>
+              {currentQuestion.options.map((option: any) => {
+                const isSelected = getCurrentValue() === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.optionButton, isSelected && styles.optionButtonSelected]}
+                    onPress={() => handleSingleSelect(currentQuestion.id, option.value)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.optionContent}>
+                      <View style={[styles.optionIcon, isSelected && styles.optionIconSelected]}>
+                        {option.emoji ? (
+                          <Text style={styles.optionEmoji}>{option.emoji}</Text>
+                        ) : (
+                          <Ionicons 
+                            name={option.icon} 
+                            size={24} 
+                            color={isSelected ? '#fff' : '#a1a1aa'} 
+                          />
+                        )}
+                      </View>
+                      <View style={styles.optionTextContainer}>
+                        <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
+                          {option.label}
+                        </Text>
+                        {option.subtitle && (
+                          <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+                        )}
+                      </View>
+                      {isSelected && (
+                        <View style={styles.checkCircle}>
+                          <Ionicons name="checkmark" size={16} color="#fff" />
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          
+          {/* Multi-select */}
+          {currentQuestion.type === 'multi' && (
+            <View style={styles.multiContainer}>
+              <ScrollView 
+                contentContainerStyle={styles.multiGrid}
+                showsVerticalScrollIndicator={false}
+              >
+                {currentQuestion.options.map((option: any) => {
+                  const isSelected = getCurrentMultiValue().includes(option.value);
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.multiChip,
+                        isSelected && { 
+                          borderColor: option.color, 
+                          backgroundColor: option.color + '15',
+                        },
+                      ]}
+                      onPress={() => handleMultiToggle(currentQuestion.id, option.value)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons 
+                        name={option.icon} 
+                        size={18} 
+                        color={isSelected ? option.color : '#6b7280'} 
+                      />
+                      <Text style={[
+                        styles.multiChipText,
+                        isSelected && { color: option.color, fontWeight: '600' },
+                      ]}>
+                        {option.label}
+                      </Text>
+                      {isSelected && (
+                        <View style={[styles.multiCheck, { backgroundColor: option.color }]}>
+                          <Ionicons name="checkmark" size={10} color="#fff" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              
+              {/* Continue button */}
+              <TouchableOpacity
+                style={[
+                  styles.continueButton, 
+                  getCurrentMultiValue().length < getMinSelection() && styles.continueButtonDisabled
+                ]}
+                onPress={handleMultiContinue}
+                disabled={getCurrentMultiValue().length < getMinSelection()}
+                activeOpacity={0.9}
+              >
+                <LinearGradient
+                  colors={getCurrentMultiValue().length >= getMinSelection() 
+                    ? ['#8b5cf6', '#7c3aed'] 
+                    : ['#27272a', '#1f1f23']}
+                  style={styles.continueGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={[
+                    styles.continueText, 
+                    getCurrentMultiValue().length < getMinSelection() && { opacity: 0.5 }
+                  ]}>
+                    {getCurrentMultiValue().length < getMinSelection() 
+                      ? 'Select at least one' 
+                      : 'Continue'}
+                  </Text>
+                  {getCurrentMultiValue().length >= getMinSelection() && (
+                    <Ionicons name="arrow-forward" size={20} color="#fff" />
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+              
+              {/* Skip */}
+              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+                <Text style={styles.skipText}>Skip for now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </Animated.View>
+      </View>
+    </GestureDetector>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#09090b',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  progressDotWrapper: {
+    padding: 4,
+  },
+  progressDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  progressDotActive: {
+    width: 24,
+    backgroundColor: '#8b5cf6',
+  },
+  progressDotCompleted: {
+    backgroundColor: '#8b5cf6',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+  questionHeader: {
+    marginBottom: 32,
+  },
+  stepIndicator: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8b5cf6',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  questionTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  questionSubtitle: {
+    fontSize: 16,
+    color: '#71717a',
+    lineHeight: 22,
+  },
+  optionsContainer: {
+    gap: 12,
+  },
+  optionButton: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  optionButtonSelected: {
+    borderColor: '#8b5cf6',
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+  },
+  optionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+  },
+  optionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionIconSelected: {
+    backgroundColor: '#8b5cf6',
+  },
+  optionEmoji: {
+    fontSize: 24,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#a1a1aa',
+  },
+  optionLabelSelected: {
+    color: '#fff',
+  },
+  optionSubtitle: {
+    fontSize: 13,
+    color: '#52525b',
+    marginTop: 2,
+  },
+  checkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#8b5cf6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Multi-select styles
+  multiContainer: {
+    flex: 1,
+  },
+  multiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingBottom: 20,
+  },
+  multiChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 100,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    gap: 8,
+  },
+  multiChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  multiCheck: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 2,
+  },
+  continueButton: {
+    marginTop: 20,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  continueButtonDisabled: {
+    opacity: 0.7,
+  },
+  continueGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  continueText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  skipText: {
+    fontSize: 14,
+    color: '#52525b',
+    fontWeight: '500',
+  },
+  
+  // Building screen
+  buildingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  orbContainer: {
+    position: 'relative',
+    marginBottom: 32,
+  },
+  buildingOrb: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  orbGlow: {
+    position: 'absolute',
+    top: -20,
+    left: -20,
+    right: -20,
+    bottom: -20,
+    borderRadius: 70,
+    backgroundColor: '#8b5cf6',
+    opacity: 0.15,
+  },
+  buildingTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  buildingSubtitle: {
+    fontSize: 16,
+    color: '#71717a',
+    marginBottom: 32,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+});

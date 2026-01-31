@@ -1,0 +1,661 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+  Image,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { colors, typography, spacing } from '../../theme';
+import { glassStyles } from '../../theme/vibeGradients';
+
+const API_BASE = 'https://lumina.viberyte.com';
+
+interface Partner {
+  id: number;
+  instagram_handle: string;
+  business_name: string;
+  status: string;
+  follower_count: number;
+  bio?: string;
+  profile_image_url?: string;
+}
+
+interface Event {
+  id: number;
+  name: string;
+  start_date: string;
+  venue_name: string;
+  flyer_image_url?: string;
+  city?: string;
+}
+
+interface Community {
+  slug: string;
+  name: string;
+  city: string;
+}
+
+export default function PartnerProfileScreen() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  
+  const [partner, setPartner] = useState<Partner | null>(null);
+  const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
+  const [pastEvents, setPastEvents] = useState<Event[]>([]);
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [showingUpcoming, setShowingUpcoming] = useState(true);
+
+  useEffect(() => {
+    fetchPartnerData();
+  }, [id]);
+
+  const fetchPartnerData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch partner details
+      const partnerResponse = await fetch(`${API_BASE}/api/partners/${id}`);
+      const partnerData = await partnerResponse.json();
+      setPartner(partnerData);
+
+      // Fetch all partner events
+      const eventsResponse = await fetch(`${API_BASE}/api/partners/${id}/events`);
+      const eventsData = await eventsResponse.json();
+      
+      const now = new Date();
+      const upcoming = (eventsData.events || []).filter((e: Event) => new Date(e.start_date) >= now);
+      const past = (eventsData.events || []).filter((e: Event) => new Date(e.start_date) < now);
+      
+      setUpcomingEvents(upcoming);
+      setPastEvents(past);
+
+      // Fetch partner communities (rooms)
+      const communitiesResponse = await fetch(`${API_BASE}/api/chat/permissions?partner_id=${id}`);
+      const communitiesData = await communitiesResponse.json();
+      setCommunities(communitiesData.rooms || []);
+
+      // Check if following
+      const followResponse = await fetch(`${API_BASE}/api/follows?user_id=1&partner_id=${id}`);
+      const followData = await followResponse.json();
+      setIsFollowing(followData.is_following || false);
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching partner data:', error);
+      setLoading(false);
+    }
+  };
+
+  const handleFollowToggle = async () => {
+    if (followLoading) return;
+
+    try {
+      setFollowLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      if (isFollowing) {
+        await fetch(`${API_BASE}/api/follows`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 1, partner_id: id }),
+        });
+        setIsFollowing(false);
+        if (partner) {
+          setPartner({ ...partner, follower_count: Math.max(0, partner.follower_count - 1) });
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        await fetch(`${API_BASE}/api/follows`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 1, partner_id: id }),
+        });
+        setIsFollowing(true);
+        if (partner) {
+          setPartner({ ...partner, follower_count: partner.follower_count + 1 });
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
+  const handleCommunityPress = (communitySlug: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/chat-room/${communitySlug}`);
+  };
+
+  const handleInstagramPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // TODO: Open Instagram profile
+    console.log(`Open Instagram: ${partner?.instagram_handle}`);
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.violet[500]} />
+          <Text style={styles.loadingText}>Loading partner...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!partner) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.zinc[600]} />
+          <Text style={styles.errorText}>Partner not found</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const displayEvents = showingUpcoming ? upcomingEvents : pastEvents;
+  const totalEvents = upcomingEvents.length + pastEvents.length;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientEnd]}
+        style={styles.gradient}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={styles.headerBackButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Partner Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Profile Header */}
+          <View style={[styles.profileHeader, glassStyles.liquid]}>
+            <View style={styles.profileImageContainer}>
+              {partner.profile_image_url ? (
+                <Image 
+                  source={{ uri: partner.profile_image_url }}
+                  style={styles.profileImage}
+                />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Ionicons name="person" size={40} color={colors.zinc[500]} />
+                </View>
+              )}
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={24} color={colors.violet[500]} />
+              </View>
+            </View>
+
+            <Text style={styles.businessName}>{partner.business_name}</Text>
+            
+            <TouchableOpacity 
+              onPress={handleInstagramPress}
+              style={styles.instagramHandle}
+            >
+              <Ionicons name="logo-instagram" size={16} color={colors.violet[400]} />
+              <Text style={styles.instagramHandleText}>@{partner.instagram_handle}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.statsRow}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{partner.follower_count}</Text>
+                <Text style={styles.statLabel}>Followers</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{totalEvents}</Text>
+                <Text style={styles.statLabel}>Events</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{communities.length}</Text>
+                <Text style={styles.statLabel}>Communities</Text>
+              </View>
+            </View>
+
+            {/* Follow Button */}
+            <TouchableOpacity
+              onPress={handleFollowToggle}
+              disabled={followLoading}
+              style={[
+                styles.followButton,
+                isFollowing && styles.followingButton,
+              ]}
+              activeOpacity={0.8}
+            >
+              {followLoading ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <>
+                  <Ionicons 
+                    name={isFollowing ? "checkmark" : "add"} 
+                    size={20} 
+                    color={isFollowing ? colors.violet[400] : colors.white} 
+                  />
+                  <Text style={[
+                    styles.followButtonText,
+                    isFollowing && styles.followingButtonText,
+                  ]}>
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Events Section */}
+          {totalEvents > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Events</Text>
+                <View style={styles.toggleButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.toggleButton,
+                      showingUpcoming && styles.toggleButtonActive,
+                    ]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowingUpcoming(true);
+                    }}
+                  >
+                    <Text style={[
+                      styles.toggleButtonText,
+                      showingUpcoming && styles.toggleButtonTextActive,
+                    ]}>
+                      Upcoming ({upcomingEvents.length})
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.toggleButton,
+                      !showingUpcoming && styles.toggleButtonActive,
+                    ]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowingUpcoming(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.toggleButtonText,
+                      !showingUpcoming && styles.toggleButtonTextActive,
+                    ]}>
+                      Past ({pastEvents.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {displayEvents.length === 0 ? (
+                <View style={styles.emptyEvents}>
+                  <Text style={styles.emptyEventsText}>
+                    No {showingUpcoming ? 'upcoming' : 'past'} events
+                  </Text>
+                </View>
+              ) : (
+                displayEvents.map((event) => (
+                  <View key={event.id} style={[styles.eventCard, glassStyles.liquid]}>
+                    {event.flyer_image_url && (
+                      <Image 
+                        source={{ uri: event.flyer_image_url }}
+                        style={styles.eventFlyer}
+                        resizeMode="cover"
+                      />
+                    )}
+                    <View style={styles.eventInfo}>
+                      <Text style={styles.eventName}>{event.name}</Text>
+                      <View style={styles.eventMeta}>
+                        <Ionicons name="calendar-outline" size={14} color={colors.zinc[400]} />
+                        <Text style={styles.eventMetaText}>
+                          {new Date(event.start_date).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                      <View style={styles.eventMeta}>
+                        <Ionicons name="location-outline" size={14} color={colors.zinc[400]} />
+                        <Text style={styles.eventMetaText}>
+                          {event.venue_name}
+                          {event.city && ` · ${event.city}`}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* Active Communities */}
+          {communities.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Active Communities</Text>
+              <Text style={styles.sectionSubtitle}>
+                This partner posts in {communities.length} {communities.length === 1 ? 'community' : 'communities'} across multiple cities
+              </Text>
+              {communities.map((community) => (
+                <TouchableOpacity
+                  key={community.slug}
+                  style={[styles.communityCard, glassStyles.liquid]}
+                  onPress={() => handleCommunityPress(community.slug)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.communityInfo}>
+                    <Text style={styles.communityName}>{community.name}</Text>
+                    <Text style={styles.communityCity}>{community.city}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.violet[400]} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </LinearGradient>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.black,
+  },
+  gradient: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+    paddingTop: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerBackButton: {
+    width: 24,
+  },
+  headerTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  profileHeader: {
+    alignItems: 'center',
+    padding: spacing.xl,
+    borderRadius: 20,
+    marginBottom: spacing.xl,
+  },
+  profileImageContainer: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: colors.violet[500],
+  },
+  profileImagePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.violet[500],
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: colors.black,
+    borderRadius: 12,
+    padding: 2,
+  },
+  businessName: {
+    fontSize: typography.sizes.xl,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  instagramHandle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  instagramHandleText: {
+    fontSize: typography.sizes.md,
+    color: colors.violet[400],
+    fontWeight: '600',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    width: '100%',
+    justifyContent: 'space-around',
+  },
+  stat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: typography.sizes.xl,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  followButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.violet[500],
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 24,
+    gap: spacing.xs,
+    width: '100%',
+  },
+  followingButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: colors.violet[500],
+  },
+  followButtonText: {
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  followingButtonText: {
+    color: colors.violet[400],
+  },
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  sectionSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+    marginBottom: spacing.md,
+    lineHeight: 18,
+  },
+  toggleButtons: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 6,
+  },
+  toggleButtonActive: {
+    backgroundColor: colors.violet[500],
+  },
+  toggleButtonText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: '600',
+    color: colors.zinc[400],
+  },
+  toggleButtonTextActive: {
+    color: colors.white,
+  },
+  emptyEvents: {
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyEventsText: {
+    fontSize: typography.sizes.md,
+    color: colors.zinc[500],
+  },
+  eventCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  eventFlyer: {
+    width: '100%',
+    height: 200,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  eventInfo: {
+    padding: spacing.md,
+  },
+  eventName: {
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: spacing.sm,
+  },
+  eventMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  eventMetaText: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+  },
+  communityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderRadius: 12,
+    marginBottom: spacing.sm,
+  },
+  communityInfo: {
+    flex: 1,
+  },
+  communityName: {
+    fontSize: typography.sizes.md,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: spacing.xs,
+  },
+  communityCity: {
+    fontSize: typography.sizes.sm,
+    color: colors.zinc[400],
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.sizes.md,
+    color: colors.zinc[400],
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  errorText: {
+    fontSize: typography.sizes.lg,
+    fontWeight: '600',
+    color: colors.zinc[400],
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  backButton: {
+    backgroundColor: colors.violet[500],
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 24,
+  },
+  backButtonText: {
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+    color: colors.white,
+  },
+});

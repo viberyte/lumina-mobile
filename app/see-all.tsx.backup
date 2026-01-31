@@ -1,0 +1,710 @@
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Pressable,
+  Animated,
+  Dimensions,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { colors, typography, spacing } from '../theme';
+import { trackBehavior } from '../lib/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = 180;
+const CARD_HEIGHT = 200;
+const API_BASE = 'https://lumina.viberyte.com';
+
+// ============================================================
+// PERSPECTIVES-POWERED SEE ALL
+// Backend is the brain. Frontend renders what brain decides.
+// ============================================================
+
+// Animated pressable card wrapper
+const AnimatedPressable = ({ children, style, onPress }: any) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Skeleton loader for cards
+const SkeletonCard = ({ index }: { index: number }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.6, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View style={[styles.skeletonCard, { opacity }]}>
+      <View style={styles.skeletonImage} />
+      <View style={styles.skeletonText} />
+      <View style={styles.skeletonTextShort} />
+    </Animated.View>
+  );
+};
+
+// Skeleton section
+const SkeletonSection = () => (
+  <View style={styles.section}>
+    <View style={styles.sectionHeader}>
+      <View style={styles.skeletonSectionTitle} />
+    </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionScroll}>
+      {[0, 1, 2, 3].map(i => <SkeletonCard key={i} index={i} />)}
+    </ScrollView>
+  </View>
+);
+
+const WORLD_ALIASES: Record<string, string> = {
+  // Nightlife vibes -> backend perspectives
+  'outside': 'clubs',
+  'latin_nights': 'clubs',
+  'low_light': 'lounges',
+  'pulse': 'clubs',
+  'main_stage': 'clubs',
+  'lounges': 'lounges',
+  'clubs': 'clubs',
+  'rooftops': 'lounges',
+  'latin american': 'latin',
+  'soul food': 'soul_food',
+  'steakhouse & seafood': 'steakhouse',
+  'korean bbq': 'korean',
+  'dim sum': 'chinese',
+  'afrobeats & caribbean': 'clubs',
+  'hip-hop & r&b': 'clubs',
+  'latin nights': 'clubs',
+  'afrobeats': 'clubs',
+  'hiphop': 'clubs',
+  'hip-hop': 'clubs',
+  'latin': 'clubs',
+  'hookah': 'lounges',
+  'upscale_lounge': 'lounges',
+  'cocktail_lounge': 'lounges',
+  'upscale_club': 'clubs',
+};
+
+const DIAL_ALIASES: Record<string, string> = {
+  // Nightlife vibes -> dials
+  'outside': 'afrobeats',
+  'latin_nights': 'latin',
+  'low_light': 'all',
+  'pulse': 'edm',
+  'main_stage': 'all',
+  'lounges': 'all',
+  'clubs': 'all',
+  'rooftops': 'all',
+  'afrobeats & caribbean': 'afrobeats',
+  'hip-hop & r&b': 'hiphop',
+  'latin nights': 'latin',
+  'hookah lounges': 'hookah',
+  'upscale lounges': 'upscale_lounge',
+  'cocktail lounges': 'cocktail_lounge',
+  'afrobeats': 'afrobeats',
+  'hiphop': 'hiphop',
+  'hip-hop': 'hiphop',
+  'latin': 'latin',
+  'hookah': 'hookah',
+};
+
+const DIAL_COLORS: Record<string, string> = {
+  all: '#6366f1',
+  date_night: '#ec4899',
+  upscale: '#a855f7',
+  casual: '#22c55e',
+  late_night: '#f59e0b',
+  high_energy: '#ef4444',
+  pregame: '#06b6d4',
+  hookah: '#8b5cf6',
+  hiphop: '#f97316',
+  afrobeats: '#10b981',
+  upscale_lounge: '#a855f7',
+  cocktail_lounge: '#6366f1',
+  upscale_club: '#a855f7',
+};
+
+const DIAL_LABELS: Record<string, string> = {
+  all: 'All',
+  date_night: 'Date Night',
+  upscale: 'Upscale',
+  casual: 'Casual',
+  late_night: 'Late Night',
+  high_energy: 'High Energy',
+  pregame: 'Pregame',
+  hookah: 'Hookah',
+  hiphop: 'Hip-Hop',
+  afrobeats: 'Afrobeats',
+  upscale_lounge: 'Upscale',
+  cocktail_lounge: 'Cocktails',
+  upscale_club: 'Upscale',
+};
+
+interface Section {
+  key: string;
+  title: string;
+  venue_count: number;
+  expanded?: boolean;
+  venues: any[];
+}
+
+interface WorldData {
+  world: string;
+  title: string;
+  tone: string;
+  gradient: [string, string];
+  city: string;
+  dial_active: string;
+  dials: string[];
+  neighbors: string[];
+  section_count: number;
+  total_venues: number;
+  sections: Section[];
+}
+
+export default function SeeAllScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
+  
+  const [worldData, setWorldData] = useState<WorldData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeDial, setActiveDial] = useState<string>('all');
+  const [userId, setUserId] = useState<number | null>(null);
+
+  const world = (params.world as string) || (params.cuisine as string) || (params.title as string) || 'caribbean';
+  const city = (params.city as string) || 'Manhattan';
+
+  useEffect(() => {
+    AsyncStorage.getItem('@lumina_user_id').then(id => {
+      if (id) setUserId(parseInt(id));
+    });
+  }, []);
+
+  useEffect(() => {
+    fetchWorld(activeDial);
+  }, [world, city]);
+
+  const fetchWorld = async (dial: string = 'all') => {
+    try {
+      setLoading(true);
+      
+      const rawKey = world.toLowerCase().trim();
+      const worldKey = WORLD_ALIASES[rawKey] || rawKey.replace(/\s+/g, '_');
+      
+      const initialDial = DIAL_ALIASES[rawKey] || dial;
+      const url = `${API_BASE}/api/perspectives/${worldKey}?city=${encodeURIComponent(city)}&dial=${initialDial}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        console.error('Perspectives API error:', response.status);
+        setWorldData(null);
+        return;
+      }
+      
+      const data = await response.json();
+      setWorldData(data);
+      setActiveDial(data.dial_active || 'all');
+      
+    } catch (error) {
+      console.error('SeeAll fetch error:', error);
+      setWorldData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDialTap = (dial: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveDial(dial);
+    fetchWorld(dial);
+  };
+
+  const goToVenue = (venue: any, sectionKey: string) => {
+    if (userId) {
+      const context = `seeall_${worldData?.world || world.toLowerCase()}_${sectionKey}`;
+      trackBehavior(venue.id, 'view', context);
+    }
+    router.push(`/venue/${venue.id}`);
+  };
+
+  const getImageUrl = (venue: any): string | null => {
+    if (venue.image_url) {
+      if (venue.image_url.startsWith('/')) {
+        return `${API_BASE}${venue.image_url}`;
+      }
+      return venue.image_url;
+    }
+    return null;
+  };
+
+  const renderCard = (venue: any, sectionKey: string, venueIndex: number) => {
+    const imageUrl = getImageUrl(venue);
+    if (!imageUrl) return null;
+    
+    return (
+      <AnimatedPressable
+        key={`${sectionKey}_${venue.id}_${venueIndex}`}
+        style={styles.card}
+        onPress={() => goToVenue(venue, sectionKey)}
+      >
+        <View style={styles.cardImageContainer}>
+          <Image 
+            source={{ uri: imageUrl }} 
+            style={styles.cardImage} 
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.9)']}
+            style={styles.cardGradient}
+          />
+          <View style={styles.cardOverlay}>
+            <Text style={styles.cardName} numberOfLines={2}>
+              {venue.name || 'Unknown'}
+            </Text>
+            <Text style={styles.cardMeta} numberOfLines={1}>
+              {venue.neighborhood || venue.cuisine_primary || ''}
+            </Text>
+          </View>
+        </View>
+      </AnimatedPressable>
+    );
+  };
+
+  const renderDials = () => {
+    if (!worldData?.dials) return null;
+    
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.dialsContainer}
+      >
+        {worldData.dials.map((dial, index) => {
+          const isActive = dial === activeDial;
+          const label = DIAL_LABELS[dial] || dial.split('_').map(w => 
+            w.charAt(0).toUpperCase() + w.slice(1)
+          ).join(' ');
+          const activeColor = DIAL_COLORS[dial] || '#6366f1';
+          
+          return (
+            <TouchableOpacity
+              key={`dial_${dial}_${index}`}
+              style={[
+                styles.dialPill, 
+                isActive && { backgroundColor: activeColor, borderColor: activeColor }
+              ]}
+              onPress={() => handleDialTap(dial)}
+              activeOpacity={0.8}
+            >
+              <Text style={[
+                styles.dialText, 
+                isActive && styles.dialTextActive
+              ]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    );
+  };
+
+  const gradientColors = worldData?.gradient || ['#101015', '#08080a'];
+
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={gradientColors as [string, string]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Back Button */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.canGoBack() ? router.back() : router.replace('/(tabs)/explore');
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.zinc[400]} />
+        </TouchableOpacity>
+        
+        {/* Header */}
+        <View style={styles.identity}>
+          <Text style={styles.categoryTitle}>{worldData?.title || world}</Text>
+          <Text style={styles.categorySubtitle}>{worldData?.tone || ''}</Text>
+          {worldData && (
+            <View style={styles.countBadge}>
+              <Ionicons name="location" size={12} color={colors.violet[400]} />
+              <Text style={styles.countText}>{worldData.total_venues} spots in {city}</Text>
+            </View>
+          )}
+        </View>
+        
+        {/* Dials */}
+        {renderDials()}
+        
+        {/* Content */}
+        {loading ? (
+          <>
+            <SkeletonSection />
+            <SkeletonSection />
+          </>
+        ) : !worldData || worldData.sections.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="compass-outline" size={48} color={colors.zinc[700]} />
+            <Text style={styles.emptyText}>{worldData?.title || world} spots coming soon</Text>
+            <Text style={styles.emptySubtext}>We're curating the best for you</Text>
+          </View>
+        ) : (
+          worldData.sections.map((section, sectionIndex) => (
+            <View key={`section_${section.key}_${sectionIndex}`} style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                <View style={styles.sectionMeta}>
+                  {section.expanded && (
+                    <View style={styles.expandedBadge}>
+                      <Ionicons name="car-outline" size={12} color={colors.zinc[500]} />
+                      <Text style={styles.expandedText}>Worth the ride</Text>
+                    </View>
+                  )}
+                  <Text style={styles.venueCount}>{section.venues.length}</Text>
+                </View>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sectionScroll}
+              >
+                {section.venues.map((venue, venueIndex) => renderCard(venue, section.key, venueIndex))}
+              </ScrollView>
+            </View>
+          ))
+        )}
+        
+        {/* Neighbors */}
+        {worldData?.neighbors && worldData.neighbors.length > 0 && (
+          <View style={styles.neighborsSection}>
+            <Text style={styles.neighborsTitle}>You might also like</Text>
+            <View style={styles.neighborsRow}>
+              {worldData.neighbors.map((neighbor, index) => (
+                <TouchableOpacity
+                  key={`neighbor_${neighbor}_${index}`}
+                  style={styles.neighborPill}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push({
+                      pathname: '/see-all',
+                      params: { world: neighbor, city }
+                    });
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.neighborText}>
+                    {neighbor.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.zinc[500]} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+        
+        <View style={{ height: 120 }} />
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.black,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  backButton: {
+    width: 48,
+    height: 48,
+    marginLeft: 16,
+    marginTop: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  identity: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
+  categoryTitle: {
+    fontSize: 38,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: 8,
+  },
+  categorySubtitle: {
+    fontSize: 15,
+    color: colors.zinc[400],
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  countBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  countText: {
+    fontSize: 13,
+    color: colors.violet[400],
+    fontWeight: '500',
+  },
+  dialsContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    gap: 8,
+  },
+  dialPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  dialText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.zinc[400],
+  },
+  dialTextActive: {
+    color: '#fff',
+  },
+  // Loading skeleton styles
+  skeletonCard: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 16,
+    backgroundColor: colors.zinc[900],
+    marginRight: 12,
+    padding: 12,
+    justifyContent: 'flex-end',
+  },
+  skeletonImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 60,
+    backgroundColor: colors.zinc[800],
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  skeletonText: {
+    height: 14,
+    backgroundColor: colors.zinc[800],
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonTextShort: {
+    height: 12,
+    width: '60%',
+    backgroundColor: colors.zinc[800],
+    borderRadius: 4,
+  },
+  skeletonSectionTitle: {
+    height: 16,
+    width: 120,
+    backgroundColor: colors.zinc[800],
+    borderRadius: 4,
+  },
+  // Empty state
+  emptyContainer: {
+    paddingTop: 80,
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.zinc[500],
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: colors.zinc[600],
+  },
+  // Sections
+  section: {
+    marginBottom: 28,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.zinc[200],
+  },
+  sectionMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  expandedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  expandedText: {
+    fontSize: 11,
+    color: colors.zinc[500],
+    fontWeight: '500',
+  },
+  venueCount: {
+    fontSize: 13,
+    color: colors.zinc[600],
+    fontWeight: '500',
+  },
+  sectionScroll: {
+    paddingHorizontal: 24,
+  },
+  // Cards
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  cardImageContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '65%',
+  },
+  cardOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 12,
+    paddingBottom: 16,
+  },
+  cardName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  cardMeta: {
+    fontSize: 13,
+    color: colors.zinc[400],
+  },
+  // Neighbors
+  neighborsSection: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: colors.zinc[900],
+    marginTop: 16,
+  },
+  neighborsTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.zinc[500],
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  neighborsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  neighborPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: colors.zinc[900],
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  neighborText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.zinc[300],
+    marginRight: 4,
+  },
+});
