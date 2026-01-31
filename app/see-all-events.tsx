@@ -52,11 +52,20 @@ const AnimatedPressable = ({ children, style, onPress }: any) => {
   );
 };
 
+// Timezone-safe date parser
+const parseEventDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  if (dateString.includes("T")) return new Date(dateString);
+  const parts = dateString.split("-").map(p => parseInt(p));
+  if (parts.length === 3) return new Date(parts[0], parts[1] - 1, parts[2]);
+  return new Date(dateString);
+};
+
 // ✅ NORMALIZE EVENT DATE - handles both date and start_time fields
 const getEventDate = (event: any): Date | null => {
-  if (event.date) return new Date(event.date);
-  if (event.start_time) return new Date(event.start_time);
-  if (event.time) return new Date(event.time);
+  if (event.date) return parseEventDate(event.date);
+  if (event.start_time) return parseEventDate(event.start_time);
+  if (event.time) return parseEventDate(event.time);
   return null;
 };
 

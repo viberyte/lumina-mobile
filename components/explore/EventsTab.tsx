@@ -13,6 +13,24 @@ const CARD_WIDTH = 170;
 const MAX_SECTIONS = 6;
 const HERO_HEIGHT = 280;
 
+// Timezone-safe date parser
+const parseEventDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  
+  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
+  if (dateString.includes('T')) {
+    return new Date(dateString);
+  }
+  
+  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
+  const parts = dateString.split('-').map(p => parseInt(p));
+  if (parts.length === 3) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  
+  return new Date(dateString);
+};
+
 // Animated pressable card wrapper
 const AnimatedPressable = ({ children, style, onPress }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
@@ -99,7 +117,14 @@ const HeroModule = ({ event, onPress }: { event: Event | null; onPress: () => vo
         
         <View style={styles.heroCard}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.heroImage} contentFit="cover" transition={300} />
+            <Image 
+              source={{ uri: imageUrl }} 
+              style={styles.heroImage} 
+              contentFit="cover" 
+              transition={200}
+              priority="high"
+              cachePolicy="memory-disk"
+            />
           ) : (
             <View style={styles.heroPlaceholder}>
               <Ionicons name="musical-notes" size={64} color={colors.zinc[700]} />
@@ -194,15 +219,17 @@ interface EventsTabProps {
   filters?: EventsFilters;
 }
 
-// ✅ NORMALIZE EVENT DATE - handles both date and start_time fields
+// Get event date using timezone-safe parser
 const getEventDate = (event: Event): Date | null => {
-  if (event.date) return new Date(event.date);
-  if (event.start_time) return new Date(event.start_time);
+  if (event.date) return parseEventDate(event.date);
+  if (event.start_time) return parseEventDate(event.start_time);
   return null;
 };
 
 // City normalization helper
 const normalizeCity = (city?: string): string => {
+  if (city === 'Near Me') return 'New York';
+  
   const cityMap: { [key: string]: string } = {
     'Manhattan': 'New York',
     'Brooklyn': 'New York',
@@ -302,11 +329,9 @@ const categorizeByGenre = (event: Event): string | null => {
 
 // Select best hero event (tonight's most appealing event with an image)
 const selectHeroEvent = (events: Event[]): Event | null => {
-  // Priority: Tonight events with images, sorted by those with genre tags
   const tonightWithImages = events
     .filter(e => isTonight(e) && (e.image_url || e.cover_image_url))
     .sort((a, b) => {
-      // Prefer events with genre tags
       const aScore = (a.music_genre ? 1 : 0) + (a.venue_name ? 1 : 0);
       const bScore = (b.music_genre ? 1 : 0) + (b.venue_name ? 1 : 0);
       return bScore - aScore;
@@ -314,7 +339,6 @@ const selectHeroEvent = (events: Event[]): Event | null => {
   
   if (tonightWithImages.length > 0) return tonightWithImages[0];
   
-  // Fallback: Any upcoming event with image
   const withImages = events
     .filter(e => e.image_url || e.cover_image_url)
     .sort((a, b) => {
@@ -356,7 +380,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
   const applyFilters = (events: Event[]): Event[] => {
     let filtered = [...events];
 
-    // Search query filter
     if (filters.searchQuery) {
       const query = filters.searchQuery.toLowerCase();
       filtered = filtered.filter(e =>
@@ -367,7 +390,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       );
     }
 
-    // Genre filter
     if (filters.genre && filters.genre.length > 0) {
       filtered = filtered.filter(e => {
         const eventGenre = (e.music_genre || '').toLowerCase();
@@ -379,7 +401,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       });
     }
 
-    // Day filter
     if (filters.day && filters.day.length > 0) {
       const today = new Date();
       
@@ -401,7 +422,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       });
     }
 
-    // Type filter
     if (filters.type && filters.type.length > 0) {
       filtered = filtered.filter(e => {
         const eventType = (e.event_type || '').toLowerCase();
@@ -413,7 +433,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       });
     }
 
-    // Sort by date
     filtered.sort((a, b) => {
       const aDate = getEventDate(a);
       const bDate = getEventDate(b);
@@ -431,7 +450,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
     return result;
   }, [allEvents, filters.searchQuery, filters.genre, filters.day, filters.type]);
 
-  // Select hero event (only when no filters active for clean UX)
   const heroEvent = useMemo(() => {
     const hasActiveFilters = filters.searchQuery || 
       (filters.genre && filters.genre.length > 0) ||
@@ -445,7 +463,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
   const sections = useMemo(() => {
     const usedEventIds = new Set<number>();
     
-    // Exclude hero event from sections
     if (heroEvent) {
       usedEventIds.add(heroEvent.id);
     }
@@ -464,7 +481,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       'All Events': [],
     };
     
-    // First pass: Tonight events
     filteredEvents.forEach(event => {
       if (usedEventIds.has(event.id)) return;
       if (isTonight(event) && sectionMap['🔥 Tonight'].length < 10) {
@@ -473,7 +489,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       }
     });
     
-    // Second pass: This Weekend
     filteredEvents.forEach(event => {
       if (usedEventIds.has(event.id)) return;
       if (isThisWeekend(event) && sectionMap['This Weekend'].length < 10) {
@@ -482,7 +497,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       }
     });
     
-    // Third pass: Genre categories
     filteredEvents.forEach(event => {
       if (usedEventIds.has(event.id)) return;
       
@@ -493,7 +507,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       }
     });
     
-    // Fourth pass: Remaining events
     filteredEvents.forEach(event => {
       if (usedEventIds.has(event.id)) return;
       if (sectionMap['All Events'].length < 10) {
@@ -542,7 +555,13 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
       >
         <View style={styles.imageContainer}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.image} contentFit="cover" transition={200} />
+            <Image 
+              source={{ uri: imageUrl }} 
+              style={styles.image} 
+              contentFit="cover" 
+              transition={200}
+              cachePolicy="memory-disk"
+            />
           ) : (
             <View style={styles.placeholderImage}>
               <Ionicons name="ticket-outline" size={32} color={colors.zinc[700]} />
@@ -599,7 +618,6 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Hero Module */}
       {heroEvent && (
         <HeroModule 
           event={heroEvent} 
@@ -640,257 +658,50 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 80,
-    gap: 12,
-  },
-  loadingText: {
-    color: colors.zinc[500],
-    fontSize: typography.sizes.sm,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 80,
-    gap: 12,
-  },
-  emptyText: {
-    color: colors.zinc[500],
-    fontSize: typography.sizes.md,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: colors.zinc[600],
-    fontSize: typography.sizes.sm,
-  },
-  // Hero Module Styles
-  heroContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  heroGlow: {
-    position: 'absolute',
-    top: spacing.md + 10,
-    left: spacing.lg + 10,
-    right: spacing.lg + 10,
-    bottom: 10,
-    backgroundColor: colors.violet[500],
-    borderRadius: 20,
-    transform: [{ scale: 1.02 }],
-  },
-  heroCard: {
-    height: HERO_HEIGHT,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.zinc[900],
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.zinc[800],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '70%',
-  },
-  heroBadge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#fb923c',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  heroBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#000',
-    letterSpacing: 0.5,
-  },
-  heroContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacing.md,
-  },
-  heroTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.white,
-    marginBottom: 8,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  heroMeta: {
-    gap: 6,
-  },
-  heroMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  heroVenue: {
-    fontSize: 14,
-    color: colors.zinc[300],
-    fontWeight: '500',
-    flex: 1,
-  },
-  heroDate: {
-    fontSize: 13,
-    color: colors.zinc[300],
-    fontWeight: '500',
-  },
-  heroDateDivider: {
-    fontSize: 13,
-    color: colors.zinc[500],
-  },
-  heroTime: {
-    fontSize: 13,
-    color: colors.violet[400],
-    fontWeight: '600',
-  },
-  heroGenreTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  heroGenreText: {
-    fontSize: 11,
-    color: colors.violet[400],
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  // Section styles
-  section: {
-    marginTop: spacing.xl,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  sectionTitle: {
-    fontSize: typography.sizes.md,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  sectionTitleHighlight: {
-    color: '#fb923c',
-  },
-  seeAllRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: colors.violet[400],
-    fontWeight: '600',
-  },
-  horizontalScroll: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  card: {
-    width: CARD_WIDTH,
-    backgroundColor: colors.zinc[900],
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  imageContainer: {
-    width: '100%',
-    height: 130,
-    position: 'relative',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholderImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.zinc[800],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dateBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  dateBadgeTonight: {
-    backgroundColor: '#fb923c',
-  },
-  dateBadgeTomorrow: {
-    backgroundColor: '#8b5cf6',
-  },
-  dateBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  dateBadgeTextDark: {
-    color: '#000',
-  },
-  cardContent: {
-    padding: spacing.sm,
-  },
-  eventName: {
-    fontSize: typography.sizes.sm,
-    fontWeight: '600',
-    color: colors.white,
-    marginBottom: 4,
-    lineHeight: 18,
-  },
-  eventVenue: {
-    fontSize: typography.sizes.xs,
-    color: colors.zinc[500],
-    marginBottom: 4,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  eventTime: {
-    fontSize: typography.sizes.xs,
-    color: colors.violet[400],
-    fontWeight: '500',
-  },
-  bottomPadding: {
-    height: 100,
-  },
+  container: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 12 },
+  loadingText: { color: colors.zinc[500], fontSize: typography.sizes.sm },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 12 },
+  emptyText: { color: colors.zinc[500], fontSize: typography.sizes.md, fontWeight: '600' },
+  emptySubtext: { color: colors.zinc[600], fontSize: typography.sizes.sm },
+  heroContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, marginBottom: spacing.sm },
+  heroGlow: { position: 'absolute', top: spacing.md + 10, left: spacing.lg + 10, right: spacing.lg + 10, bottom: 10, backgroundColor: colors.violet[500], borderRadius: 20, transform: [{ scale: 1.02 }] },
+  heroCard: { height: HERO_HEIGHT, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.zinc[900] },
+  heroImage: { width: '100%', height: '100%' },
+  heroPlaceholder: { width: '100%', height: '100%', backgroundColor: colors.zinc[800], justifyContent: 'center', alignItems: 'center' },
+  heroGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
+  heroBadge: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fb923c', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  heroBadgeText: { fontSize: 10, fontWeight: '700', color: '#000', letterSpacing: 0.5 },
+  heroContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.md },
+  heroTitle: { fontSize: 22, fontWeight: '700', color: colors.white, marginBottom: 8, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  heroMeta: { gap: 6 },
+  heroMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroVenue: { fontSize: 14, color: colors.zinc[300], fontWeight: '500', flex: 1 },
+  heroDate: { fontSize: 13, color: colors.zinc[300], fontWeight: '500' },
+  heroDateDivider: { fontSize: 13, color: colors.zinc[500] },
+  heroTime: { fontSize: 13, color: colors.violet[400], fontWeight: '600' },
+  heroGenreTag: { alignSelf: 'flex-start', backgroundColor: 'rgba(139, 92, 246, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 4 },
+  heroGenreText: { fontSize: 11, color: colors.violet[400], fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  section: { marginTop: spacing.xl },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
+  sectionTitle: { fontSize: typography.sizes.md, fontWeight: '600', color: colors.white },
+  sectionTitleHighlight: { color: '#fb923c' },
+  seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  seeAllText: { fontSize: 14, color: colors.violet[400], fontWeight: '600' },
+  horizontalScroll: { paddingHorizontal: spacing.lg, gap: spacing.md },
+  card: { width: CARD_WIDTH, backgroundColor: colors.zinc[900], borderRadius: 12, overflow: 'hidden' },
+  imageContainer: { width: '100%', height: 130, position: 'relative' },
+  image: { width: '100%', height: '100%' },
+  placeholderImage: { width: '100%', height: '100%', backgroundColor: colors.zinc[800], justifyContent: 'center', alignItems: 'center' },
+  dateBadge: { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0, 0, 0, 0.75)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  dateBadgeTonight: { backgroundColor: '#fb923c' },
+  dateBadgeTomorrow: { backgroundColor: '#8b5cf6' },
+  dateBadgeText: { fontSize: 11, fontWeight: '600', color: colors.white },
+  dateBadgeTextDark: { color: '#000' },
+  cardContent: { padding: spacing.sm },
+  eventName: { fontSize: typography.sizes.sm, fontWeight: '600', color: colors.white, marginBottom: 4, lineHeight: 18 },
+  eventVenue: { fontSize: typography.sizes.xs, color: colors.zinc[500], marginBottom: 4 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  eventTime: { fontSize: typography.sizes.xs, color: colors.violet[400], fontWeight: '500' },
+  bottomPadding: { height: 100 },
 });

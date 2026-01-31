@@ -17,8 +17,17 @@ export default function EventCard({ event }: EventCardProps) {
     router.push(`/event/${event.id}`);
   };
 
+  // Timezone-safe date parser
+  const parseEventDate = (dateString: string): Date => {
+    if (!dateString) return new Date();
+    if (dateString.includes("T")) return new Date(dateString);
+    const parts = dateString.split("-").map(p => parseInt(p));
+    if (parts.length === 3) return new Date(parts[0], parts[1] - 1, parts[2]);
+    return new Date(dateString);
+  };
+
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseEventDate(dateString);
     const month = date.toLocaleDateString('en-US', { month: 'short' });
     const day = date.getDate();
     return { month, day };

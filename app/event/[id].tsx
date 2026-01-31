@@ -30,6 +30,58 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEADER_HEIGHT = 400;
 const API_URL = 'https://lumina.viberyte.com';
 
+// Timezone-safe date parser
+const parseEventDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  
+  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
+  if (dateString.includes("T")) {
+    return new Date(dateString);
+  }
+  
+  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
+  const parts = dateString.split("-").map(p => parseInt(p));
+  if (parts.length === 3) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  
+  return new Date(dateString);
+};
+
+// Format date for display
+const formatEventDate = (dateString: string): string => {
+  const date = parseEventDate(dateString);
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  const day = date.getDate();
+  return \`\${month} \${day}\`;
+};
+
+// Timezone-safe date parser
+const parseEventDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  
+  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
+  if (dateString.includes('T')) {
+    return new Date(dateString);
+  }
+  
+  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
+  const parts = dateString.split('-').map(p => parseInt(p));
+  if (parts.length === 3) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  
+  return new Date(dateString);
+};
+
+// Format date for display
+const formatEventDate = (dateString: string): string => {
+  const date = parseEventDate(dateString);
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  const day = date.getDate();
+  return `${month} ${day}`;
+};
+
 interface Package {
   id: string;
   name: string;
@@ -463,7 +515,7 @@ export default function EventDetailScreen() {
           <View style={styles.dateTimeRow}>
             <View style={styles.dateTimeBadge}>
               <Ionicons name="calendar" size={16} color={colors.violet[400]} />
-              <Text style={styles.dateTimeText}>{event.date}</Text>
+              <Text style={styles.dateTimeText}>{formatEventDate(event.date)}</Text>
             </View>
             {event.time && (
               <View style={styles.dateTimeBadge}>
