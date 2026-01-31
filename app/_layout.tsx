@@ -45,6 +45,18 @@ function RootLayoutNav() {
     }
   };
 
+  // Re-check auth whenever segments change (navigation happens)
+  useEffect(() => {
+    if (!isReady) return;
+    
+    const inTabs = segments[0] === '(tabs)';
+    
+    // If user just navigated to tabs, re-check auth to catch post-onboarding state
+    if (inTabs) {
+      checkAuthStatus();
+    }
+  }, [segments, isReady]);
+
   useEffect(() => {
     if (!isReady || isLoggedIn === null) return;
 
