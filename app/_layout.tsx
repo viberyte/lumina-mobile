@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../contexts/ToastContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import authService from '../services/auth';
 import { View, ActivityIndicator } from 'react-native';
 import { colors } from '../theme';
 
@@ -20,15 +21,22 @@ function RootLayoutNav() {
 
   const checkAuthStatus = async () => {
     try {
-      // Check if user has logged in (has auth token or user data)
-      const authToken = await AsyncStorage.getItem('@lumina_auth_token');
-const user = await AsyncStorage.getItem('@lumina_user');
-const isGuest = await AsyncStorage.getItem('@lumina_is_guest');
-const persona = await AsyncStorage.getItem('@lumina_persona');
+      // Try to restore user session from AuthService
+      const user = await authService.getCurrentUser();
+      
+      if (user) {
+        // User session restored successfully
+        setIsLoggedIn(true);
+      } else {
+        // Fallback: check AsyncStorage directly
+        const authToken = await AsyncStorage.getItem('@lumina_auth_token');
+        const userData = await AsyncStorage.getItem('@lumina_user');
+        const isGuest = await AsyncStorage.getItem('@lumina_is_guest');
+        const persona = await AsyncStorage.getItem('@lumina_persona');
 
-// User is "logged in" if they have token, user data, guest, or completed onboarding
-const loggedIn = !!(authToken || user || isGuest === 'true' || persona);
-      setIsLoggedIn(loggedIn);
+        const loggedIn = !!(authToken || userData || isGuest === 'true' || persona);
+        setIsLoggedIn(loggedIn);
+      }
     } catch (error) {
       console.log('Error checking auth:', error);
       setIsLoggedIn(false);
