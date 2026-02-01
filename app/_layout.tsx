@@ -14,6 +14,7 @@ function RootLayoutNav() {
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [previousSegment, setPreviousSegment] = useState<string | undefined>();
 
   useEffect(() => {
     checkAuthStatus();
@@ -21,14 +22,11 @@ function RootLayoutNav() {
 
   const checkAuthStatus = async () => {
     try {
-      // Try to restore user session from AuthService
       const user = await authService.getCurrentUser();
       
       if (user) {
-        // User session restored successfully
         setIsLoggedIn(true);
       } else {
-        // Fallback: check AsyncStorage directly
         const authToken = await AsyncStorage.getItem('@lumina_auth_token');
         const userData = await AsyncStorage.getItem('@lumina_user');
         const isGuest = await AsyncStorage.getItem('@lumina_is_guest');
@@ -45,18 +43,28 @@ function RootLayoutNav() {
     }
   };
 
-  // Re-check auth whenever segments change (navigation happens)
+  // Re-check auth when navigating to tabs, with delay if coming from onboarding
   useEffect(() => {
     if (!isReady) return;
     
-    const inTabs = segments[0] === '(tabs)';
+    const currentSegment = segments[0];
+    const inTabs = currentSegment === '(tabs)';
+    const wasOnboarding = previousSegment === 'onboarding';
     
-    // If user just navigated to tabs, re-check auth to catch post-onboarding state
-    if (inTabs) {
+    if (inTabs && wasOnboarding) {
+      // Coming from onboarding - wait 300ms for AsyncStorage to finish
+      setTimeout(() => {
+        checkAuthStatus();
+      }, 300);
+    } else if (inTabs) {
+      // Regular navigation to tabs
       checkAuthStatus();
     }
+    
+    setPreviousSegment(currentSegment);
   }, [segments, isReady]);
 
+  // Handle redirects
   useEffect(() => {
     if (!isReady || isLoggedIn === null) return;
 
@@ -68,7 +76,6 @@ function RootLayoutNav() {
 
     const isAuthScreen = inLogin || inRegister || inOnboarding || inPartnerOnboarding || inForgotPassword;
 
-    // If not logged in and not on an auth screen, redirect to login
     if (!isLoggedIn && !isAuthScreen) {
       router.replace('/login');
     }
