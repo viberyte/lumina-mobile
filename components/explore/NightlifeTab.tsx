@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   Dimensions,
   Animated,
   Pressable,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,279 +18,260 @@ import * as Haptics from 'expo-haptics';
 import { colors, spacing } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
-const CARD_HEIGHT = 120;
-const HERO_HEIGHT = 200;
+const CARD_WIDTH = 140;
+const CARD_HEIGHT = 180;
+const CHIP_HEIGHT = 36;
+const SOUND_CHIP_HEIGHT = 32;
 
 const API_BASE = 'https://lumina.viberyte.com';
 
-interface NightlifeWorld {
-  key: string;
-  title: string;
-  subtitle: string;
-  gradient: [string, string];
-  glowColor: string;
-  fullWidth?: boolean;
-}
-
-// 5 Vibe Lenses - Primary Navigation
-const NIGHTLIFE_WORLDS: NightlifeWorld[] = [
-  { 
-    key: 'outside', 
-    title: 'Outside', 
-    subtitle: 'Afrobeats, Hip-Hop & R&B', 
-    gradient: ['#3d2814', '#1a110a'],
-    glowColor: '#FF8C00',
-    fullWidth: true 
-  },
-  { 
-    key: 'latin_nights', 
-    title: 'Latin Nights', 
-    subtitle: 'Reggaeton, Salsa & Bachata', 
-    gradient: ['#3d1420', '#1a0a10'],
-    glowColor: '#F97316',
-  },
-  { 
-    key: 'low_light', 
-    title: 'Low Light', 
-    subtitle: 'Lounges & cocktail bars', 
-    gradient: ['#241430', '#100a18'],
-    glowColor: '#A855F7',
-  },
-  { 
-    key: 'pulse', 
-    title: 'Pulse', 
-    subtitle: 'EDM, House & Techno', 
-    gradient: ['#142030', '#0a1018'],
-    glowColor: '#3B82F6',
-  },
-  { 
-    key: 'main_stage', 
-    title: 'Main Stage', 
-    subtitle: 'Top 40 & open format', 
-    gradient: ['#301428', '#180a14'],
-    glowColor: '#EC4899',
-  },
-];
-
-// Classic Venue Types
-const VENUE_WORLDS: NightlifeWorld[] = [
-  { 
-    key: 'lounges', 
-    title: 'Lounges', 
-    subtitle: 'Conversation-friendly', 
-    gradient: ['#1a2018', '#0d100c'],
-    glowColor: '#22C55E',
-  },
-  { 
-    key: 'clubs', 
-    title: 'Clubs', 
-    subtitle: 'Peak-energy nightlife', 
-    gradient: ['#201820', '#100c10'],
-    glowColor: '#6366F1',
-  },
-  { 
-    key: 'rooftops', 
-    title: 'Rooftops', 
-    subtitle: 'City views & open air', 
-    gradient: ['#182024', '#0c1014'],
-    glowColor: '#06B6D4',
-  },
-  { 
-    key: 'bars', 
-    title: 'Bars', 
-    subtitle: 'Drinks & good company', 
-    gradient: ['#24201a', '#14100c'],
-    glowColor: '#F59E0B',
-  },
-];
-
-interface HeroVenue {
+interface Venue {
   id: number;
   name: string;
-  image_url: string;
-  neighborhood: string;
-  energy_level?: string;
-  score_group_night?: number;
+  image_url: string | null;
+  neighborhood: string | null;
+  city: string;
+  vibe_tags: string[];
+  rating: number | null;
+  energy_level: string | null;
 }
 
-// Animated World Card - Clean, minimal
-const WorldCard = ({ 
-  world, 
-  onPress, 
-  fullWidth = false 
+interface Section {
+  key: string;
+  title: string;
+  emoji: string;
+  venue_count: number;
+  total_matching: number;
+  areas_included: string[];
+  was_expanded: boolean;
+  venues: Venue[];
+}
+
+interface Mood {
+  key: string;
+  label: string;
+}
+
+interface Sound {
+  key: string;
+  label: string;
+  emoji: string;
+}
+
+interface NightlifeData {
+  mode: string;
+  city: string;
+  mood: string;
+  sound: string;
+  moods: Mood[];
+  sounds: Sound[];
+  section_count: number;
+  total_venues: number;
+  sections: Section[];
+}
+
+// Mood Chip Component (Intent row)
+const MoodChip = ({ 
+  mood, 
+  isActive, 
+  onPress 
 }: { 
-  world: NightlifeWorld; 
+  mood: Mood; 
+  isActive: boolean; 
   onPress: () => void;
-  fullWidth?: boolean;
 }) => {
   const scale = useRef(new Animated.Value(1)).current;
-  const glowOpacity = useRef(new Animated.Value(0)).current;
 
   const handlePressIn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.parallel([
-      Animated.spring(scale, {
-        toValue: 0.97,
-        useNativeDriver: true,
-        speed: 50,
-        bounciness: 4,
-      }),
-      Animated.timing(glowOpacity, {
-        toValue: 1,
-        duration: 120,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
   };
 
   const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scale, {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 50,
-        bounciness: 4,
-      }),
-      Animated.timing(glowOpacity, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
   };
 
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[
-        styles.cardWrapper,
-        fullWidth && styles.cardWrapperFullWidth,
-        { transform: [{ scale }] }
-      ]}>
-        {/* Subtle glow on press */}
-        <Animated.View
-          style={[
-            styles.cardGlow,
-            {
-              opacity: glowOpacity,
-              shadowColor: world.glowColor,
-            },
-          ]}
-        />
-        
-        <LinearGradient
-          colors={world.gradient}
-          style={[styles.worldCard, fullWidth && styles.worldCardFullWidth]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.worldCardContent}>
-            <Text style={styles.worldTitle}>{world.title}</Text>
-            <Text style={styles.worldSubtitle}>{world.subtitle}</Text>
-          </View>
-        </LinearGradient>
+      <Animated.View 
+        style={[styles.moodChip, isActive && styles.moodChipActive, { transform: [{ scale }] }]}
+      >
+        <Text style={[styles.moodChipText, isActive && styles.moodChipTextActive]}>
+          {mood.label}
+        </Text>
       </Animated.View>
     </Pressable>
   );
 };
 
-// Hero Module - Featured venue
-const HeroModule = ({ 
-  venue, 
-  onPress,
-  cityName,
+// Sound Chip Component (Culture row)
+const SoundChip = ({ 
+  sound, 
+  isActive, 
+  onPress 
 }: { 
-  venue: HeroVenue | null; 
+  sound: Sound; 
+  isActive: boolean; 
   onPress: () => void;
-  cityName: string;
 }) => {
   const scale = useRef(new Animated.Value(1)).current;
-  const glowOpacity = useRef(new Animated.Value(0.25)).current;
-
-  useEffect(() => {
-    // Subtle pulsing glow
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowOpacity, {
-          toValue: 0.45,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowOpacity, {
-          toValue: 0.25,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
 
   const handlePressIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Animated.spring(scale, {
-      toValue: 0.98,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
   };
 
   const handlePressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
   };
 
-  if (!venue) return null;
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View 
+        style={[styles.soundChip, isActive && styles.soundChipActive, { transform: [{ scale }] }]}
+      >
+        <Text style={[styles.soundChipEmoji]}>{sound.emoji}</Text>
+        <Text style={[styles.soundChipText, isActive && styles.soundChipTextActive]}>
+          {sound.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Venue Card Component
+const VenueCard = ({ 
+  venue, 
+  onPress 
+}: { 
+  venue: Venue; 
+  onPress: () => void;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+  };
 
   const imageUrl = venue.image_url?.startsWith('/') 
     ? `${API_BASE}${venue.image_url}` 
     : venue.image_url;
 
+  const displayTags = venue.vibe_tags?.slice(0, 2) || [];
+
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[styles.heroContainer, { transform: [{ scale }] }]}>
-        <Animated.View style={[styles.heroGlow, { opacity: glowOpacity }]} />
-        
-        <View style={styles.heroCard}>
+      <Animated.View style={[styles.venueCard, { transform: [{ scale }] }]}>
+        <View style={styles.venueImageContainer}>
           {imageUrl ? (
             <Image 
               source={{ uri: imageUrl }} 
-              style={styles.heroImage} 
+              style={styles.venueImage} 
               contentFit="cover" 
-              transition={300} 
+              transition={200} 
             />
           ) : (
             <LinearGradient
-              colors={['#2a1a0a', '#0d0805']}
-              style={styles.heroPlaceholder}
+              colors={['#1a1a1a', '#0d0d0d']}
+              style={styles.venueImagePlaceholder}
             />
           )}
-          
           <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.95)']}
-            locations={[0, 0.5, 1]}
-            style={styles.heroGradient}
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.venueImageGradient}
           />
+        </View>
+        
+        <View style={styles.venueInfo}>
+          <Text style={styles.venueName} numberOfLines={2}>{venue.name}</Text>
           
-          <View style={styles.heroBadge}>
-            <View style={styles.heroBadgeDot} />
-            <Text style={styles.heroBadgeText}>FEATURED</Text>
-          </View>
+          {venue.neighborhood && (
+            <Text style={styles.venueNeighborhood} numberOfLines={1}>
+              {venue.neighborhood}{venue.city && venue.city !== 'Manhattan' ? `, ${venue.city}` : ''}
+            </Text>
+          )}
           
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle} numberOfLines={2}>{venue.name}</Text>
-            <View style={styles.heroMetaRow}>
-              <Ionicons name="location-outline" size={13} color={colors.zinc[400]} />
-              <Text style={styles.heroLocation}>{venue.neighborhood}</Text>
+          {displayTags.length > 0 && (
+            <View style={styles.vibeTagsRow}>
+              {displayTags.map((tag, idx) => (
+                <View key={idx} style={styles.vibeTag}>
+                  <Text style={styles.vibeTagText}>{tag}</Text>
+                </View>
+              ))}
             </View>
-          </View>
+          )}
         </View>
       </Animated.View>
     </Pressable>
+  );
+};
+
+// Section Row Component
+const SectionRow = ({ 
+  section, 
+  onVenuePress,
+  onSeeAll,
+  primaryCity,
+}: { 
+  section: Section; 
+  onVenuePress: (venue: Venue) => void;
+  onSeeAll: () => void;
+  primaryCity: string;
+}) => {
+  const showExpansionHint = section.was_expanded && section.areas_included.length > 1;
+  const otherAreas = section.areas_included.filter(a => a !== primaryCity);
+
+  return (
+    <View style={styles.sectionContainer}>
+      <Pressable onPress={onSeeAll} style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionEmoji}>{section.emoji}</Text>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          {showExpansionHint && otherAreas.length > 0 && (
+            <Text style={styles.expansionHint}>• {otherAreas[0]}</Text>
+          )}
+        </View>
+        <View style={styles.seeAllRow}>
+          <Text style={styles.seeAllText}>{section.total_matching}</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.zinc[500]} />
+        </View>
+      </Pressable>
+      
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.venueScrollContent}
+      >
+        {section.venues.map((venue) => (
+          <VenueCard 
+            key={venue.id} 
+            venue={venue} 
+            onPress={() => onVenuePress(venue)} 
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+
+// Empty state for sound filter
+const SoundEmptyState = ({ sound, city }: { sound: string; city: string }) => {
+  const labels: Record<string, string> = {
+    afro: 'Afro',
+    hiphop: 'Hip-Hop & R&B',
+    latin: 'Latin',
+  };
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyStateEmoji}>🎶</Text>
+      <Text style={styles.emptyStateTitle}>{labels[sound] || sound} in {city}</Text>
+      <Text style={styles.emptyStateSubtitle}>More spots coming soon</Text>
+    </View>
   );
 };
 
@@ -303,127 +286,161 @@ export default function NightlifeTab({ filters = {} }: NightlifeTabProps) {
   const router = useRouter();
   const city = filters.city || 'Manhattan';
   const resolvedCity = city === 'Near Me' ? 'Manhattan' : city;
-  const [heroVenue, setHeroVenue] = useState<HeroVenue | null>(null);
+  
+  const [data, setData] = useState<NightlifeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeMood, setActiveMood] = useState('all');
+  const [activeSound, setActiveSound] = useState('all');
 
-  useEffect(() => {
-    fetchHeroVenue();
-  }, [city]);
-
-  const fetchHeroVenue = async () => {
+  const fetchNightlife = useCallback(async (mood: string = 'all', sound: string = 'all', isRefresh: boolean = false) => {
+    if (!isRefresh) setLoading(true);
+    
     try {
-      const url = `${API_BASE}/api/perspectives/clubs?city=${encodeURIComponent(resolvedCity)}&dial=all`;
-      const response = await fetch(url);
+      const url = `${API_BASE}/api/nightlife?city=${encodeURIComponent(resolvedCity)}&mood=${mood}&sound=${sound}`;
+      console.log('[NightlifeTab] Fetching:', url);
       
+      const response = await fetch(url);
       if (response.ok) {
-        const data = await response.json();
-        const venues = data.sections?.[0]?.venues || [];
-        
-        if (venues.length > 0) {
-          // Prefer high-energy or partner venues for hero
-          // Sort by engagement signals: energy level, group score
-          const sorted = [...venues].sort((a, b) => {
-            const aScore = (a.energy_level === 'lively' ? 2 : 0) + (a.score_group_night || 0) / 50;
-            const bScore = (b.energy_level === 'lively' ? 2 : 0) + (b.score_group_night || 0) / 50;
-            return bScore - aScore;
-          });
-          
-          // Pick from top 3 to add slight variety
-          const topVenues = sorted.slice(0, 3);
-          const selected = topVenues[Math.floor(Math.random() * topVenues.length)];
-          
-          setHeroVenue({
-            id: selected.id,
-            name: selected.name,
-            image_url: selected.image_url,
-            neighborhood: selected.neighborhood || selected.city || resolvedCity,
-            energy_level: selected.energy_level,
-            score_group_night: selected.score_group_night,
-          });
-        }
+        const result = await response.json();
+        console.log('[NightlifeTab] Got', result.section_count, 'sections,', result.total_venues, 'venues');
+        setData(result);
       }
     } catch (error) {
-      console.log('[NightlifeTab] Hero fetch error:', error);
+      console.log('[NightlifeTab] Fetch error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [resolvedCity]);
 
-  const goToWorld = (world: NightlifeWorld) => {
+  useEffect(() => {
+    fetchNightlife(activeMood, activeSound);
+  }, [resolvedCity, fetchNightlife]);
+
+  const handleMoodChange = (mood: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({
-      pathname: '/see-all',
-      params: { world: world.key, city: resolvedCity },
-    });
+    setActiveMood(mood);
+    fetchNightlife(mood, activeSound);
   };
 
-  const goToVenue = (venue: HeroVenue) => {
+  const handleSoundChange = (sound: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveSound(sound);
+    fetchNightlife(activeMood, sound);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchNightlife(activeMood, activeSound, true);
+  };
+
+  const goToVenue = (venue: Venue) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(`/venue/${venue.id}`);
   };
+
+  const goToSeeAll = (section: Section) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({
+      pathname: '/nightlife-see-all',
+      params: { 
+        row: section.key, 
+        title: section.title,
+        emoji: section.emoji,
+        city: resolvedCity,
+        mood: activeMood,
+      },
+    });
+  };
+
+  if (loading && !data) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.violet[500]} />
+      </View>
+    );
+  }
+
+  // Fallback sounds if API doesn't return them yet
+  const sounds: Sound[] = data?.sounds || [
+    { key: 'all', label: 'All Sounds', emoji: '🎵' },
+    { key: 'afro', label: 'Afro', emoji: '🌍' },
+    { key: 'hiphop', label: 'Hip-Hop & R&B', emoji: '🎤' },
+    { key: 'latin', label: 'Latin', emoji: '💃' },
+  ];
+
+  const showEmptySound = activeSound !== 'all' && (data?.total_venues || 0) === 0;
 
   return (
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.scrollContent}
-    >
-      {/* Hero Module */}
-      {heroVenue && (
-        <HeroModule 
-          venue={heroVenue} 
-          onPress={() => goToVenue(heroVenue)}
-          cityName={resolvedCity}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.violet[500]}
         />
-      )}
-
+      }
+    >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Tonight's Vibe</Text>
-        <Text style={styles.headerSubtitle}>
-          Curated based on what's active in {resolvedCity}
-        </Text>
+        <Text style={styles.headerTitle}>Tonight</Text>
+        <Text style={styles.headerSubtitle}>{data?.total_venues || 0} spots in {resolvedCity}</Text>
       </View>
 
-      {/* Vibe Lenses */}
-      <View style={styles.grid}>
-        {NIGHTLIFE_WORLDS.map((world) => (
-          <WorldCard
-            key={world.key}
-            world={world}
-            onPress={() => goToWorld(world)}
-            fullWidth={world.fullWidth}
+      {/* Intent Row — What kind of night? */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.moodChipsContainer}
+      >
+        {data?.moods?.map((mood) => (
+          <MoodChip
+            key={mood.key}
+            mood={mood}
+            isActive={activeMood === mood.key}
+            onPress={() => handleMoodChange(mood.key)}
           />
         ))}
+      </ScrollView>
+
+      {/* Sound & Culture Row — What does it sound like? */}
+      <View style={styles.soundSection}>
+        <Text style={styles.soundLabel}>🎶  Sound & Culture</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.soundChipsContainer}
+        >
+          {sounds.map((sound) => (
+            <SoundChip
+              key={sound.key}
+              sound={sound}
+              isActive={activeSound === sound.key}
+              onPress={() => handleSoundChange(sound.key)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
-      {/* Booking & Tables */}
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionTitle}>Booking & Tables</Text>
-          <View style={styles.comingSoonBadge}>
-            <Text style={styles.comingSoonText}>Coming Soon</Text>
-          </View>
-        </View>
-        <Text style={styles.sectionSubtitle}>VIP sections from our venue partners</Text>
-      </View>
-      <View style={styles.comingSoonCard}>
-        <Ionicons name="sparkles-outline" size={28} color={colors.zinc[600]} />
-        <Text style={styles.comingSoonCardTitle}>Partner Sections</Text>
-        <Text style={styles.comingSoonCardDesc}>Book tables directly from venues</Text>
-      </View>
-
-      {/* By Venue Type */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>By Venue Type</Text>
-        <Text style={styles.sectionSubtitle}>Browse by category</Text>
-      </View>
-      <View style={styles.grid}>
-        {VENUE_WORLDS.map((world) => (
-          <WorldCard
-            key={world.key}
-            world={world}
-            onPress={() => goToWorld(world)}
+      {/* Empty state for sound filter */}
+      {showEmptySound ? (
+        <SoundEmptyState sound={activeSound} city={resolvedCity} />
+      ) : (
+        /* Section Rows */
+        data?.sections?.map((section) => (
+          <SectionRow
+            key={section.key}
+            section={section}
+            onVenuePress={goToVenue}
+            onSeeAll={() => goToSeeAll(section)}
+            primaryCity={resolvedCity}
           />
-        ))}
-      </View>
+        ))
+      )}
 
       <View style={styles.bottomPadding} />
     </ScrollView>
@@ -437,162 +454,142 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: spacing.md,
   },
-  // Hero
-  heroContainer: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  heroGlow: {
-    position: 'absolute',
-    top: 8,
-    left: spacing.lg + 8,
-    right: spacing.lg + 8,
-    bottom: 8,
-    backgroundColor: '#FF8C00',
-    borderRadius: 20,
-  },
-  heroCard: {
-    height: HERO_HEIGHT,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.zinc[900],
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroPlaceholder: {
-    width: '100%',
-    height: '100%',
-  },
-  heroGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '65%',
-  },
-  heroBadge: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    flexDirection: 'row',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  heroBadgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#22C55E',
-  },
-  heroBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: 1,
-  },
-  heroContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacing.md,
-  },
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.white,
-    marginBottom: 6,
-    letterSpacing: -0.3,
-  },
-  heroMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  heroLocation: {
-    fontSize: 13,
-    color: colors.zinc[400],
-    fontWeight: '500',
   },
   // Header
   header: {
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.white,
-    marginBottom: 4,
-    letterSpacing: -0.3,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 14,
     color: colors.zinc[500],
-    lineHeight: 20,
+    marginTop: 2,
   },
-  // Grid
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  // Mood Chips (Intent)
+  moodChipsContainer: {
     paddingHorizontal: spacing.lg,
-    gap: 12,
+    paddingBottom: spacing.sm,
+    gap: 8,
+    flexDirection: 'row',
   },
-  // Card
-  cardWrapper: {
-    width: CARD_WIDTH,
-  },
-  cardWrapperFullWidth: {
-    width: SCREEN_WIDTH - 32,
-  },
-  cardGlow: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
-    borderRadius: 20,
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  worldCard: {
-    height: CARD_HEIGHT,
-    borderRadius: 16,
-    padding: spacing.md,
-    justifyContent: 'flex-end',
+  moodChip: {
+    height: CHIP_HEIGHT,
+    paddingHorizontal: 16,
+    borderRadius: CHIP_HEIGHT / 2,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
-  worldCardFullWidth: {
-    width: '100%',
+  moodChipActive: {
+    backgroundColor: colors.violet[600],
+    borderColor: colors.violet[500],
   },
-  worldCardContent: {
-    gap: 2,
+  moodChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.zinc[400],
   },
-  worldTitle: {
+  moodChipTextActive: {
+    color: colors.white,
+  },
+  // Sound & Culture Row
+  soundSection: {
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.lg,
+  },
+  soundLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.zinc[500],
+    paddingHorizontal: spacing.lg,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  soundChipsContainer: {
+    paddingHorizontal: spacing.lg,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  soundChip: {
+    height: SOUND_CHIP_HEIGHT,
+    paddingHorizontal: 14,
+    borderRadius: SOUND_CHIP_HEIGHT / 2,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginRight: 8,
+  },
+  soundChipActive: {
+    backgroundColor: 'rgba(251, 146, 60, 0.15)',
+    borderColor: 'rgba(251, 146, 60, 0.4)',
+  },
+  soundChipEmoji: {
+    fontSize: 14,
+  },
+  soundChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.zinc[500],
+  },
+  soundChipTextActive: {
+    color: '#fb923c',
+  },
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyStateEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.white,
-    letterSpacing: -0.2,
+    marginBottom: 6,
   },
-  worldSubtitle: {
-    fontSize: 12,
-    color: colors.zinc[400],
-    lineHeight: 16,
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: colors.zinc[500],
   },
-  // Section headers
+  // Section
+  sectionContainer: {
+    marginBottom: spacing.xl,
+  },
   sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
     marginBottom: spacing.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  sectionEmoji: {
+    fontSize: 20,
   },
   sectionTitle: {
     fontSize: 18,
@@ -600,48 +597,85 @@ const styles = StyleSheet.create({
     color: colors.white,
     letterSpacing: -0.2,
   },
-  sectionSubtitle: {
+  expansionHint: {
     fontSize: 13,
     color: colors.zinc[500],
-    marginTop: 2,
+    fontWeight: '500',
+    marginLeft: 4,
   },
-  sectionTitleRow: {
+  seeAllRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 4,
   },
-  comingSoonBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  seeAllText: {
+    fontSize: 14,
+    color: colors.zinc[500],
+    fontWeight: '600',
   },
-  comingSoonText: {
+  venueScrollContent: {
+    paddingHorizontal: spacing.lg,
+    gap: 12,
+  },
+  // Venue Card
+  venueCard: {
+    width: CARD_WIDTH,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  venueImageContainer: {
+    width: CARD_WIDTH,
+    height: 100,
+    position: 'relative',
+  },
+  venueImage: {
+    width: '100%',
+    height: '100%',
+  },
+  venueImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+  },
+  venueImageGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 40,
+  },
+  venueInfo: {
+    padding: 10,
+    gap: 4,
+  },
+  venueName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.white,
+    lineHeight: 18,
+  },
+  venueNeighborhood: {
+    fontSize: 12,
+    color: colors.zinc[500],
+  },
+  vibeTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  vibeTag: {
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  vibeTagText: {
     fontSize: 10,
     color: colors.violet[400],
     fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  comingSoonCard: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    alignItems: 'center',
-    gap: 8,
-  },
-  comingSoonCardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.zinc[400],
-  },
-  comingSoonCardDesc: {
-    fontSize: 13,
-    color: colors.zinc[600],
   },
   bottomPadding: {
     height: 100,

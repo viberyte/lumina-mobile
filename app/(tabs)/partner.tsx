@@ -90,7 +90,7 @@ export default function PartnerCommandCenter() {
       if (res.status === 401) { router.replace('/profile'); return; }
       if (res.ok) {
         const data = await res.json();
-        setPartner(data.partner);
+        setPartner(data.partner || data);
         setClaimedVenue(data.claimedVenue);
         if (data.claimedVenue?.id) {
           try {

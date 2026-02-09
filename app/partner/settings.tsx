@@ -37,6 +37,12 @@ export default function PartnerSettings() {
   const [cashapp, setCashapp] = useState('');
   
   // Modal state
+  // Instagram state
+  const [instagramConnected, setInstagramConnected] = useState(false);
+  const [instagramUsername, setInstagramUsername] = useState('');
+  const [instagramSyncedAt, setInstagramSyncedAt] = useState('');
+  const [syncing, setSyncing] = useState(false);
+
   const [editModal, setEditModal] = useState<'venmo' | 'zelle' | 'cashapp' | null>(null);
   const [editValue, setEditValue] = useState('');
 
@@ -84,6 +90,18 @@ export default function PartnerSettings() {
           setCashapp(settingsData.settings.payments.cashapp || '');
         }
       }
+
+      try {
+        const igRes = await fetch(`${API_BASE}/api/partner/instagram/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (igRes.ok) {
+          const igData = await igRes.json();
+          setInstagramConnected(igData.connected || false);
+          setInstagramUsername(igData.username || '');
+          setInstagramSyncedAt(igData.synced_at || '');
+        }
+      } catch (igErr) {}
 
       setLoading(false);
     } catch (error) {
@@ -177,6 +195,47 @@ export default function PartnerSettings() {
     if (type === 'venmo') setEditValue(venmo);
     if (type === 'zelle') setEditValue(zelle);
     if (type === 'cashapp') setEditValue(cashapp);
+  };
+
+  const handleConnectInstagram = async () => {
+    try {
+      const session = await AsyncStorage.getItem('lumina_partner_session');
+      if (!session) return;
+      const { token } = JSON.parse(session);
+      const res = await fetch(`${API_BASE}/api/partner/instagram/auth`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.auth_url) Linking.openURL(data.auth_url);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Could not start Instagram connection');
+    }
+  };
+
+  const handleSyncInstagram = async () => {
+    setSyncing(true);
+    try {
+      const session = await AsyncStorage.getItem('lumina_partner_session');
+      if (!session) return;
+      const { token } = JSON.parse(session);
+      const res = await fetch(`${API_BASE}/api/partner/instagram/sync`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInstagramSyncedAt(new Date().toISOString());
+        Alert.alert('Synced!', `${data.photos_synced} photos, ${data.reels_found} reels updated`);
+      } else {
+        Alert.alert('Error', 'Sync failed');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -308,6 +367,70 @@ export default function PartnerSettings() {
                   </TouchableOpacity>
                 </View>
               </View>
+            </View>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(125).duration(300)}>
+            <Text style={styles.sectionLabel}>INSTAGRAM</Text>
+            <View style={styles.card}>
+              {instagramConnected ? (
+                <>
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingLeft}>
+                      <View style={[styles.settingIcon, { backgroundColor: 'rgba(236, 72, 153, 0.15)' }]}>
+                        <Ionicons name="logo-instagram" size={17} color="#ec4899" />
+                      </View>
+                      <View>
+                        <Text style={styles.settingTitle}>@{instagramUsername}</Text>
+                        <Text style={{ fontSize: 11, color: '#34d399', marginTop: 1 }}>Connected</Text>
+                      </View>
+                    </View>
+                    <View style={{ backgroundColor: 'rgba(52,211,153,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: '#34d399' }}>Active</Text>
+                    </View>
+                  </View>
+                  <View style={styles.divider} />
+                  <TouchableOpacity style={styles.settingRow} onPress={handleSyncInstagram} disabled={syncing}>
+                    <View style={styles.settingLeft}>
+                      <View style={styles.settingIcon}>
+                        <Ionicons name="refresh-outline" size={17} color="#a1a1aa" />
+                      </View>
+                      <View>
+                        <Text style={styles.settingTitle}>{syncing ? 'Syncing...' : 'Sync Content'}</Text>
+                        {instagramSyncedAt ? (
+                          <Text style={{ fontSize: 11, color: '#52525b', marginTop: 1 }}>Last synced {new Date(instagramSyncedAt).toLocaleDateString()}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    {syncing ? (
+                      <ActivityIndicator size="small" color="#8b5cf6" />
+                    ) : (
+                      <Ionicons name="chevron-forward" size={17} color="#3f3f46" />
+                    )}
+                  </TouchableOpacity>
+                  <View style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
+                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>Your best photos and reels auto-populate your Lumina page. We never post on your behalf.</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.settingRow} onPress={handleConnectInstagram}>
+                    <View style={styles.settingLeft}>
+                      <View style={[styles.settingIcon, { backgroundColor: 'rgba(236, 72, 153, 0.15)' }]}>
+                        <Ionicons name="logo-instagram" size={17} color="#ec4899" />
+                      </View>
+                      <View>
+                        <Text style={styles.settingTitle}>Connect Instagram</Text>
+                        <Text style={{ fontSize: 11, color: '#71717a', marginTop: 1 }}>Auto-sync your best content</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.addText}>Connect</Text>
+                  </TouchableOpacity>
+                  <View style={{ paddingHorizontal: 14, paddingBottom: 12 }}>
+                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>We'll automatically use your best photos and reels to keep your Lumina page fresh. We never post on your behalf.</Text>
+                  </View>
+                </>
+              )}
             </View>
           </Animated.View>
 

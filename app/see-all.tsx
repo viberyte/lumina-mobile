@@ -49,6 +49,7 @@ const WORLD_ALIASES: Record<string, string> = {
   'mediterranean': 'mediterranean',
   'latin american': 'latin',
   'soul food': 'soul_food',
+  'soul_food': 'soul_food',
   'american': 'american',
   'french': 'french',
   'seafood': 'seafood',

@@ -30,16 +30,28 @@ type Event = {
   genre: string;
   image_url: string;
   status: string;
+  packages: any;
   allocations: any[];
   state?: EventState;
   stateLabel?: string;
+  display_status?: 'past' | 'live' | 'upcoming';
 };
 
 function deriveEventState(event: Event): { state: EventState; label: string } {
-  if (!event.allocations || event.allocations.length === 0) {
-    return { state: 'needs_setup', label: 'Needs Setup' };
+  // Check if event has packages (JSON string or array)
+  let hasPackages = false;
+  if (event.packages) {
+    try {
+      const pkgs = typeof event.packages === 'string' ? JSON.parse(event.packages) : event.packages;
+      hasPackages = Array.isArray(pkgs) && pkgs.length > 0;
+    } catch {}
   }
-  return { state: 'tables_live', label: 'Tables Live' };
+  
+  if (hasPackages) {
+    return { state: 'tables_live', label: 'Live' };
+  }
+  // No packages but still published = live, just no packages yet
+  return { state: 'tables_live', label: 'Live' };
 }
 
 export default function PartnerEvents() {
@@ -55,13 +67,11 @@ export default function PartnerEvents() {
 
   const fetchEvents = async () => {
     try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) {
+      const token = await AsyncStorage.getItem('partner_token');
+      if (!token) {
         router.replace('/partner');
         return;
       }
-
-      const { token } = JSON.parse(session);
 
       const res = await partnerFetch(`/api/partner/events?upcoming=true`, {
        headers: { Authorization: `Bearer ${token}` },
@@ -196,8 +206,10 @@ export default function PartnerEvents() {
                         <Text style={styles.eventDot}>·</Text>
                         <Text style={[
                           styles.eventState,
-                          event.state === 'needs_setup' && styles.eventStateNeedsSetup,
-                          event.state === 'tables_live' && styles.eventStateLive,
+                          event.stateLabel === 'Needs Setup' && styles.eventStateNeedsSetup,
+                          event.stateLabel === 'Live' && styles.eventStateLive,
+                          event.stateLabel === 'Past' && { color: '#52525b' },
+                          event.stateLabel === 'Upcoming' && { color: '#3b82f6' },
                         ]}>
                           {event.stateLabel}
                         </Text>

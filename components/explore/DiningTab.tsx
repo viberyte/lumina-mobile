@@ -73,6 +73,13 @@ const ALL_CUISINES: CuisineWorld[] = [
     glowColor: '#F59E0B',
   },
   { 
+    key: 'african', 
+    title: 'African', 
+    subtitle: 'Rich traditions & bold spices', 
+    gradient: ['#1f2418', '#0f140c'],
+    glowColor: '#D97706',
+  },
+  { 
     key: 'mediterranean', 
     title: 'Mediterranean', 
     subtitle: 'Fresh & light plates', 
@@ -463,7 +470,7 @@ export default function DiningTab({ filters = {} }: DiningTabProps) {
 
   const fetchHeroVenue = async () => {
     try {
-      const cuisines = ['italian', 'japanese', 'caribbean', 'mexican'];
+      const cuisines = ['italian', 'japanese', 'caribbean', 'mexican', 'soul_food'];
       const randomCuisine = cuisines[Math.floor(Math.random() * cuisines.length)];
       
       const url = `${API_BASE}/api/perspectives/${randomCuisine}?city=${encodeURIComponent(resolvedCity)}&dial=all`;

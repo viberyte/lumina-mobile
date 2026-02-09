@@ -23,7 +23,7 @@ export default function EventCarousel({ title, events, onEventPress }: EventCaro
       >
         {events.map((event, idx) => (
           <EventCard
-            key={event.id || idx}
+            key={event._virtualId || (event.id + '_' + idx)}
             event={event}
             onPress={() => onEventPress?.(event)}
           />

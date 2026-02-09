@@ -190,6 +190,7 @@ export default function HomeScreen() {
   const [userCity, setUserCity] = useState('Manhattan');
   const [heroVenues, setHeroVenues] = useState<any[]>([]);
   const [pickedForYou, setPickedForYou] = useState<any[]>([]);
+  const [featuredEvents, setFeaturedEvents] = useState<any[]>([]);
   const [happeningNow, setHappeningNow] = useState<any[]>([]);
   const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
   const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
@@ -263,9 +264,10 @@ export default function HomeScreen() {
   const loadContent = async () => {
     try {
       setLoading(true);
-      const [venues, events] = await Promise.all([
+      const [venues, events, featuredRes] = await Promise.all([
         luminaApi.getVenues(userCity || 'Manhattan'),
-        luminaApi.getEvents('New York')
+        luminaApi.getEvents('New York'),
+        fetch('https://lumina.viberyte.com/api/events/featured?city=' + encodeURIComponent(userCity || 'New York')).then(r => r.json()).catch(() => ({ events: [] }))
       ]);
       
       const seed = getDailySeed();
@@ -331,6 +333,7 @@ export default function HomeScreen() {
       const upcoming = musicSortedEvents
         .filter((e: any) => e.image_url || e.cover_image_url)
         .slice(0, 8);
+      setFeaturedEvents((featuredRes?.events || []).slice(0, 10));
       setHappeningNow(upcoming);
       
     } catch (error) {
@@ -755,7 +758,69 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Happening Now - Events */}
+          
+              {/* ═══ LUMINA PARTNER EVENTS ═══ */}
+              {featuredEvents.length > 0 && (
+                <View style={{ marginBottom: 28 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>Lumina Partner Events</Text>
+                      <View style={{ backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#a78bfa' }}>FEATURED</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 14 }}>
+                    {featuredEvents.map((event: any) => (
+                      <TouchableOpacity
+                        key={event.id + '_' + (event.date || '')}
+                        style={{
+                          width: 280, height: 180, borderRadius: 16, overflow: 'hidden',
+                          borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
+                        }}
+                        onPress={() => router.push('/event/' + event.id)}
+                      >
+                        <Image
+                          source={{ uri: event.image_url ? (event.image_url.startsWith('/') ? 'https://lumina.viberyte.com' + event.image_url : event.image_url) : 'https://via.placeholder.com/400' }}
+                          style={{ width: '100%', height: '100%', position: 'absolute' }}
+                        />
+                        <LinearGradient
+                          colors={['transparent', 'rgba(0,0,0,0.85)']}
+                          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '70%' }}
+                        />
+                        <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 6 }}>
+                          <View style={{ backgroundColor: 'rgba(139,92,246,0.9)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff' }}>⭐ PARTNER</Text>
+                          </View>
+                          {event.is_recurring === 1 && (
+                            <View style={{ backgroundColor: 'rgba(34,197,94,0.9)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff' }}>WEEKLY</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 14 }}>
+                          <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 2 }} numberOfLines={1}>{event.name}</Text>
+                          <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }} numberOfLines={1}>{event.venue_name}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {event.event_category && event.event_category !== 'nightlife' && (
+                              <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                                <Text style={{ fontSize: 10, color: '#d4d4d8' }}>{event.event_category === 'happy_hour' ? 'Happy Hour' : event.event_category === 'live_music' ? 'Live Music' : event.event_category.charAt(0).toUpperCase() + event.event_category.slice(1)}</Text>
+                              </View>
+                            )}
+                            {event.music_genre && (
+                              <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                                <Text style={{ fontSize: 10, color: '#d4d4d8' }}>{event.music_genre}</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+{/* Happening Now - Events */}
           {happeningNow.length > 0 && (
             <View style={styles.section}>
               {renderSectionHeader(

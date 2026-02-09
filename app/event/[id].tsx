@@ -48,58 +48,6 @@ const formatEventDate = (dateString: string): string => {
 };
 
 
-// Timezone-safe date parser
-const parseEventDate = (dateString: string): Date => {
-  if (!dateString) return new Date();
-  
-  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
-  if (dateString.includes("T")) {
-    return new Date(dateString);
-  }
-  
-  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
-  const parts = dateString.split("-").map(p => parseInt(p));
-  if (parts.length === 3) {
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-  }
-  
-  return new Date(dateString);
-};
-
-// Format date for display
-const formatEventDate = (dateString: string): string => {
-  const date = parseEventDate(dateString);
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  const day = date.getDate();
-  return \`\${month} \${day}\`;
-};
-
-// Timezone-safe date parser
-const parseEventDate = (dateString: string): Date => {
-  if (!dateString) return new Date();
-  
-  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
-  if (dateString.includes('T')) {
-    return new Date(dateString);
-  }
-  
-  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
-  const parts = dateString.split('-').map(p => parseInt(p));
-  if (parts.length === 3) {
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-  }
-  
-  return new Date(dateString);
-};
-
-// Format date for display
-const formatEventDate = (dateString: string): string => {
-  const date = parseEventDate(dateString);
-  const month = date.toLocaleDateString('en-US', { month: 'short' });
-  const day = date.getDate();
-  return `${month} ${day}`;
-};
-
 interface Package {
   id: string;
   name: string;
@@ -399,11 +347,19 @@ export default function EventDetailScreen() {
     }
   };
 
+  const generateNightLink = (evt: EventDetail) => {
+    const slug = evt.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return `https://lumina.viberyte.com/e/${slug}-${evt.id}`;
+  };
+
   const handleShare = async () => {
     if (!event) return;
+    const nightLink = generateNightLink(event);
     try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await Share.share({
-        message: `Check out ${event.title} with Lumina - your AI nightlife assistant. ${event.ticket_url || ''}`,
+        message: `${event.title} — ${nightLink}`,
+        url: nightLink,
       });
     } catch (error) {
       console.error('Share error:', error);

@@ -161,30 +161,52 @@ class AuthService {
 
   async signInWithEmail(email: string, password: string): Promise<User> {
     try {
-      const response = await fetch(`${API_BASE}/api/auth/signin`, {
+      // Try partner login first
+      const partnerRes = await fetch(`${API_BASE}/api/partner/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Invalid credentials');
+      let isPartner = false;
+      let partnerToken = '';
+      let data: any = null;
+
+      if (partnerRes.ok) {
+        data = await partnerRes.json();
+        isPartner = true;
+        partnerToken = data.token;
+      } else {
+        // Fall back to consumer login
+        const response = await fetch(`${API_BASE}/api/auth/signin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Invalid credentials');
+        }
+
+        data = await response.json();
       }
 
-      const data = await response.json();
-      
-      const fullName = data.name || '';
+      const name = isPartner ? (data.partner?.name || '') : (data.name || '');
+      const fullName = name;
       const firstName = fullName.split(' ')[0] || email.split('@')[0];
-      
+      const userId = isPartner ? (data.user?.id?.toString() || data.partner?.id?.toString()) : (data.userId?.toString() || `email_${Date.now()}`);
+      const userEmail = isPartner ? (data.partner?.email || email) : (data.email || email);
+      const role = isPartner ? 'partner' : (data.role || 'member');
+
       const user: User = {
-        id: data.userId?.toString() || `email_${Date.now()}`,
-        email: data.email,
+        id: userId,
+        email: userEmail,
         name: firstName,
         provider: 'email',
-        role: data.role || 'member',
+        role: role,
         createdAt: data.createdAt || new Date().toISOString(),
-        profileData: { fullName: data.name },
+        profileData: { fullName },
       };
 
       await AsyncStorage.setItem('@lumina_user', JSON.stringify(user));
@@ -194,15 +216,25 @@ class AuthService {
       }
       await AsyncStorage.setItem('@lumina_user_id', user.id);
       await AsyncStorage.setItem('@lumina_is_guest', 'false');
-      await AsyncStorage.setItem('@lumina_user_role', user.role || 'member');
-      
+      await AsyncStorage.setItem('@lumina_user_role', role);
+
+      // Store partner token so Partner tab appears
+      if (isPartner && partnerToken) {
+        await AsyncStorage.setItem('partner_token', partnerToken);
+        await AsyncStorage.setItem('@lumina_partner_data', JSON.stringify({
+          partnerId: data.partner?.id,
+          businessName: data.partner?.businessName,
+          venues: data.venues || [],
+        }));
+      }
+
       await this.saveProfile(user);
-      
+
       this.user = user;
       this.startTokenRefresh();
-      
+
       return user;
-      
+
     } catch (error: any) {
       throw new Error(error.message || 'Sign in failed');
     }
@@ -388,6 +420,7 @@ class AuthService {
       '@lumina_user_role',
       '@lumina_partner_data',
       'lumina_partner_session',
+      'partner_token',
     ]);
     
     this.user = null;

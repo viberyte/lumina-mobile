@@ -9,7 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Image,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
 import { colors, typography, spacing } from '../theme';
 
+const { width, height } = Dimensions.get('window');
+
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -27,7 +29,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google Auth
   const { request, response, promptAsync } = authService.useGoogleAuth();
 
   useEffect(() => {
@@ -103,7 +104,6 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Please enter email and password');
       return;
     }
-
     setLoading(true);
     try {
       await authService.signInWithEmail(email, password);
@@ -117,27 +117,41 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={['#0a0a0f', '#18181b', '#0a0a0f']}
-      style={[styles.container, { paddingTop: insets.top }]}
-    >
+    <View style={styles.container}>
+      <View style={styles.backgroundCircles}>
+        <LinearGradient
+          colors={['#7c3aed', '#4c1d95']}
+          style={styles.circleTopRight}
+        />
+        <LinearGradient
+          colors={['#be185d', '#9d174d']}
+          style={styles.circleBottomLeft}
+        />
+        <LinearGradient
+          colors={['#7c3aed', '#5b21b6']}
+          style={styles.circleBottomRight}
+        />
+      </View>
+
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('../assets/images/lumina-icon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+        <View style={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20 }]}>
+          <View style={styles.logoSection}>
+            <Text style={styles.logoText}>L U M I N A</Text>
+            <View style={styles.taglineRow}>
+              <Text style={styles.sparkle}>✦</Text>
+              <Text style={styles.tagline}>N I G H T L I F E   I N T E L L I G E N C E</Text>
+              <Text style={styles.sparkle}>✦</Text>
+            </View>
           </View>
 
           <View style={styles.header}>
-            <Text style={styles.title}>Enter Lumina</Text>
-            <Text style={styles.subtitle}>A world of nightlife, curated for you</Text>
-            <Text style={styles.tagline}>Tonight starts here.</Text>
+            <Text style={styles.title}>Your night awaits</Text>
+            <Text style={styles.subtitle}>
+              Curated venues, events, and experiences{'\n'}tailored to your vibe
+            </Text>
           </View>
 
           <TouchableOpacity 
@@ -146,7 +160,7 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <LinearGradient
-              colors={['#8b5cf6', '#6366f1']}
+              colors={['#8b5cf6', '#7c3aed']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.primaryButtonGradient}
@@ -154,13 +168,18 @@ export default function LoginScreen() {
               {loading ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text style={styles.primaryButtonText}>Start Exploring</Text>
+                <View style={styles.buttonContent}>
+                  <Text style={styles.primaryButtonText}>Start Exploring</Text>
+                  <Ionicons name="arrow-forward" size={20} color="white" />
+                </View>
               )}
             </LinearGradient>
           </TouchableOpacity>
-          <Text style={styles.microCopy}>No account required</Text>
+          <Text style={styles.microCopy}>No account needed · Personalize anytime</Text>
 
           <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or sign in for full access</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -169,17 +188,17 @@ export default function LoginScreen() {
             onPress={handleAppleSignIn}
             disabled={loading}
           >
-            <Ionicons name="logo-apple" size={24} color="#000" />
+            <Ionicons name="logo-apple" size={22} color="#000" />
             <Text style={styles.appleButtonText}>Continue with Apple</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.socialButton, loading && styles.buttonDisabled]}
+            style={[styles.googleButton, loading && styles.buttonDisabled]}
             onPress={handleGoogleSignIn}
             disabled={loading || !request}
           >
-            <Ionicons name="logo-google" size={20} color={colors.zinc[300]} />
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
+            <Ionicons name="logo-google" size={18} color="#a1a1aa" />
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
 
           {!showEmailLogin ? (
@@ -187,6 +206,7 @@ export default function LoginScreen() {
               style={styles.emailToggle}
               onPress={() => setShowEmailLogin(true)}
             >
+              <Ionicons name="mail-outline" size={16} color="#71717a" />
               <Text style={styles.emailToggleText}>Sign in with email</Text>
             </TouchableOpacity>
           ) : (
@@ -195,7 +215,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor={colors.zinc[600]}
+                  placeholderTextColor="#52525b"
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -203,19 +223,17 @@ export default function LoginScreen() {
                   editable={!loading}
                 />
               </View>
-
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor={colors.zinc[600]}
+                  placeholderTextColor="#52525b"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
                   editable={!loading}
                 />
               </View>
-
               <TouchableOpacity 
                 style={[styles.emailSignInButton, loading && styles.buttonDisabled]}
                 onPress={handleEmailSignIn}
@@ -225,7 +243,6 @@ export default function LoginScreen() {
                   {loading ? 'Signing in...' : 'Sign In'}
                 </Text>
               </TouchableOpacity>
-
               <TouchableOpacity 
                 style={styles.emailToggle}
                 onPress={() => setShowEmailLogin(false)}
@@ -234,38 +251,246 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
           )}
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              By continuing, you agree to our Terms & Privacy Policy
+            </Text>
+            <TouchableOpacity onPress={() => router.push('/register')}>
+              <Text style={styles.signUpText}>
+                Don't have an account? <Text style={styles.signUpLink}>Sign Up</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  keyboardView: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: spacing.xxl, justifyContent: 'center' },
-  logoContainer: { alignItems: 'center', marginBottom: spacing.xl, opacity: 0.9 },
-  logo: { width: 80, height: 80 },
-  header: { alignItems: 'center', marginBottom: spacing.xxl * 1.5 },
-  title: { fontSize: 48, fontWeight: '300', color: colors.white, marginBottom: spacing.sm, letterSpacing: -0.5 },
-  subtitle: { fontSize: typography.sizes.md, color: colors.zinc[400], textAlign: 'center', lineHeight: 22, marginBottom: spacing.lg },
-  tagline: { fontSize: typography.sizes.sm, color: colors.zinc[500], fontWeight: '400', letterSpacing: 0.5 },
-  primaryButton: { borderRadius: 16, overflow: 'hidden', marginBottom: spacing.xs },
-  primaryButtonGradient: { paddingVertical: spacing.lg, alignItems: 'center', justifyContent: 'center' },
-  primaryButtonText: { fontSize: typography.sizes.lg, fontWeight: '600', color: colors.white, letterSpacing: 0.3 },
-  microCopy: { fontSize: typography.sizes.xs, color: colors.zinc[600], textAlign: 'center', marginBottom: spacing.xl },
-  divider: { marginVertical: spacing.xl, alignItems: 'center' },
-  dividerLine: { width: '30%', height: 1, backgroundColor: colors.zinc[800], opacity: 0.3 },
-  appleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.white, borderRadius: 14, paddingVertical: spacing.md + 2, marginBottom: spacing.sm },
-  appleButtonText: { fontSize: typography.sizes.md, fontWeight: '600', color: '#000', letterSpacing: 0.2 },
-  socialButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 14, paddingVertical: spacing.md + 2, borderWidth: 1, borderColor: colors.zinc[800], marginBottom: spacing.xl },
-  socialButtonText: { fontSize: typography.sizes.sm, fontWeight: '500', color: colors.zinc[300], letterSpacing: 0.2 },
-  emailToggle: { alignItems: 'center', paddingVertical: spacing.md },
-  emailToggleText: { fontSize: typography.sizes.xs, color: colors.zinc[600], fontWeight: '500', letterSpacing: 0.3 },
-  emailForm: { gap: spacing.sm },
-  inputContainer: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 12, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: colors.zinc[800] },
-  input: { fontSize: typography.sizes.sm, color: colors.white, paddingVertical: spacing.xs },
-  emailSignInButton: { backgroundColor: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, paddingVertical: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139, 92, 246, 0.3)', marginTop: spacing.xs },
-  emailSignInButtonText: { fontSize: typography.sizes.sm, fontWeight: '500', color: colors.violet[400], letterSpacing: 0.2 },
-  buttonDisabled: { opacity: 0.5 },
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a0f',
+  },
+  backgroundCircles: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  circleTopRight: {
+    position: 'absolute',
+    top: -100,
+    right: -100,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
+    opacity: 0.6,
+  },
+  circleBottomLeft: {
+    position: 'absolute',
+    bottom: 50,
+    left: -150,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
+    opacity: 0.5,
+  },
+  circleBottomRight: {
+    position: 'absolute',
+    bottom: -50,
+    right: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    opacity: 0.4,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  logoText: {
+    fontSize: 42,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 12,
+    marginBottom: 12,
+  },
+  taglineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sparkle: {
+    fontSize: 12,
+    color: '#71717a',
+  },
+  tagline: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#71717a',
+    letterSpacing: 3,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '300',
+    color: '#fff',
+    marginBottom: 12,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: '#a1a1aa',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  primaryButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  primaryButtonGradient: {
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  primaryButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  microCopy: {
+    fontSize: 12,
+    color: '#71717a',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#27272a',
+  },
+  dividerText: {
+    fontSize: 12,
+    color: '#52525b',
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  appleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: '#27272a',
+    marginBottom: 16,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#a1a1aa',
+  },
+  emailToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  emailToggleText: {
+    fontSize: 14,
+    color: '#71717a',
+    fontWeight: '500',
+  },
+  emailForm: {
+    gap: 12,
+  },
+  inputContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  input: {
+    fontSize: 15,
+    color: '#fff',
+    paddingVertical: 12,
+  },
+  emailSignInButton: {
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+    marginTop: 4,
+  },
+  emailSignInButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#a78bfa',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  footer: {
+    marginTop: 'auto',
+    paddingTop: 24,
+    alignItems: 'center',
+    gap: 12,
+  },
+  footerText: {
+    fontSize: 11,
+    color: '#52525b',
+    textAlign: 'center',
+  },
+  signUpText: {
+    fontSize: 14,
+    color: '#71717a',
+  },
+  signUpLink: {
+    color: '#a78bfa',
+    fontWeight: '600',
+  },
 });
