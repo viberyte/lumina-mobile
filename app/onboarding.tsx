@@ -19,14 +19,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useToast } from '../contexts/ToastContext';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import * as Location from 'expo-location';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 // Types
 type Gender = 'male' | 'female' | 'other';
 type AgeRange = '21-25' | '26-34' | '35-44' | '45+';
-type MusicGenre = 'hiphop' | 'latin' | 'afrobeats' | 'edm' | 'rnb' | 'house' | 'pop' | 'live';
+type MusicGenre = 'hiphop' | 'latin' | 'afrobeats' | 'edm' | 'rnb' | 'house' | 'pop' | 'live' | 'reggae';
 type SceneType = 'straight' | 'lgbtq' | 'mixed';
 
 interface UserProfile {
@@ -43,26 +44,15 @@ const questions = [
   {
     id: 'gender',
     title: 'First things first',
-    subtitle: 'This helps us personalize your experience',
+    subtitle: 'Optional — helps us personalize your experience',
     type: 'single',
     options: [
-      { value: 'male', label: 'Man', emoji: '👔' },
-      { value: 'female', label: 'Woman', emoji: '👗' },
-      { value: 'other', label: 'Other', emoji: '✨' },
+      { value: 'male', label: 'Man', emoji: '' },
+      { value: 'female', label: 'Woman', emoji: '' },
+      { value: 'other', label: 'Other', emoji: '' },
     ],
   },
-  {
-    id: 'age',
-    title: 'What\'s your era?',
-    subtitle: 'We\'ll match you with the right crowd',
-    type: 'single',
-    options: [
-      { value: '21-25', label: '21 - 25', subtitle: 'Just getting started', icon: 'flame-outline' },
-      { value: '26-34', label: '26 - 34', subtitle: 'In your prime', icon: 'rocket-outline' },
-      { value: '35-44', label: '35 - 44', subtitle: 'Refined taste', icon: 'wine-outline' },
-      { value: '45+', label: '45+', subtitle: 'Classic sophistication', icon: 'diamond-outline' },
-    ],
-  },
+
   {
     id: 'music',
     title: 'Your soundtrack',
@@ -77,18 +67,17 @@ const questions = [
       { value: 'house', label: 'House', icon: 'radio', color: '#8b5cf6' },
       { value: 'pop', label: 'Pop', icon: 'star', color: '#f472b6' },
       { value: 'live', label: 'Live / Jazz', icon: 'musical-notes', color: '#14b8a6' },
+      { value: 'reggae', label: 'Reggae', icon: 'musical-note', color: '#16a34a' },
     ],
   },
+
+
   {
-    id: 'scenes',
-    title: 'Which spaces feel right?',
-    subtitle: 'So we only show you places you\'ll enjoy',
-    type: 'multi',
-    options: [
-      { value: 'straight', label: 'Straight / mixed crowds', icon: 'people', color: '#3b82f6' },
-      { value: 'lgbtq', label: 'LGBTQ+ spaces', icon: 'rainbow', color: '#ec4899' },
-      { value: 'mixed', label: 'Open to everything', icon: 'globe', color: '#8b5cf6' },
-    ],
+    id: 'location',
+    title: "Find what's near you",
+    subtitle: "We'll show you the best spots close to you tonight",
+    type: 'location',
+    options: [],
   },
 ];
 
@@ -105,6 +94,8 @@ export default function OnboardingScreen() {
   const [gender, setGender] = useState<Gender | null>(null);
   const [ageRange, setAgeRange] = useState<AgeRange | null>(null);
   const [music, setMusic] = useState<MusicGenre[]>([]);
+  const [userLocation, setUserLocation] = useState<{city: string; lat: number; lng: number} | null>(null);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
   const [scenes, setScenes] = useState<SceneType[]>([]);
   
   // Animations
@@ -146,6 +137,7 @@ export default function OnboardingScreen() {
 
   const restoreProgress = async () => {
     try {
+      // Clear old progress if question count changed
       const saved = await AsyncStorage.getItem('@lumina_onboarding_v3');
       if (saved) {
         const progress = JSON.parse(saved);
@@ -153,7 +145,9 @@ export default function OnboardingScreen() {
         const hourAgo = Date.now() - (60 * 60 * 1000);
         
         if (startedAt > hourAgo) {
-          setStep(progress.step || 0);
+          // Reset to 0 if saved step is out of bounds
+          const savedStep = progress.step || 0;
+          setStep(savedStep >= questions.length ? 0 : savedStep);
           setGender(progress.gender);
           setAgeRange(progress.age_range);
           setMusic(progress.music || []);
@@ -179,6 +173,36 @@ export default function OnboardingScreen() {
       }));
     } catch (error) {
       console.log('Could not save progress');
+    }
+  };
+
+  const handleRequestLocation = async () => {
+    setLocationStatus('requesting');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationStatus('denied');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+      // Reverse geocode to get city
+      const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const city = geo[0]?.city || geo[0]?.subregion || 'your city';
+      setUserLocation({ city, lat: latitude, lng: longitude });
+      setLocationStatus('granted');
+      await AsyncStorage.setItem('@lumina_location', JSON.stringify({ city, lat: latitude, lng: longitude }));
+      // Auto advance after short delay
+      setTimeout(() => {
+        if (step < questions.length - 1) {
+          animateToNextStep(step + 1);
+        } else {
+          finishOnboarding();
+        }
+      }, 800);
+    } catch (e) {
+      setLocationStatus('denied');
     }
   };
 
@@ -265,11 +289,6 @@ export default function OnboardingScreen() {
   const handleSkip = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
-    const currentQuestion = questions[step];
-    if (currentQuestion.id === 'scenes' && scenes.length === 0) {
-      setScenes(['mixed']);
-    }
-    
     if (step < questions.length - 1) {
       animateToNextStep(step + 1);
     } else {
@@ -321,7 +340,7 @@ export default function OnboardingScreen() {
 
       const finalGender = gender || 'other';
       const finalAge = ageRange || '26-34';
-      const finalScenes = scenes.length > 0 ? scenes : ['mixed'];
+      const finalScenes: SceneType[] = scenes.length > 0 ? scenes : ['mixed'];
 
       const response = await fetch(`${API_BASE}/api/onboarding`, {
         method: 'POST',
@@ -369,7 +388,7 @@ export default function OnboardingScreen() {
       if (isMounted.current) {
         router.replace('/(tabs)');
         setTimeout(() => {
-          showToast('Your Lumina is ready ✨', 'success');
+          showToast('Welcome to Viberyte', 'success');
         }, 500);
       }
     } catch (error) {
@@ -386,7 +405,7 @@ export default function OnboardingScreen() {
       
       if (isMounted.current) {
         router.replace('/(tabs)');
-        showToast('Welcome to Lumina', 'success');
+        showToast('Welcome to Viberyte', 'success');
       }
     }
   };
@@ -399,7 +418,7 @@ export default function OnboardingScreen() {
       }
     });
 
-  const currentQuestion = questions[step];
+  const currentQuestion = questions[step] || questions[0];
   
   const getCurrentValue = () => {
     if (currentQuestion.id === 'gender') return gender;
@@ -439,29 +458,8 @@ export default function OnboardingScreen() {
             { opacity: buildingAnim, transform: [{ scale: pulseAnim }] }
           ]}
         >
-          <View style={styles.orbContainer}>
-            <LinearGradient
-              colors={['#8b5cf6', '#a855f7', '#d946ef']}
-              style={styles.buildingOrb}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.orbGlow} />
-          </View>
-          
-          <Text style={styles.buildingTitle}>Building your Lumina</Text>
+          <Text style={styles.buildingWordmark}>VIBERYTE</Text>
           <Text style={styles.buildingSubtitle}>{buildingMessages[buildingStage]}</Text>
-          
-          <View style={styles.progressBarContainer}>
-            <Animated.View style={[styles.progressBarFill, { width: progressWidth }]}>
-              <LinearGradient
-                colors={['#8b5cf6', '#d946ef']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
-          </View>
         </Animated.View>
       </View>
     );
@@ -518,6 +516,7 @@ export default function OnboardingScreen() {
           </View>
           
           {currentQuestion.type === 'single' && (
+            <>
             <View style={styles.optionsContainer}>
               {currentQuestion.options.map((option: any) => {
                 const isSelected = getCurrentValue() === option.value;
@@ -558,6 +557,12 @@ export default function OnboardingScreen() {
                 );
               })}
             </View>
+            {currentQuestion.id === 'gender' && (
+              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+                <Text style={styles.skipText}>Skip</Text>
+              </TouchableOpacity>
+            )}
+            </>
           )}
           
           {currentQuestion.type === 'multi' && (
@@ -613,15 +618,16 @@ export default function OnboardingScreen() {
               >
                 <LinearGradient
                   colors={getCurrentMultiValue().length >= getMinSelection() 
-                    ? ['#8b5cf6', '#7c3aed'] 
-                    : ['#27272a', '#1f1f23']}
+                    ? ['#ffffff', '#f0f0f0'] 
+                    : ['#1f1f1f', '#161616']}
                   style={styles.continueGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
                   <Text style={[
                     styles.continueText, 
-                    getCurrentMultiValue().length < getMinSelection() && { opacity: 0.5 }
+                    getCurrentMultiValue().length < getMinSelection() && { opacity: 0.3 },
+                    getCurrentMultiValue().length >= getMinSelection() && { color: '#000' }
                   ]}>
                     {getCurrentMultiValue().length < getMinSelection() 
                       ? 'Select at least one' 
@@ -638,6 +644,56 @@ export default function OnboardingScreen() {
               </TouchableOpacity>
             </View>
           )}
+          {currentQuestion.type === 'location' && (
+            <View style={styles.locationContainer}>
+              {locationStatus === 'idle' && (
+                <>
+                  <View style={styles.locationIconWrap}>
+                    <Ionicons name="location" size={48} color="#8b5cf6" />
+                  </View>
+                  <Text style={styles.locationHint}>
+                    We use your location to surface the best venues and events happening near you right now.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.locationButton}
+                    onPress={handleRequestLocation}
+                    activeOpacity={0.9}
+                  >
+                    <LinearGradient
+                      colors={['#8b5cf6', '#7c3aed']}
+                      style={styles.continueGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="location-outline" size={20} color="#fff" />
+                      <Text style={styles.continueText}>Continue</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </>
+              )}
+              {locationStatus === 'requesting' && (
+                <View style={styles.locationIconWrap}>
+                  <Ionicons name="location" size={48} color="#8b5cf6" />
+                  <Text style={styles.locationHint}>Finding your location...</Text>
+                </View>
+              )}
+              {locationStatus === 'granted' && userLocation && (
+                <View style={styles.locationGranted}>
+                  <Ionicons name="checkmark-circle" size={56} color="#22c55e" />
+                  <Text style={styles.locationCity}>{userLocation.city}</Text>
+                  <Text style={styles.locationHint}>We've got you covered</Text>
+                </View>
+              )}
+              {locationStatus === 'denied' && (
+                <>
+                  <Text style={styles.locationHint}>No worries — you can enable this later in Settings.</Text>
+                  <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+                    <Text style={styles.skipText}>Continue anyway</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
         </Animated.View>
       </View>
     </GestureDetector>
@@ -645,22 +701,22 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090b' },
+  container: { flex: 1, backgroundColor: '#000' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
   backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   progressContainer: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
   progressDotWrapper: { padding: 4 },
-  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.15)' },
-  progressDotActive: { width: 24, backgroundColor: '#8b5cf6' },
-  progressDotCompleted: { backgroundColor: '#8b5cf6' },
-  content: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
-  questionHeader: { marginBottom: 32 },
-  stepIndicator: { fontSize: 13, fontWeight: '600', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  questionTitle: { fontSize: 32, fontWeight: '700', color: '#fff', marginBottom: 8, letterSpacing: -0.5 },
-  questionSubtitle: { fontSize: 16, color: '#71717a', lineHeight: 22 },
+  progressDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)' },
+  progressDotActive: { width: 22, height: 6, borderRadius: 3, backgroundColor: '#fff' },
+  progressDotCompleted: { backgroundColor: 'rgba(255,255,255,0.35)' },
+  content: { flex: 1, paddingHorizontal: 28, paddingTop: 12 },
+  questionHeader: { marginBottom: 44 },
+  stepIndicator: { fontSize: 12, fontWeight: '400', color: 'rgba(255,255,255,0.25)', letterSpacing: 1, marginBottom: 16 },
+  questionTitle: { fontSize: 38, fontWeight: '700', color: '#fff', marginBottom: 10, letterSpacing: -1, lineHeight: 44 },
+  questionSubtitle: { fontSize: 16, color: 'rgba(255,255,255,0.4)', lineHeight: 22, fontWeight: '400' },
   optionsContainer: { gap: 12 },
-  optionButton: { borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
-  optionButtonSelected: { borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.08)' },
+  optionButton: { borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
+  optionButtonSelected: { borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.08)' },
   optionContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   optionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
   optionIconSelected: { backgroundColor: '#8b5cf6' },
@@ -680,11 +736,50 @@ const styles = StyleSheet.create({
   continueGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   continueText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   skipButton: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  locationContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 24,
+  },
+  locationIcon: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  locationButton: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  locationHint: {
+    fontSize: 15,
+    color: '#71717a',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  locationCity: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  locationGranted: {
+    alignItems: 'center',
+    gap: 12,
+  },
   skipText: { fontSize: 14, color: '#52525b', fontWeight: '500' },
   buildingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   orbContainer: { position: 'relative', marginBottom: 32 },
   buildingOrb: { width: 100, height: 100, borderRadius: 50 },
   orbGlow: { position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, borderRadius: 70, backgroundColor: '#8b5cf6', opacity: 0.15 },
+  buildingWordmark: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#ffffff',
+    letterSpacing: 8,
+    marginBottom: 16,
+  },
   buildingTitle: { fontSize: 26, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 8 },
   buildingSubtitle: { fontSize: 16, color: '#71717a', marginBottom: 32 },
   progressBarContainer: { width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' },

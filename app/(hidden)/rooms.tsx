@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing } from '../../theme';
 import { glassStyles } from '../../theme/vibeGradients';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 // UNIVERSAL STRUCTURE - Same for every city
 const NIGHTLIFE_VIBES = [

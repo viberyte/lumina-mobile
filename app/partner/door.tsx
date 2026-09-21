@@ -20,7 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { Camera, CameraView } from 'expo-camera';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface GuestEntry {
   id: number;

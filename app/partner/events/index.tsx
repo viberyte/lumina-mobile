@@ -15,8 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import PartnerTabBar from '../../../components/partner/PartnerTabBar';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type EventState = 'needs_setup' | 'tables_live' | 'fully_managed';
 
@@ -67,7 +68,8 @@ export default function PartnerEvents() {
 
   const fetchEvents = async () => {
     try {
-      const token = await AsyncStorage.getItem('partner_token');
+      const session = await AsyncStorage.getItem('lumina_partner_session');
+      const token = session ? JSON.parse(session).token : null;
       if (!token) {
         router.replace('/partner');
         return;
@@ -241,24 +243,7 @@ export default function PartnerEvents() {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/dashboard')}>
-            <Ionicons name="grid-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/bookings')}>
-            <Ionicons name="calendar-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Bookings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="sparkles" size={22} color="#fff" />
-            <Text style={[styles.navText, styles.navTextActive]}>Events</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/settings')}>
-            <Ionicons name="settings-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Settings</Text>
-          </TouchableOpacity>
-        </View>
+        <PartnerTabBar active="events" />
       </SafeAreaView>
     </View>
   );

@@ -15,7 +15,7 @@ import Animated, { FadeIn, FadeInDown, FadeInUp, Layout } from 'react-native-rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, typography, spacing } from '../../theme';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface ChipData {
   id: string;
@@ -467,7 +467,7 @@ export default function ChatScreen() {
             <Ionicons name="sparkles" size={20} color={colors.white} />
           </LinearGradient>
           <View>
-            <Text style={styles.headerTitle}>Lumina</Text>
+            <Text style={styles.headerTitle}>Viberyte</Text>
             <Text style={styles.headerSubtitle}>{userCity}</Text>
           </View>
         </View>

@@ -167,6 +167,35 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const session = await AsyncStorage.getItem('@lumina_auth_token');
+              if (session) {
+                await fetch('https://viberyte.com/api/user/delete-account', {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${session}` },
+                });
+              }
+              await AsyncStorage.clear();
+              router.replace('/login');
+            } catch (e) {
+              Alert.alert('Error', 'Failed to delete account. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSignOut = async () => {
     Alert.alert(
       'Sign Out',
@@ -267,7 +296,7 @@ export default function ProfileScreen() {
         </Animated.View>
 
         <Animated.View style={[styles.identityBlock, { opacity: fadeAnim }]}>
-          <Text style={styles.name}>{profile.name || 'Lumina Member'}</Text>
+          <Text style={styles.name}>{profile.name || 'Viberyte Member'}</Text>
           <Text style={styles.subtitle}>{userCity} Night Explorer</Text>
         </Animated.View>
 
@@ -309,9 +338,9 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={async () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); try { await Share.share({ message: 'Check out Lumina - the nightlife concierge.\n\nhttps://apps.apple.com/app/lumina' }); } catch (error) {} }} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.row} onPress={async () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); try { await Share.share({ message: 'Check out Viberyte - the nightlife concierge.\n\nhttps://apps.apple.com/app/lumina' }); } catch (error) {} }} activeOpacity={0.7}>
             <Ionicons name="paper-plane-outline" size={20} color={colors.zinc[600]} />
-            <Text style={styles.rowTextMuted}>Share Lumina</Text>
+            <Text style={styles.rowTextMuted}>Share Viberyte</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
         </View>
@@ -339,10 +368,17 @@ export default function ProfileScreen() {
           <Text style={styles.sectionLabel}>Account</Text>
           
           {isLoggedIn ? (
-            <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
-              <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-              <Text style={styles.signOutText}>Sign Out</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.row} onPress={() => router.push('/settings')} activeOpacity={0.7}>
+                <Ionicons name="settings-outline" size={20} color={colors.zinc[400]} />
+                <Text style={styles.rowText}>Settings</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.zinc[600]} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
+                <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </TouchableOpacity>
+            </>
           ) : (
             <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/login"); }} activeOpacity={0.7}>
               <Ionicons name="log-in-outline" size={20} color={colors.violet[500]} />

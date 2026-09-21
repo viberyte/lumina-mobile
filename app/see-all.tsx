@@ -24,7 +24,7 @@ const CARD_WIDTH = SCREEN_WIDTH * 0.72;
 const CARD_HEIGHT = CARD_WIDTH * 0.65;
 const CARD_GAP = 14;
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 // World aliases
 const WORLD_ALIASES: Record<string, string> = {

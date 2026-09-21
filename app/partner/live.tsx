@@ -19,7 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { colors } from '../../theme';
 
 const { width } = Dimensions.get('window');
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type PostType = 'now' | 'recap';
 type ContentType = 'photo' | 'video';

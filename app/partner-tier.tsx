@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
 import { colors, spacing } from '../theme';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type Tier = 'claimed' | 'spotlight' | 'elite';
 
@@ -133,33 +133,8 @@ export default function PartnerTierScreen() {
         await AsyncStorage.setItem('@lumina_partner_tier', 'claimed');
         router.replace('/(tabs)');
       } else {
-        // Paid tier - call upgrade endpoint for Stripe checkout
-        const response = await fetch(`${API_BASE}/api/partner/upgrade`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ targetTier: selectedTier }),
-        });
-        
-        const data = await response.json();
-        
-        if (data.url) {
-          // Open Stripe checkout in browser
-          await Linking.openURL(data.url);
-          // Save tier locally (webhook will confirm on server)
-          await AsyncStorage.setItem('@lumina_partner_tier', selectedTier);
-          router.replace('/(tabs)');
-        } else if (data.error) {
-          console.error('Upgrade error:', data.error);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          // If already on tier, just continue
-          if (data.currentTier) {
-            await AsyncStorage.setItem('@lumina_partner_tier', data.currentTier);
-            router.replace('/(tabs)');
-          }
-        }
+        // Redirect to web for subscription — Apple guideline 3.1.1
+        await Linking.openURL('https://viberyte.com/partner/upgrade');
       }
     } catch (error) {
       console.error('Tier selection error:', error);

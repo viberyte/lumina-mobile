@@ -29,6 +29,7 @@ export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [overrideCity, setOverrideCity] = useState<string | null>(null);
   const [userCity, setUserCity] = useState('Near Me');
+  const [cityKey, setCityKey] = useState(0);
   const [showCityModal, setShowCityModal] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const reloadOpacity = React.useRef(new Animated.Value(0)).current;
@@ -45,6 +46,22 @@ export default function ExploreScreen() {
   useEffect(() => {
     loadUserCity();
   }, []);
+
+  useEffect(() => {
+    if (params.tab) {
+      const tab = String(params.tab);
+      if (['Nightlife', 'Dining', 'Events'].includes(tab)) {
+        setActiveTab(tab as Tab);
+      }
+    }
+    if (params.filter) {
+      const filter = String(params.filter);
+      if (['events', 'latenight', 'datenight', 'tonight', 'nearby'].includes(filter)) {
+        if (filter === 'events') setActiveTab('Events');
+        else setActiveTab('Nightlife');
+      }
+    }
+  }, [params.tab, params.filter]);
 
 
   // Pulsing glow effect for header
@@ -92,32 +109,30 @@ export default function ExploreScreen() {
     
     if (newCity === userCity) return;
     
-    // Start reload effect - fade to black
+    // Show overlay immediately
     setIsReloading(true);
-    Animated.timing(reloadOpacity, {
-      toValue: 1,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(async () => {
-      try {
-        await AsyncStorage.setItem('@lumina_selected_city', newCity);
-        setUserCity(newCity);
-        setOverrideCity(null);
-      } catch (error) {
-        console.error('Error saving city:', error);
-      }
-      
-      // Fade back in
-      setTimeout(() => {
-        Animated.timing(reloadOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }).start(() => {
-          setIsReloading(false);
-        });
-      }, 100);
-    });
+    reloadOpacity.setValue(1);
+
+    // Save city + update state (outside animation callback — async in .start() is unsafe in RN)
+    try {
+      await AsyncStorage.setItem('@lumina_selected_city', newCity);
+    } catch (error) {
+      console.error('Error saving city:', error);
+    }
+    setUserCity(newCity);
+    setOverrideCity(null);
+    setCityKey(k => k + 1);
+
+    // Hold overlay while tabs re-fetch, then fade out
+    setTimeout(() => {
+      Animated.timing(reloadOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => {
+        setIsReloading(false);
+      });
+    }, 1500);
   };
 
 
@@ -214,35 +229,38 @@ export default function ExploreScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {activeTab === 'Nightlife' && (
           <>
-            <NightlifeTab filters={{ ...filtersByTab.Nightlife, searchQuery, city: effectiveCity }} />
+            <NightlifeTab key={`nl-${cityKey}`} filters={{ ...filtersByTab.Nightlife, searchQuery, city: effectiveCity }} />
           </>
         )}
         {activeTab === 'Dining' && (
           <>
-            <DiningTab filters={{ ...filtersByTab.Dining, searchQuery, city: effectiveCity }} />
+            <DiningTab key={`dn-${cityKey}`} filters={{ ...filtersByTab.Dining, searchQuery, city: effectiveCity }} />
           </>
         )}
         {activeTab === 'Events' && (
           <>
-            <EventsFilter onFilterChange={(f) => updateFilters('Events', f)} />
             <EventsTab filters={{ ...filtersByTab.Events, searchQuery, city: effectiveCity }} />
           </>
+        )}
+        {activeTab === 'Stays' && (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: -0.3, marginBottom: 8, textAlign: 'center' }}>Stays</Text>
+            <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.4)', textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>Curated hotels and boutique properties, connected to exclusive guest experiences.</Text>
+            <View style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.12)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)' }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8B5CF6', letterSpacing: 0.5 }}>COMING SOON</Text>
+            </View>
+          </View>
         )}
       </ScrollView>
 
 
-      {/* City Selector Modal */}
-      <Modal
+      {/* City Selector — component renders its own Modal, no wrapper needed */}
+      <StretchCitySelector
         visible={showCityModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowCityModal(false)}
-      >
-        <StretchCitySelector
-          currentCity={userCity}
-          onSelectCity={selectCity}
-        />
-      </Modal>
+        currentCity={userCity}
+        onSelectCity={selectCity}
+        onClose={() => setShowCityModal(false)}
+      />
 
       {/* Context Reload Overlay */}
       {isReloading && (

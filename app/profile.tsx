@@ -97,13 +97,13 @@ export default function ProfileScreen() {
   const loadSavedCounts = async (userId: string) => {
     try {
       const venuesResponse = await fetch(
-        `https://lumina.viberyte.com/api/favorites?userId=${userId}&type=venue`
+        `https://viberyte.com/api/favorites?userId=${userId}&type=venue`
       );
       const venuesData = await venuesResponse.json();
       setSavedVenuesCount(venuesData.items?.length || 0);
 
       const eventsResponse = await fetch(
-        `https://lumina.viberyte.com/api/favorites?userId=${userId}&type=event`
+        `https://viberyte.com/api/favorites?userId=${userId}&type=event`
       );
       const eventsData = await eventsResponse.json();
       setSavedEventsCount(eventsData.items?.length || 0);
@@ -182,7 +182,7 @@ export default function ProfileScreen() {
         {/* Identity Block */}
         <Animated.View style={[styles.identityBlock, { opacity: fadeAnim }]}>
           <Text style={styles.name}>
-            {profile.name || 'Lumina Member'}
+            {profile.name || 'Viberyte Member'}
           </Text>
           <Text style={styles.subtitle}>
             {userCity} Night Explorer
@@ -306,7 +306,7 @@ export default function ProfileScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               try {
                 await Share.share({
-                  message: 'Check out Lumina - the nightlife concierge.\n\nhttps://apps.apple.com/app/lumina',
+                  message: 'Check out Viberyte - the nightlife concierge.\n\nhttps://apps.apple.com/app/lumina',
                 });
               } catch (error) {
                 console.error('Share error:', error);
@@ -315,7 +315,7 @@ export default function ProfileScreen() {
             activeOpacity={0.7}
           >
             <Ionicons name="paper-plane-outline" size={20} color={colors.zinc[600]} />
-            <Text style={styles.rowTextMuted}>Share Lumina</Text>
+            <Text style={styles.rowTextMuted}>Share Viberyte</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
         </View>

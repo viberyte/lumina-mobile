@@ -39,7 +39,7 @@ const TIER_CONFIG: Record<string, TierConfig> = {
     color: '#8b5cf6',
     accentColor: '#a78bfa',
     label: 'Elevated Vibes',
-    emoji: '✨'
+    emoji: ''
   },
   wildcard: {
     color: '#ef4444',

@@ -161,7 +161,7 @@ export default function RegisterScreen() {
       // Thoughtful pause before navigation
       setTimeout(() => {
         if (role === 'partner') {
-          console.log('NAVIGATING TO PARTNER ONBOARDING'); router.replace('/partner-onboarding');
+          router.replace('/partner');
         } else {
           router.replace('/onboarding');
         }
@@ -176,6 +176,10 @@ export default function RegisterScreen() {
 
   const handleRoleChange = (newRole: UserRole) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (newRole === 'partner') {
+      router.push('/partner');
+      return;
+    }
     setRole(newRole);
   };
 
@@ -245,7 +249,7 @@ export default function RegisterScreen() {
             {/* Header with Listening Line */}
             <View style={styles.header}>
               <Text style={styles.title}>
-                {role === 'member' ? 'Join Lumina' : 'Partner with Lumina'}
+                {role === 'member' ? 'Join Viberyte' : 'Partner with Viberyte'}
               </Text>
               <Text style={styles.listening}>{getListeningLine()}</Text>
               <Text style={styles.reassurance}>Takes less than a minute</Text>

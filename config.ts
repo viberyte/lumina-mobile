@@ -1,1 +1,1 @@
-export const API_BASE = 'https://lumina.viberyte.com';
+export const API_BASE = 'https://viberyte.com';

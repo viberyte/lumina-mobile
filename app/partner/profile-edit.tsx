@@ -1,0 +1,681 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  TextInput, ActivityIndicator, Alert, Dimensions, Modal,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+
+const API = 'https://viberyte.com';
+const { width } = Dimensions.get('window');
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'];
+const VIBE_OPTIONS = [
+  'Intimate', 'Energetic', 'Trendy', 'Upscale', 'Chill',
+  'Hidden Gem', 'Lively', 'Romantic', 'Late Night', 'Rooftop',
+  'Speakeasy', 'Live Music', 'DJ', 'Outdoor', 'BYOB',
+];
+const GENRE_OPTIONS = [
+  'Hip Hop', 'R&B', 'Afrobeats', 'House', 'Latin',
+  'Reggaeton', 'Amapiano', 'Open Format', 'Jazz', 'Soul',
+];
+
+type EditSheet = 'bio' | 'vibes' | 'hours' | 'contact' | 'media' | null;
+
+export default function ProfileEdit() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [sheet, setSheet] = useState<EditSheet>(null);
+
+  const [name, setName] = useState('');
+  const [bio, setBio] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [city, setCity] = useState('');
+  const [website, setWebsite] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [category, setCategory] = useState('');
+  const [priceTier, setPriceTier] = useState('');
+  const [vibes, setVibes] = useState<string[]>([]);
+  const [genres, setGenres] = useState<string[]>([]);
+  const [hours, setHours] = useState<Record<string, any>>({});
+  const [profilePic, setProfilePic] = useState('');
+  const [heroMedia, setHeroMedia] = useState('');
+  const [exploreIcon, setExploreIcon] = useState('');
+  const [mediaTarget, setMediaTarget] = useState<{ url: string; isVideo: boolean } | null>(null);
+  const [gallery, setGallery] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [reels, setReels] = useState<string[]>([]);
+  const [vanitySlug, setVanitySlug] = useState('');
+
+  const fetchMedia = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API}/api/partner/media`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const m = await res.json();
+        setPhotos(m.photos || []);
+        setReels(m.reels || []);
+        if (m.cover) setProfilePic(m.cover.startsWith('/') ? `${API}${m.cover}` : m.cover);
+      }
+    } catch (e) { console.error('media fetch error', e); }
+  };
+
+  
+  const getToken = async () => {
+    const s = await AsyncStorage.getItem('lumina_partner_session');
+    return s ? JSON.parse(s).token : null;
+  };
+
+  useEffect(() => { fetchProfile(); }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const token = await getToken();
+      if (!token) { router.replace('/partner'); return; }
+      const res = await fetch(`${API}/api/partner/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { partner: p } = await res.json();
+        setName(p.business_name || p.name || '');
+        setBio(p.bio || '');
+        setPhone(p.phone || '');
+        setAddress(p.address || '');
+        setNeighborhood(p.neighborhood || '');
+        setCity(p.city || '');
+        setWebsite(p.website || '');
+        setInstagram(p.instagram_handle || '');
+        setCategory(p.category || '');
+        setPriceTier(p.price_tier || '');
+        setVibes(Array.isArray(p.vibes) ? p.vibes : []);
+        setGenres(Array.isArray(p.music_genres) ? p.music_genres : []);
+        setProfilePic(p.profile_picture || '');
+        setHeroMedia(p.hero_media_url || '');
+        setExploreIcon(p.explore_icon_url || '');
+        setGallery(Array.isArray(p.gallery_photos) ? p.gallery_photos : []);
+        setVanitySlug(p.vanity_slug || '');
+        const defaultH: Record<string, any> = {};
+        const h = p.hours_json || {};
+        DAYS.forEach(d => { defaultH[d] = h[d] || { open: '6:00 PM', close: '2:00 AM', closed: false }; });
+        setHours(defaultH);
+      }
+    } catch (e) { console.error(e); }
+
+    finally { setLoading(false); }
+
+    // Fetch media separately
+    fetchMedia();
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API}/api/partner/profile`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_name: name, bio, phone, address, neighborhood, city,
+          website, instagram_handle: instagram.replace('@', ''),
+          category, price_tier: priceTier, vibes, music_genres: genres,
+          hours_json: hours,
+        }),
+      });
+      if (res.ok) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setSheet(null);
+      } else Alert.alert('Error', 'Failed to save');
+    } catch { Alert.alert('Error', 'Connection failed'); }
+    finally { setSaving(false); }
+  };
+
+  const pickCover = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'] as any,
+      quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setUploadingPhoto(true);
+    try {
+      // Capture cover state BEFORE uploading.
+      const hasCover = !!profilePic;
+      let firstUrl: string | null = null;
+
+      for (let i = 0; i < result.assets.length; i++) {
+        const url = await uploadFile(result.assets[i].uri, 'photo');
+        if (url && !firstUrl) firstUrl = url;
+      }
+
+      // Only set a cover if the partner didn't already have one.
+      if (!hasCover && firstUrl) {
+        setProfilePic(`${API}${firstUrl}`);
+        const token = await getToken();
+        await fetch(`${API}/api/partner/profile`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_picture: firstUrl }),
+        });
+      }
+      await fetchMedia();
+    } catch {}
+    finally { setUploadingPhoto(false); }
+  };
+
+  const [uploadingReel, setUploadingReel] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const uploadFile = async (uri: string, type: 'reel' | 'photo') => {
+    const token = await getToken();
+    if (!token) return null;
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || (type === 'reel' ? 'reel.mp4' : 'photo.jpg');
+    const mimeType = type === 'reel' ? 'video/mp4' : 'image/jpeg';
+    formData.append('file', { uri, name: filename, type: mimeType } as any);
+    formData.append('type', type);
+    const res = await fetch(`${API}/api/partner/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await res.json();
+    return data.url || null;
+  };
+
+  const pickReel = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow access to pick videos'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'] as any,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setUploadingReel(true);
+      try {
+        const url = await uploadFile(result.assets[0].uri, 'reel');
+        if (url) {
+          await fetchMedia();
+          Alert.alert('Reel Uploaded!', 'Your reel is now live on your profile.');
+        } else {
+          Alert.alert('Upload Failed', 'Please try again.');
+        }
+      } catch { Alert.alert('Upload Failed', 'Please try again.'); }
+      finally { setUploadingReel(false); }
+    }
+  };
+
+  const setMedia = async (field: 'hero_media_url' | 'explore_icon_url', url: string) => {
+    try {
+      const token = await getToken();
+      await fetch(`${API}/api/partner/profile`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: url }),
+      });
+      if (field === 'hero_media_url') setHeroMedia(url); else setExploreIcon(url);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSheet(null);
+    } catch {}
+  };
+
+  const openMediaSheet = (url: string, isVideo: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMediaTarget({ url, isVideo });
+    setSheet('media');
+  };
+
+  const toggleVibe = (v: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setVibes(p => p.includes(v) ? p.filter(x => x !== v) : p.length < 5 ? [...p, v] : p);
+  };
+
+  const toggleGenre = (g: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setGenres(p => p.includes(g) ? p.filter(x => x !== g) : p.length < 4 ? [...p, g] : p);
+  };
+
+  const missing = [
+    !bio && 'Bio',
+    !profilePic && 'Cover Photo',
+    vibes.length === 0 && 'Vibes',
+    genres.length === 0 && 'Music',
+    !address && 'Address',
+  ].filter(Boolean) as string[];
+
+  if (loading) return (
+    <View style={s.root}>
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color="rgba(255,255,255,0.4)" />
+      </SafeAreaView>
+    </View>
+  );
+
+  return (
+    <View style={s.root}>
+      {/* Header */}
+      <SafeAreaView style={{ backgroundColor: '#050508' }}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>Your Storefront</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            {vanitySlug ? (
+              <TouchableOpacity onPress={() => {
+                const { Linking } = require('react-native');
+                Linking.openURL(`https://viberyte.com/partner/${vanitySlug}`);
+              }}>
+                <Ionicons name="eye-outline" size={20} color="rgba(255,255,255,0.5)" />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={save} disabled={saving}>
+              {saving ? <ActivityIndicator size="small" color="#a78bfa" /> : <Text style={s.saveText}>Save</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+
+        {/* ── LIVE PREVIEW ── */}
+        <TouchableOpacity onPress={pickCover} activeOpacity={0.95} style={s.coverWrap}>
+          {profilePic ? (
+            <Image source={{ uri: profilePic.startsWith('/') ? `${API}${profilePic}` : profilePic }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111118' }]} />
+          )}
+          <View style={s.coverOverlay} />
+          <View style={s.coverContent}>
+            <Text style={s.venueName}>{name || 'Your Venue'}</Text>
+            {(category || neighborhood) && (
+              <Text style={s.venueSub}>{[category, neighborhood, city].filter(Boolean).join(' · ')}</Text>
+            )}
+            {(vibes.length > 0 || genres.length > 0) && (
+              <View style={s.tagRow}>
+                {vibes.slice(0, 2).map(v => <Text key={v} style={s.tag}>{v}</Text>)}
+                {genres.slice(0, 2).map(g => <Text key={g} style={s.tag}>{g}</Text>)}
+              </View>
+            )}
+            {bio ? (
+              <Text style={s.bioPreview} numberOfLines={2}>{bio}</Text>
+            ) : null}
+          </View>
+          <View style={s.editCoverBtn}>
+            <Ionicons name="camera" size={14} color="#fff" />
+            <Text style={s.editCoverText}>Edit Cover</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* ── MISSING ITEMS ── */}
+        {missing.length > 0 && (
+          <View style={s.missingWrap}>
+            <Text style={s.missingTitle}>Your storefront is missing:</Text>
+            <View style={s.missingPills}>
+              {missing.map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={s.missingPill}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    if (m === 'Bio') setSheet('bio');
+                    else if (m === 'Vibes' || m === 'Music') setSheet('vibes');
+                    else if (m === 'Address') setSheet('contact');
+                    else if (m === 'Cover Photo') pickCover();
+                  }}
+                >
+                  <Ionicons name="add" size={12} color="rgba(255,255,255,0.4)" />
+                  <Text style={s.missingPillText}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Photos */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>PHOTOS{photos.length ? `  ·  ${photos.length}` : ''}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3 }}>
+            {photos.slice(0, 8).map((url, i) => {
+              const tag = heroMedia === url ? 'Hero' : exploreIcon === url ? 'Cover' : null;
+              return (
+                <TouchableOpacity key={i} activeOpacity={0.85} onPress={() => openMediaSheet(url, false)}
+                  style={{ width: (width - 32 - 6) / 3, height: (width - 32 - 6) / 3, borderRadius: 6, overflow: 'hidden' }}>
+                  <Image source={{ uri: url.startsWith('/') ? `${API}${url}` : url }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                  {tag && <View style={s.mediaTag}><Text style={s.mediaTagText}>{tag}</Text></View>}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={pickCover} activeOpacity={0.7} style={s.addTile}>
+              {uploadingPhoto
+                ? <ActivityIndicator color="rgba(255,255,255,0.4)" />
+                : <Ionicons name="add" size={26} color="rgba(255,255,255,0.4)" />
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Reels */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>REELS{reels.length ? `  ·  ${reels.length}` : ''}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3 }}>
+            {reels.map((url, i) => {
+              const isHero = heroMedia === url;
+              return (
+                <TouchableOpacity key={i} activeOpacity={0.85} onPress={() => openMediaSheet(url, true)}
+                  style={{ width: (width - 32 - 6) / 3, height: (width - 32 - 6) / 3, borderRadius: 6, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="play-circle" size={32} color="rgba(255,255,255,0.6)" />
+                  {isHero && <View style={s.mediaTag}><Text style={s.mediaTagText}>Hero</Text></View>}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={pickReel} activeOpacity={0.7} disabled={uploadingReel} style={s.addTile}>
+              {uploadingReel
+                ? <ActivityIndicator color="rgba(255,255,255,0.4)" />
+                : <Ionicons name="add" size={26} color="rgba(255,255,255,0.4)" />
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── EDIT SECTIONS ── */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>PROFILE</Text>
+          <View style={s.editGroup}>
+
+            <TouchableOpacity style={s.editRow} onPress={() => setSheet('bio')} activeOpacity={0.7}>
+              <Text style={s.editRowLabel}>Bio</Text>
+              <View style={s.editRowRight}>
+                <Text style={s.editRowValue} numberOfLines={1}>{bio || 'Add a description'}</Text>
+                <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.15)" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.divider} />
+
+            <TouchableOpacity style={s.editRow} onPress={() => setSheet('vibes')} activeOpacity={0.7}>
+              <Text style={s.editRowLabel}>Vibes</Text>
+              <View style={s.editRowRight}>
+                <Text style={s.editRowValue} numberOfLines={1}>
+                  {vibes.length > 0 ? vibes.slice(0, 2).join(', ') + (vibes.length > 2 ? '...' : '') : 'Add vibes'}
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.15)" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.divider} />
+
+            <TouchableOpacity style={s.editRow} onPress={() => setSheet('vibes')} activeOpacity={0.7}>
+              <Text style={s.editRowLabel}>Music</Text>
+              <View style={s.editRowRight}>
+                <Text style={s.editRowValue} numberOfLines={1}>
+                  {genres.length > 0 ? genres.slice(0, 2).join(', ') + (genres.length > 2 ? '...' : '') : 'Add genres'}
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.15)" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.divider} />
+
+            <TouchableOpacity style={s.editRow} onPress={() => setSheet('hours')} activeOpacity={0.7}>
+              <Text style={s.editRowLabel}>Hours</Text>
+              <View style={s.editRowRight}>
+                <Text style={s.editRowValue}>
+                  {Object.values(hours).filter((h: any) => !h.closed).length} days open
+                </Text>
+                <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.15)" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.divider} />
+
+            <TouchableOpacity style={s.editRow} onPress={() => setSheet('contact')} activeOpacity={0.7}>
+              <Text style={s.editRowLabel}>Contact</Text>
+              <View style={s.editRowRight}>
+                <Text style={s.editRowValue} numberOfLines={1}>{address || 'Add address & contact'}</Text>
+                <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.15)" />
+              </View>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+
+      </ScrollView>
+
+      {/* ── EDIT SHEETS ── */}
+      <Modal visible={sheet !== null} animationType="slide" transparent presentationStyle="overFullScreen">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <TouchableOpacity style={s.sheetBackdrop} onPress={() => setSheet(null)} activeOpacity={1} />
+          <View style={[s.sheet, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={s.sheetHandle} />
+
+            {/* MEDIA SHEET */}
+            {sheet === 'media' && mediaTarget && (
+              <>
+                <Text style={s.sheetTitle}>Set this media as</Text>
+                <View style={s.actionGroup}>
+                  <TouchableOpacity style={s.actionRow} onPress={() => setMedia('hero_media_url', mediaTarget.url)} activeOpacity={0.6}>
+                    <Ionicons name="albums-outline" size={20} color="#fff" style={{ width: 26 }} />
+                    <Text style={s.actionLabel}>Profile Hero</Text>
+                    {heroMedia === mediaTarget.url && <Ionicons name="checkmark" size={20} color="#0a84ff" />}
+                  </TouchableOpacity>
+                  {!mediaTarget.isVideo && (
+                    <>
+                      <View style={s.actionDivider} />
+                      <TouchableOpacity style={s.actionRow} onPress={() => setMedia('explore_icon_url', mediaTarget.url)} activeOpacity={0.6}>
+                        <Ionicons name="image-outline" size={20} color="#fff" style={{ width: 26 }} />
+                        <Text style={s.actionLabel}>Explore Cover</Text>
+                        {exploreIcon === mediaTarget.url && <Ionicons name="checkmark" size={20} color="#0a84ff" />}
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              </>
+            )}
+
+            {/* BIO SHEET */}
+            {sheet === 'bio' && (
+              <>
+                <Text style={s.sheetTitle}>Bio</Text>
+                <Text style={s.sheetSub}>Tell guests what makes your venue special</Text>
+                <TextInput
+                  style={s.sheetTextArea}
+                  value={bio}
+                  onChangeText={setBio}
+                  placeholder="Describe your venue..."
+                  placeholderTextColor="rgba(255,255,255,0.2)"
+                  multiline numberOfLines={5}
+                  autoFocus
+                />
+                <TouchableOpacity style={s.sheetSave} onPress={save} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>Save</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* VIBES SHEET */}
+            {sheet === 'vibes' && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={s.sheetTitle}>Vibes & Music</Text>
+                <Text style={s.sheetSub}>How Viberyte recommends your venue</Text>
+
+                <Text style={s.sheetSubLabel}>VIBES <Text style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>· up to 5</Text></Text>
+                <View style={s.chipWrap}>
+                  {VIBE_OPTIONS.map(v => (
+                    <TouchableOpacity key={v} style={[s.chip, vibes.includes(v) && s.chipOn]} onPress={() => toggleVibe(v)} activeOpacity={0.8}>
+                      <Text style={[s.chipText, vibes.includes(v) && s.chipTextOn]}>{v}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[s.sheetSubLabel, { marginTop: 20 }]}>MUSIC <Text style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>· up to 4</Text></Text>
+                <View style={s.chipWrap}>
+                  {GENRE_OPTIONS.map(g => (
+                    <TouchableOpacity key={g} style={[s.chip, genres.includes(g) && s.chipOn]} onPress={() => toggleGenre(g)} activeOpacity={0.8}>
+                      <Text style={[s.chipText, genres.includes(g) && s.chipTextOn]}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[s.sheetSubLabel, { marginTop: 20 }]}>PRICE</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {PRICE_TIERS.map(t => (
+                    <TouchableOpacity key={t} style={[s.chip, priceTier === t && s.chipOn]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPriceTier(t); }}>
+                      <Text style={[s.chipText, priceTier === t && s.chipTextOn]}>{t}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity style={[s.sheetSave, { marginTop: 24 }]} onPress={save} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>Save</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* HOURS SHEET */}
+            {sheet === 'hours' && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={s.sheetTitle}>Hours</Text>
+                <Text style={s.sheetSub}>When guests can visit</Text>
+                {DAYS.map((day, i) => (
+                  <View key={day}>
+                    {i > 0 && <View style={s.divider} />}
+                    <View style={s.hoursRow}>
+                      <Text style={s.hoursDay}>{day}</Text>
+                      {!hours[day]?.closed ? (
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <TextInput style={s.timeInput} value={hours[day]?.open || ''} onChangeText={v => setHours(h => ({ ...h, [day]: { ...h[day], open: v } }))} placeholder="6 PM" placeholderTextColor="rgba(255,255,255,0.2)" />
+                          <Text style={{ color: 'rgba(255,255,255,0.2)' }}>–</Text>
+                          <TextInput style={s.timeInput} value={hours[day]?.close || ''} onChangeText={v => setHours(h => ({ ...h, [day]: { ...h[day], close: v } }))} placeholder="2 AM" placeholderTextColor="rgba(255,255,255,0.2)" />
+                        </View>
+                      ) : (
+                        <Text style={{ flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.2)' }}>Closed</Text>
+                      )}
+                      <TouchableOpacity
+                        style={[s.toggleBtn, !hours[day]?.closed && s.toggleBtnOn]}
+                        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setHours(h => ({ ...h, [day]: { ...h[day], closed: !h[day]?.closed } })); }}
+                      >
+                        <Text style={[s.toggleBtnText, !hours[day]?.closed && s.toggleBtnTextOn]}>
+                          {hours[day]?.closed ? 'Closed' : 'Open'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+                <TouchableOpacity style={[s.sheetSave, { marginTop: 20 }]} onPress={save} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>Save</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* CONTACT SHEET */}
+            {sheet === 'contact' && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={s.sheetTitle}>Contact & Location</Text>
+                <Text style={s.sheetSub}>Help guests find and reach you</Text>
+                {[
+                  { label: 'Address', val: address, set: setAddress, placeholder: '123 Main St, New York' },
+                  { label: 'Neighborhood', val: neighborhood, set: setNeighborhood, placeholder: 'SoHo' },
+                  { label: 'Phone', val: phone, set: setPhone, placeholder: '+1 (555) 000-0000' },
+                  { label: 'Website', val: website, set: setWebsite, placeholder: 'https://yourvenue.com' },
+                  { label: 'Instagram', val: instagram, set: setInstagram, placeholder: '@yourhandle' },
+                ].map(f => (
+                  <View key={f.label} style={{ marginBottom: 14 }}>
+                    <Text style={s.sheetSubLabel}>{f.label.toUpperCase()}</Text>
+                    <TextInput style={s.sheetInput} value={f.val} onChangeText={f.set} placeholder={f.placeholder} placeholderTextColor="rgba(255,255,255,0.2)" autoCapitalize="none" />
+                  </View>
+                ))}
+                <TouchableOpacity style={s.sheetSave} onPress={save} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>Save</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#050508' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
+  headerTitle: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  saveText: { fontSize: 16, fontWeight: '600', color: '#a78bfa' },
+  coverWrap: { width: '100%', height: 280, position: 'relative', justifyContent: 'flex-end' },
+  coverOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  coverContent: { padding: 24, gap: 6 },
+  venueName: { fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: -0.8 },
+  venueSub: { fontSize: 14, color: 'rgba(255,255,255,0.5)' },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  tag: { fontSize: 12, color: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  bioPreview: { fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 18, marginTop: 4 },
+  editCoverBtn: { position: 'absolute', top: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  editCoverText: { fontSize: 12, color: '#fff', fontWeight: '500' },
+  missingWrap: { padding: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  missingTitle: { fontSize: 12, color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: '500' },
+  missingPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  missingPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  missingPillText: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  section: { paddingHorizontal: 16, paddingTop: 24 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
+  mediaGrid: { flexDirection: 'row', gap: 10 },
+  mediaCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 16, alignItems: 'center', gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
+  mediaCount: { fontSize: 22, fontWeight: '700', color: '#fff', marginTop: 4 },
+  mediaLabel: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.5)' },
+  mediaHint: { fontSize: 10, color: '#a78bfa', marginTop: 2, textAlign: 'center' },
+  addTile: { width: (width - 32 - 6) / 3, height: (width - 32 - 6) / 3, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  editGroup: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)', backgroundColor: 'rgba(255,255,255,0.03)' },
+  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  editRowLabel: { fontSize: 15, fontWeight: '500', color: '#fff', width: 80 },
+  editRowRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  editRowValue: { fontSize: 14, color: 'rgba(255,255,255,0.35)', flex: 1, textAlign: 'right' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.06)', marginLeft: 16 },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  mediaTag: { position: 'absolute', bottom: 4, left: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  mediaTagText: { fontSize: 9, fontWeight: '600', color: '#fff', letterSpacing: 0.3 },
+  actionGroup: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, overflow: 'hidden', marginTop: 4 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
+  actionLabel: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff' },
+  actionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 54 },
+  sheet: { backgroundColor: '#0f0f17', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'center', marginBottom: 20 },
+  sheetTitle: { fontSize: 20, fontWeight: '700', color: '#fff', letterSpacing: -0.4, marginBottom: 6 },
+  sheetSub: { fontSize: 13, color: 'rgba(255,255,255,0.35)', marginBottom: 20, lineHeight: 18 },
+  sheetSubLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
+  sheetTextArea: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 14, fontSize: 15, color: '#fff', minHeight: 120, textAlignVertical: 'top', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)' },
+  sheetInput: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)' },
+  sheetSave: { backgroundColor: '#5b21b6', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
+  sheetSaveText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
+  chipOn: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.25)' },
+  chipText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.4)' },
+  chipTextOn: { color: '#fff' },
+  hoursRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
+  hoursDay: { fontSize: 14, fontWeight: '600', color: '#fff', width: 36 },
+  timeInput: { flex: 1, fontSize: 13, color: '#fff', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, textAlign: 'center' },
+  toggleBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)' },
+  toggleBtnOn: { backgroundColor: 'rgba(91,33,182,0.2)', borderColor: '#5b21b6' },
+  toggleBtnText: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.35)' },
+  toggleBtnTextOn: { color: '#a78bfa' },
+});

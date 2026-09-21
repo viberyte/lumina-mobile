@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://lumina.viberyte.com';
+const API_URL = 'https://viberyte.com';
 const POLL_INTERVAL = 8000;
 
 interface Message {

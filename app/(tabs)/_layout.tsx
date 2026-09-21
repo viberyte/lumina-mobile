@@ -6,17 +6,25 @@ import { colors } from '../../theme';
 import { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNotifications } from '../../hooks/useNotifications';
 
 export default function TabLayout() {
   const [isPartner, setIsPartner] = useState(false);
+  useNotifications();
 
   const checkPartnerStatus = useCallback(async () => {
     try {
-      // REAL source of truth - only partner_token grants access
+      // REAL source of truth - must have partner_token AND partner role
       const partnerToken = await AsyncStorage.getItem('partner_token');
-      const hasPartnerAccess = Boolean(partnerToken);
+      const userRole = await AsyncStorage.getItem('@lumina_user_role');
+      const hasPartnerAccess = Boolean(partnerToken) && userRole === 'partner';
       
-      console.log('Partner status check:', { hasPartnerToken: !!partnerToken, hasPartnerAccess });
+      // Clean up stale partner token if user is not a partner
+      if (partnerToken && userRole !== 'partner') {
+        await AsyncStorage.removeItem('partner_token');
+      }
+      
+      console.log('Partner status check:', { hasPartnerToken: !!partnerToken, userRole, hasPartnerAccess });
       setIsPartner(hasPartnerAccess);
     } catch (error) {
       console.error('Error checking partner status:', error);
@@ -88,6 +96,7 @@ export default function TabLayout() {
         name="bookings"
         options={{
           title: 'Bookings',
+          href: null,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeIconContainer : undefined}>
               <Ionicons name={focused ? 'ticket' : 'ticket-outline'} size={24} color={color} />

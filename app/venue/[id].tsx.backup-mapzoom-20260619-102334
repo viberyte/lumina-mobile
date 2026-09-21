@@ -1,0 +1,753 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { requireAuth } from '../../utils/authGate';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  TouchableOpacity,
+  Dimensions,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+  Linking,
+  Share,
+  ScrollView,
+} from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { Image } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { api, trackBehavior } from '../../lib/api';
+import AddToPlanSheet from '../../components/AddToPlanSheet';
+import NextStopCard from '../../components/NextStopCard';
+import { getPhotoUrl, getAllPhotos } from '../../utils/photoHelper';
+import LoadingScreen from '../../components/LoadingScreen';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cacheFlow } from '../../utils/flowCache';
+import FlowCard from '../../components/FlowCard';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HERO_HEIGHT = SCREEN_HEIGHT * 0.52;
+const API_URL = 'https://viberyte.com';
+
+const safeParseArray = (data: any): any[] => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') {
+    try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+};
+
+interface NextStop {
+  id: string;
+  name: string;
+  full_name?: string;
+  category: string;
+  address?: string;
+  image_url?: string;
+  energy_level?: string;
+  travel_time?: number;
+  transport_mode?: 'walk' | 'rideshare';
+  transition_message?: string;
+}
+
+
+// ── VENUE FLOW CARD ──────────────────────────────────────
+const FLOW_ACCENTS: Record<string, string> = {
+  romantic: '#f9a8c9', girls_night: '#d8b4fe', guys_night: '#93c5fd',
+  late_night: '#a5b4fc', weekend: '#6ee7b7', pregame: '#fcd34d', group: '#7dd3fc',
+};
+const FLOW_BASES: Record<string, string> = {
+  romantic: '#1a0008', girls_night: '#07030f', guys_night: '#030810',
+  late_night: '#020208', weekend: '#011008', pregame: '#0f0800', group: '#010810',
+};
+
+function VenueFlowCard({ flow, router }: { flow: any; router: any }) {
+  const accent = FLOW_ACCENTS[flow.intent] || '#a5b4fc';
+  const base = FLOW_BASES[flow.intent] || '#020208';
+  const visibleStops = flow.stops.slice(0, 2);
+  const extraCount = flow.stops.length - 2;
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cacheFlow(flow.slug, flow);
+    router.push('/flow/' + flow.slug);
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.85}
+      style={{
+        width: 200,
+        backgroundColor: base,
+        borderRadius: 16,
+        padding: 14,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: accent + '30',
+      }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: -0.3, marginBottom: 12 }}>
+        {flow.title}
+      </Text>
+      {visibleStops.map((stop: any, i: number) => {
+        const name = stop.type === 'event' ? stop.event?.title : stop.venue?.name;
+        return (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            <View style={{ width: 16, alignItems: 'center', paddingTop: 5 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
+              {i < visibleStops.length - 1 && (
+                <View style={{ width: 1.5, height: 16, backgroundColor: accent + '35', marginTop: 3 }} />
+              )}
+            </View>
+            <View style={{ flex: 1, paddingLeft: 8, paddingBottom: 16 }}>
+              <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 1 }}>
+                {stop.roleLabel}
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.9)', letterSpacing: -0.2 }} numberOfLines={1}>
+                {name && name.length > 16 ? name.slice(0, 15) + '…' : name || stop.roleLabel}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' }}>
+        {extraCount > 0 ? (
+          <Text style={{ fontSize: 11, color: accent, fontWeight: '600' }}>+{extraCount} more stop{extraCount > 1 ? 's' : ''}</Text>
+        ) : <View />}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: accent }}>View</Text>
+          <Ionicons name="chevron-forward" size={11} color={accent} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+// ─────────────────────────────────────────────────────────
+
+
+function VenueReelPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+
+function GalleryReelPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+export default function VenueDetailScreen() {
+  const { id } = useLocalSearchParams();
+  const [venue, setVenue] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [addToPlanVisible, setAddToPlanVisible] = useState(false);
+  const [venueFlows, setVenueFlows] = useState<any[]>([]);
+  const [reelUrl, setReelUrl] = useState<string | null>(null);
+  const [venueReels, setVenueReels] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadFlows = async () => {
+      try {
+        const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+        const city = savedCity || 'Manhattan';
+        const res = await fetch('https://viberyte.com/api/venue-flows?venue_id=' + venue.id + '&city=' + encodeURIComponent(city));
+        const data = await res.json();
+        if (data.ok && data.flows) {
+          setVenueFlows(data.flows);
+          data.flows.forEach((f: any) => cacheFlow(f.slug, f));
+        }
+      } catch (e) {}
+    };
+    if (venue?.id) loadFlows();
+  }, [venue?.id]);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savingBusy, setSavingBusy] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  const heroOpacity = scrollY.interpolate({
+    inputRange: [0, HERO_HEIGHT * 0.5],
+    outputRange: [1, 0.4],
+    extrapolate: 'clamp',
+  });
+
+  const navOpacity = scrollY.interpolate({
+    inputRange: [HERO_HEIGHT * 0.4, HERO_HEIGHT * 0.7],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const heroScale = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: [1.08, 1],
+    extrapolate: 'clamp',
+  });
+
+  useEffect(() => {
+    StatusBar.setBarStyle('light-content');
+    fetchVenueDetails();
+  }, [id]);
+
+  const fetchVenueDetails = async () => {
+    try {
+      setLoading(true);
+      const data = await api.getVenue(id as string);
+      const venueData = data?.venue || data;
+      setVenue(venueData);
+      const media = venueData?.instagram_media || data?.instagram_media || [];
+      const allReels = media
+        .filter((m: any) => (m.type || '').toUpperCase() === 'VIDEO' && m.url && m.url.includes('/venue-videos/'))
+        .sort((a: any, b: any) => (b.likes || 0) - (a.likes || 0))
+        .map((m: any) => m.url.startsWith('/') ? 'https://viberyte.com' + m.url : m.url);
+      setVenueReels(allReels);
+      if (allReels.length > 0) {
+        setReelUrl(allReels[0]);
+      }
+      if (data?.id) trackBehavior(Number(data.id), 'view', 'detail');
+    } catch (error) {
+      console.error('Error fetching venue:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (venue?.id) checkSaved(venue.id);
+  }, [venue?.id]);
+
+  const handleShare = async () => {
+    if (!venue) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Share.share({
+        message: `Check out ${venue.name} on Viberyte!\nhttps://viberyte.com/venue/${id}`,
+      });
+    } catch {}
+  };
+
+  const checkSaved = async (vid: number | string) => {
+    try { setSaved(await api.isVenueSaved(Number(vid))); } catch {}
+  };
+
+  const handleToggleSave = async () => {
+    if (!venue?.id || savingBusy) return;
+    const authed = await requireAuth();
+    if (!authed) return;
+    setSavingBusy(true);
+    const next = !saved;
+    setSaved(next); // optimistic
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const r = next ? await api.saveFavorite(Number(venue.id))
+                     : await api.removeFavorite(Number(venue.id));
+      if (r && r.error === 'not_logged_in') setSaved(!next); // revert
+    } catch {
+      setSaved(!next); // revert on failure
+    } finally {
+      setSavingBusy(false);
+    }
+  };
+
+  const handleDirections = () => {
+    if (!venue?.address) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const encoded = encodeURIComponent(venue.address);
+    const url = `https://maps.apple.com/?daddr=${encoded}`;
+    Linking.openURL(url);
+  };
+
+  const handleInstagram = () => {
+    if (!venue?.instagram_handle) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
+  };
+
+  const handleCall = () => {
+    if (!venue?.phone) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(`tel:${venue.phone}`);
+  };
+
+  if (loading) {
+    return (
+      <LoadingScreen />
+    );
+  }
+
+  if (!venue) {
+    return (
+      <View style={styles.loader}>
+        <Text style={{ color: '#fff' }}>Venue not found</Text>
+      </View>
+    );
+  }
+
+  const heroImage = getPhotoUrl(venue);
+  const allPhotos = getAllPhotos(venue).slice(0, 12);
+  const vibes = safeParseArray(venue.primary_vibes || venue.vibe_tags).slice(0, 3);
+  const genres = safeParseArray(venue.music_genres).slice(0, 2);
+  const nextStops: NextStop[] = safeParseArray(venue.next_stops).slice(0, 4);
+  const category = venue.standardized_category || venue.category || '';
+  const isOpen = venue.hours ? true : null;
+  const description = venue.description || venue.bio || null;
+  const descPreview = description ? description.slice(0, 180) : null;
+  const needsExpand = description && description.length > 180;
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      {/* Floating nav */}
+      <Animated.View style={[styles.floatingNav, { opacity: navOpacity }]}>
+        <View style={{ height: 44 + (Platform.OS === 'ios' ? 44 : 24) }} />
+        <View style={styles.floatingNavInner}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.floatingNavBtn}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.floatingNavTitle} numberOfLines={1}>{venue.name}</Text>
+          <TouchableOpacity onPress={handleShare} style={styles.floatingNavBtn}>
+            <Ionicons name="share-outline" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
+        {/* ── HERO ── */}
+        <View style={styles.heroContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: heroScale }] }]}>
+            {reelUrl ? (
+              <VenueReelPlayer uri={reelUrl} />
+            ) : heroImage ? (
+              <Image
+                source={{ uri: heroImage.startsWith('/') ? `${API_URL}${heroImage}` : heroImage }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a2e' }]} />
+            )}
+          </Animated.View>
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)', '#000']}
+            locations={[0, 0.4, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Back + Share */}
+          <View style={styles.heroTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.heroBtn} activeOpacity={0.8}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={handleToggleSave} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={19} color={saved ? '#a78bfa' : '#fff'} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name="share-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Hero content */}
+          <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
+            {vibes.length > 0 && (
+              <View style={styles.vibeRow}>
+                {vibes.map((v: string, i: number) => (
+                  <View key={i} style={styles.vibePill}>
+                    <Text style={styles.vibePillText}>{v}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text style={styles.heroTitle}>{venue.name}</Text>
+            <Text style={styles.heroMeta}>
+              {venue.neighborhood || venue.city}
+              {category ? ` · ${category.charAt(0).toUpperCase() + category.slice(1)}` : ''}
+              {genres.length > 0 ? ` · ${genres.join(', ')}` : ''}
+            </Text>
+          </Animated.View>
+        </View>
+
+        {/* ── PRIMARY ACTION ── */}
+        {venue.address && (
+          <View style={styles.primaryActionRow}>
+            <TouchableOpacity style={styles.directionsBtn} onPress={handleDirections} activeOpacity={0.85}>
+              <Ionicons name="navigate" size={16} color="#fff" />
+              <Text style={styles.directionsBtnText}>Directions</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── SECONDARY ACTIONS — text links ── */}
+        <View style={styles.secondaryActionsRow}>
+          {venue.phone && (
+            <TouchableOpacity onPress={handleCall} activeOpacity={0.7} style={styles.secondaryAction}>
+              <Text style={styles.secondaryActionText}>Call</Text>
+            </TouchableOpacity>
+          )}
+          {venue.phone && venue.instagram_handle && <Text style={styles.secondaryDot}>·</Text>}
+          {venue.instagram_handle && (
+            <TouchableOpacity onPress={handleInstagram} activeOpacity={0.7} style={styles.secondaryAction}>
+              <Text style={styles.secondaryActionText}>Instagram</Text>
+            </TouchableOpacity>
+          )}
+          {venue.website && (
+            <>
+              <Text style={styles.secondaryDot}>·</Text>
+              <TouchableOpacity onPress={() => Linking.openURL(venue.website)} activeOpacity={0.7} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>Website</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* ── ABOUT ── */}
+        {description && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>About</Text>
+            <Text style={styles.bodyText}>
+              {descExpanded ? description : descPreview}
+            </Text>
+            {needsExpand && (
+              <TouchableOpacity onPress={() => setDescExpanded(!descExpanded)} activeOpacity={0.7}>
+                <Text style={styles.readMore}>{descExpanded ? 'Show less' : 'Read more'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* ── REELS & PHOTOS — reels first ── */}
+        {(venueReels.length > 0 || allPhotos.length > 0) && (
+          <View style={[styles.section, { paddingHorizontal: 0 }]}>
+            <Text style={[styles.sectionLabel, { paddingHorizontal: 20 }]}>{venueReels.length > 0 ? 'Reels & Photos' : 'Photos'}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              pagingEnabled={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
+              decelerationRate="fast"
+            >
+              {venueReels.map((rUrl: string, i: number) => (
+                <View key={'reel-'+i} style={[i === 0 ? styles.photoLarge : styles.photoSmall, { borderRadius: 12, overflow: 'hidden' }]}>
+                  <GalleryReelPlayer uri={rUrl} />
+                  <View style={{ position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
+                  </View>
+                </View>
+              ))}
+              {allPhotos.map((photo: string, i: number) => (
+                <TouchableOpacity key={'photo-'+i} activeOpacity={0.95} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+                  <Image
+                    source={{ uri: photo.startsWith('/') ? `${API_URL}${photo}` : photo }}
+                    style={venueReels.length === 0 && i === 0 ? styles.photoLarge : styles.photoSmall}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── LOCATION MAP ── */}
+        {venue.address && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Location</Text>
+            <TouchableOpacity style={styles.mapCard} onPress={handleDirections} activeOpacity={0.85}>
+              {venue.latitude && venue.longitude ? (
+                <MapView
+                  provider={PROVIDER_DEFAULT}
+                  style={styles.mapImage}
+                  pointerEvents="none"
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  pitchEnabled={false}
+                  rotateEnabled={false}
+                  camera={{
+                    center: { latitude: Number(venue.latitude), longitude: Number(venue.longitude) },
+                    pitch: 55,
+                    heading: 0,
+                    altitude: 600,
+                    zoom: 17,
+                  }}
+                >
+                  <Marker
+                    coordinate={{ latitude: Number(venue.latitude), longitude: Number(venue.longitude) }}
+                  >
+                    <View style={styles.markerOuter}>
+                      <View style={styles.markerInner} />
+                    </View>
+                  </Marker>
+                </MapView>
+              ) : (
+                <View style={styles.mapImageFallback} />
+              )}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.75)']}
+                style={styles.mapGradient}
+              />
+              <View style={styles.mapOverlay}>
+                <View style={styles.mapPin}>
+                  <Ionicons name="location" size={14} color="#8b5cf6" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mapVenueName}>{venue.name}</Text>
+                  <Text style={styles.mapAddress} numberOfLines={1}>{venue.address?.split(',').slice(0,2).join(',')}</Text>
+                </View>
+                <View style={styles.directionsChip}>
+                  <Text style={styles.directionsChipText}>Directions</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#a78bfa" />
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── HOURS ── */}
+        {venue.hours_json && venue.hours_json !== '{}' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Hours</Text>
+            {safeParseArray(venue.hours_json).map((h: any, i: number) => (
+              <View key={i} style={styles.hoursRow}>
+                <Text style={styles.hoursDay}>{h.day || h}</Text>
+                <Text style={styles.hoursTime}>{h.hours || ''}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── CONTINUE THE NIGHT — FLOWS ── */}
+        {venueFlows.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Continue the Night</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 28 }} decelerationRate="fast">
+              {venueFlows.slice(0, 2).map((flow: any) => (
+                <FlowCard key={flow.slug} flow={flow} />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </Animated.ScrollView>
+
+      {/* Bottom bar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.bottomBtn}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setAddToPlanVisible(true); }}
+          activeOpacity={0.9}
+        >
+          <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.bottomBtnText}>Add to Plans</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      {addToPlanVisible && venue && (
+        <AddToPlanSheet
+          venue={venue}
+          onClose={() => setAddToPlanVisible(false)}
+          onSuccess={() => { setAddToPlanVisible(false); }}
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
+  loader: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+
+  floatingNav: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 100,
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  floatingNavInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  floatingNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  floatingNavTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
+
+  heroContainer: { height: HERO_HEIGHT, overflow: 'hidden' },
+  heroTopRow: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 40, zIndex: 10,
+  },
+  heroBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroContent: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 20, paddingBottom: 24,
+  },
+  vibeRow: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  vibePill: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  vibePillText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+  heroTitle: { fontSize: 30, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 6, lineHeight: 34 },
+  heroMeta: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
+
+  primaryActionRow: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 0,
+  },
+  directionsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  directionsBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000',
+    letterSpacing: -0.2,
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  secondaryAction: { paddingVertical: 4, paddingHorizontal: 4 },
+  secondaryActionText: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '400',
+  },
+  secondaryDot: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.2)',
+  },
+
+  section: { paddingHorizontal: 20, paddingTop: 28 },
+  sectionLabel: {
+    fontSize: 11, fontWeight: '700', color: '#52525b',
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
+  },
+  bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.72)', lineHeight: 24 },
+  readMore: { fontSize: 14, color: '#a78bfa', marginTop: 8, fontWeight: '500' },
+
+  photoLarge: { width: SCREEN_WIDTH * 0.72, height: 220, borderRadius: 14 },
+  photoSmall: { width: SCREEN_WIDTH * 0.45, height: 220, borderRadius: 14 },
+
+  mapCard: {
+    borderRadius: 16,
+    backgroundColor: '#111',
+    overflow: 'hidden',
+  },
+  mapCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 16, gap: 12,
+  },
+  mapPin: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mapVenueName: { fontSize: 14, fontWeight: '600', color: '#fff', marginBottom: 2 },
+  mapAddress: { fontSize: 12, color: '#a1a1aa', lineHeight: 16 },
+  directionsChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(139,92,246,0.12)',
+    borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  directionsChipText: { fontSize: 11, color: '#a78bfa', fontWeight: '500' },
+
+  mapImage: { width: '100%', height: 180, borderRadius: 16 },
+  markerOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(139,92,246,0.35)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
+  mapView: { width: '100%', height: 180, borderRadius: 16 },
+  mapImageFallback: { width: '100%', height: 180, borderRadius: 16, backgroundColor: '#0d0d1a', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  mapGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  mapGridLine: { position: 'absolute', backgroundColor: 'rgba(139,92,246,0.08)' },
+  mapCenterPin: { alignItems: 'center' },
+  mapPinOuter: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.3)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  mapPinInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
+  mapPinStem: { width: 2, height: 10, backgroundColor: '#8b5cf6', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  mapGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
+  mapOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
+  hoursRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f1f1f',
+  },
+  hoursDay: { fontSize: 14, color: '#e4e4e7', fontWeight: '500' },
+  hoursTime: { fontSize: 14, color: '#71717a' },
+
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    paddingHorizontal: 20, paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  bottomBtn: { borderRadius: 14, overflow: 'hidden' },
+  bottomBtnGradient: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 16,
+  },
+  bottomBtnText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
+});

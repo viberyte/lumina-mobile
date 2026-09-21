@@ -22,7 +22,7 @@ import { colors } from '../../theme';
 
 const { width } = Dimensions.get('window');
 const IMAGE_SIZE = (width - 48 - 8) / 3;
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type MediaItem = {
   id: number;

@@ -41,7 +41,7 @@ interface Props {
   onSuccess?: (msg: string) => void;
 }
 
-const EMOJIS = ['✨', '🌙', '❤️', '🎂', '🍸'];
+const EMOJIS = ['', '🌙', '❤️', '🎂', '🍸'];
 
 export default function AddToPlanSheet({ visible, venue, onClose, onSuccess }: Props) {
   const insets = useSafeAreaInsets();
@@ -50,14 +50,14 @@ export default function AddToPlanSheet({ visible, venue, onClose, onSuccess }: P
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<'list' | 'new'>('list');
   const [planName, setPlanName] = useState('');
-  const [emoji, setEmoji] = useState('✨');
+  const [emoji, setEmoji] = useState('');
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
       setMode('list');
       setPlanName('');
-      setEmoji('✨');
+      setEmoji('');
       loadPlans();
     }
   }, [visible]);

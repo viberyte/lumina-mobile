@@ -13,6 +13,7 @@ import {
   StatusBar,
   Animated,
 } from 'react-native';
+import LoadingScreen from '../../components/LoadingScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +23,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useFollow } from '../../hooks/useFollow';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = SCREEN_HEIGHT * 0.42;
 
@@ -179,8 +180,8 @@ export default function PromoterProfile() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `Check out ${promoter.business_name || promoter.instagram_handle} on Lumina!`,
-        url: `https://lumina.viberyte.com/p/${promoter.instagram_handle}`,
+        message: `Check out ${promoter.business_name || promoter.instagram_handle} on Viberyte!`,
+        url: `https://viberyte.com/p/${promoter.instagram_handle}`,
       });
     } catch (error) {
       console.log('Share error:', error);
@@ -427,14 +428,14 @@ export default function PromoterProfile() {
           <View style={styles.profileHeader}>
             <View style={styles.nameRow}>
               <Text style={styles.displayName}>{displayName}</Text>
-              {promoter.is_verified && (
+              {!!promoter.is_verified && (
                 <Ionicons name="checkmark-circle" size={24} color={colors.accent} />
               )}
             </View>
             <Text style={styles.handle}>@{promoter.instagram_handle}</Text>
             <Text style={styles.credibilityLine}>{credibilityLine}</Text>
             
-            {promoter.follower_count > 0 && (
+            {Number(promoter.follower_count) > 0 && (
               <View style={styles.statsRow}>
                 <Text style={styles.statValue}>{formatFollowers(promoter.follower_count)}</Text>
                 <Text style={styles.statLabel}> followers</Text>

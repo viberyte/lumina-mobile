@@ -102,7 +102,7 @@ export default function LayoutBuilder() {
 
       // Try to fetch from API
       const response = await fetch(
-        `https://lumina.viberyte.com/api/promoters/${session.promoterId}/layouts`
+        `https://viberyte.com/api/promoters/${session.promoterId}/layouts`
       );
 
       if (response.ok) {
@@ -169,7 +169,7 @@ export default function LayoutBuilder() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      await fetch(`https://lumina.viberyte.com/api/promoters/${promoterId}/layouts`, {
+      await fetch(`https://viberyte.com/api/promoters/${promoterId}/layouts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ zones }),

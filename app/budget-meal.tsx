@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type MealItem = {
   item: string;
@@ -150,7 +150,7 @@ export default function BudgetMealScreen() {
           <View style={styles.headerCenter}>
             <Ionicons name="sparkles" size={20} color="#4ade80" />
             <View>
-              <Text style={styles.headerTitle}>Lumina Picks</Text>
+              <Text style={styles.headerTitle}>Viberyte Picks</Text>
               <Text style={styles.headerSubtitle}>Within Your Budget</Text>
             </View>
           </View>
@@ -295,7 +295,7 @@ export default function BudgetMealScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="restaurant-outline" size={48} color="#27272a" />
               <Text style={styles.emptyText}>
-                Tell Lumina your party size and budget to unlock curated picks
+                Tell Viberyte your party size and budget to unlock curated picks
               </Text>
             </View>
           )}

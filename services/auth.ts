@@ -5,12 +5,11 @@ import * as WebBrowser from 'expo-web-browser';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
-// Google OAuth Config
-const GOOGLE_CLIENT_ID_IOS = '1234567890-abcdefghijk.apps.googleusercontent.com';
-const GOOGLE_CLIENT_ID_ANDROID = '1234567890-abcdefghijk.apps.googleusercontent.com';
-const GOOGLE_CLIENT_ID_WEB = '1234567890-abcdefghijk.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID_IOS = '867706788282-mp3q4nr6sn1euirmglguoerm7lp16f2p.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID_ANDROID = '867706788282-mp3q4nr6sn1euirmglguoerm7lp16f2p.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID_WEB = '867706788282-2hknq6i01ipcs1sfudirctopaddro3jc.apps.googleusercontent.com';
 
 export interface User {
   id: string;
@@ -39,14 +38,12 @@ class AuthService {
       androidClientId: GOOGLE_CLIENT_ID_ANDROID,
       webClientId: GOOGLE_CLIENT_ID_WEB,
     });
-    
     return { request, response, promptAsync };
   }
 
   private async saveProfile(user: User): Promise<void> {
     const existingProfile = await AsyncStorage.getItem('@lumina_profile');
     let profile = existingProfile ? JSON.parse(existingProfile) : {};
-    
     profile = {
       ...profile,
       id: user.id,
@@ -55,7 +52,6 @@ class AuthService {
       provider: user.provider,
       role: user.role || 'member',
     };
-    
     await AsyncStorage.setItem('@lumina_profile', JSON.stringify(profile));
   }
 
@@ -64,12 +60,10 @@ class AuthService {
       const userInfoResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      
       const googleUser = await userInfoResponse.json();
-      
       const fullName = googleUser.name || '';
       const firstName = fullName.split(' ')[0] || fullName;
-      
+
       const user: User = {
         id: `google_${googleUser.id}`,
         email: googleUser.email,
@@ -86,14 +80,10 @@ class AuthService {
       await AsyncStorage.setItem('@lumina_user_id', user.id);
       await AsyncStorage.setItem('@lumina_is_guest', 'false');
       await AsyncStorage.setItem('@lumina_user_role', 'member');
-      
       await this.saveProfile(user);
-      
       this.user = user;
       this.startTokenRefresh();
-      
       return user;
-      
     } catch (error) {
       console.error('Google sign in error:', error);
       throw new Error('Failed to sign in with Google');
@@ -110,19 +100,16 @@ class AuthService {
       });
 
       const { identityToken, email, fullName } = credential;
-      
       let displayName = 'Friend';
-      
+
       if (fullName?.givenName) {
         displayName = fullName.givenName;
         await AsyncStorage.setItem(`@apple_name_${credential.user}`, displayName);
       } else {
         const cachedName = await AsyncStorage.getItem(`@apple_name_${credential.user}`);
-        if (cachedName) {
-          displayName = cachedName;
-        }
+        if (cachedName) displayName = cachedName;
       }
-      
+
       const user: User = {
         id: `apple_${credential.user}`,
         email: email || `${credential.user}@privaterelay.appleid.com`,
@@ -130,8 +117,8 @@ class AuthService {
         provider: 'apple',
         role: 'member',
         createdAt: new Date().toISOString(),
-        profileData: { 
-          fullName: fullName 
+        profileData: {
+          fullName: fullName
             ? `${fullName.givenName || ''} ${fullName.familyName || ''}`.trim()
             : displayName
         },
@@ -143,14 +130,10 @@ class AuthService {
       await AsyncStorage.setItem('@lumina_user_id', user.id);
       await AsyncStorage.setItem('@lumina_is_guest', 'false');
       await AsyncStorage.setItem('@lumina_user_role', 'member');
-      
       await this.saveProfile(user);
-      
       this.user = user;
       this.startTokenRefresh();
-      
       return user;
-      
     } catch (error: any) {
       if (error.code === 'ERR_CANCELED') {
         throw new Error('Sign in cancelled');
@@ -159,36 +142,37 @@ class AuthService {
     }
   }
 
-  async signInWithEmail(email: string, password: string): Promise<User> {
+  async signInWithEmail(email: string, password: string, isPartnerLogin: boolean = false): Promise<User> {
     try {
-      // Try partner login first
-      const partnerRes = await fetch(`${API_BASE}/api/partner/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
       let isPartner = false;
       let partnerToken = '';
       let data: any = null;
 
-      if (partnerRes.ok) {
+      if (isPartnerLogin) {
+        // Partner login — only when user explicitly toggles partner mode
+        const partnerRes = await fetch(`${API_BASE}/api/partner/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!partnerRes.ok) {
+          const error = await partnerRes.json();
+          throw new Error(error.error || 'Invalid partner credentials');
+        }
         data = await partnerRes.json();
         isPartner = true;
         partnerToken = data.token;
       } else {
-        // Fall back to consumer login
+        // Consumer login — default path
         const response = await fetch(`${API_BASE}/api/auth/signin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
         });
-
         if (!response.ok) {
           const error = await response.json();
           throw new Error(error.error || 'Invalid credentials');
         }
-
         data = await response.json();
       }
 
@@ -218,7 +202,7 @@ class AuthService {
       await AsyncStorage.setItem('@lumina_is_guest', 'false');
       await AsyncStorage.setItem('@lumina_user_role', role);
 
-      // Store partner token so Partner tab appears
+      // Store partner token ONLY when partner login was explicit
       if (isPartner && partnerToken) {
         await AsyncStorage.setItem('partner_token', partnerToken);
         await AsyncStorage.setItem('@lumina_partner_data', JSON.stringify({
@@ -229,12 +213,9 @@ class AuthService {
       }
 
       await this.saveProfile(user);
-
       this.user = user;
       this.startTokenRefresh();
-
       return user;
-
     } catch (error: any) {
       throw new Error(error.message || 'Sign in failed');
     }
@@ -243,7 +224,7 @@ class AuthService {
   async signUpWithEmail(email: string, password: string, name: string, partnerData?: PartnerData): Promise<User> {
     try {
       const payload: any = { email, password, name };
-      
+
       if (partnerData) {
         payload.role = partnerData.role;
         if (partnerData.role === 'partner') {
@@ -265,10 +246,9 @@ class AuthService {
       }
 
       const data = await response.json();
-      
       const firstName = name.split(' ')[0] || name;
       const role = partnerData?.role || 'member';
-      
+
       const user: User = {
         id: data.userId?.toString() || `email_${Date.now()}`,
         email: data.email || email,
@@ -276,7 +256,7 @@ class AuthService {
         provider: 'email',
         role: role,
         createdAt: data.createdAt || new Date().toISOString(),
-        profileData: { 
+        profileData: {
           fullName: name,
           ...(partnerData?.role === 'partner' && {
             businessName: partnerData.businessName,
@@ -294,7 +274,7 @@ class AuthService {
       await AsyncStorage.setItem('@lumina_user_id', user.id);
       await AsyncStorage.setItem('@lumina_is_guest', 'false');
       await AsyncStorage.setItem('@lumina_user_role', role);
-      
+
       if (partnerData?.role === 'partner') {
         await AsyncStorage.setItem('@lumina_partner_data', JSON.stringify({
           businessName: partnerData.businessName,
@@ -302,14 +282,11 @@ class AuthService {
           partnerRole: partnerData.partnerRole,
         }));
       }
-      
+
       await this.saveProfile(user);
-      
       this.user = user;
       this.startTokenRefresh();
-      
       return user;
-      
     } catch (error: any) {
       throw new Error(error.message || 'Sign up failed');
     }
@@ -324,22 +301,19 @@ class AuthService {
       role: 'member',
       createdAt: new Date().toISOString(),
     };
-    
+
     await AsyncStorage.setItem('@lumina_user', JSON.stringify(guest));
     await AsyncStorage.setItem('@lumina_auth_token', 'guest_token');
     await AsyncStorage.setItem('@lumina_user_id', guest.id);
     await AsyncStorage.setItem('@lumina_is_guest', 'true');
     await AsyncStorage.setItem('@lumina_user_role', 'member');
-    
     await this.saveProfile(guest);
-    
     this.user = guest;
     return guest;
   }
 
   async getCurrentUser(): Promise<User | null> {
     if (this.user) return this.user;
-    
     try {
       const userData = await AsyncStorage.getItem('@lumina_user');
       if (userData) {
@@ -350,7 +324,6 @@ class AuthService {
     } catch (error) {
       console.error('Error loading user:', error);
     }
-    
     return null;
   }
 
@@ -371,9 +344,7 @@ class AuthService {
   async refreshAuthToken(): Promise<void> {
     try {
       const refreshToken = await AsyncStorage.getItem('@lumina_refresh_token');
-      if (!refreshToken) {
-        throw new Error('No refresh token');
-      }
+      if (!refreshToken) throw new Error('No refresh token');
 
       const response = await fetch(`${API_BASE}/api/auth/refresh`, {
         method: 'POST',
@@ -381,35 +352,24 @@ class AuthService {
         body: JSON.stringify({ refreshToken }),
       });
 
-      if (!response.ok) {
-        throw new Error('Token refresh failed');
-      }
-
+      if (!response.ok) throw new Error('Token refresh failed');
       const data = await response.json();
       await AsyncStorage.setItem('@lumina_auth_token', data.token);
-      
       console.log('✅ Token refreshed');
-      
     } catch (error) {
       console.error('Token refresh error:', error);
     }
   }
 
   private startTokenRefresh(): void {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-    }
-    
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.refreshTimer = setInterval(() => {
       this.refreshAuthToken();
     }, 6 * 24 * 60 * 60 * 1000);
   }
 
   async signOut(): Promise<void> {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-    }
-    
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
     await AsyncStorage.multiRemove([
       '@lumina_user',
       '@lumina_auth_token',
@@ -421,8 +381,10 @@ class AuthService {
       '@lumina_partner_data',
       'lumina_partner_session',
       'partner_token',
+      '@lumina_persona',
+      '@lumina_preferences',
+      '@lumina_onboarding_v3',
     ]);
-    
     this.user = null;
   }
 
@@ -430,7 +392,7 @@ class AuthService {
     const token = await AsyncStorage.getItem('@lumina_auth_token');
     return !!token && token !== 'guest_token';
   }
-  
+
   async isGuest(): Promise<boolean> {
     const isGuest = await AsyncStorage.getItem('@lumina_is_guest');
     return isGuest === 'true';

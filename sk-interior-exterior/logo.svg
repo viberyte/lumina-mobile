@@ -1,0 +1,8 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="200" cy="200" r="190" fill="#1a2b4d" stroke="#e0791f" stroke-width="6"/>
+  <circle cx="200" cy="200" r="170" fill="none" stroke="#e0791f" stroke-width="2"/>
+  <text x="200" y="195" font-family="Georgia, 'Times New Roman', serif" font-size="90" font-weight="bold" fill="#ffffff" text-anchor="middle">SK</text>
+  <line x1="110" y1="220" x2="290" y2="220" stroke="#e0791f" stroke-width="2"/>
+  <text x="200" y="250" font-family="Georgia, serif" font-size="19" letter-spacing="3" fill="#e0791f" text-anchor="middle">INTERIOR &#8226; EXTERIOR</text>
+  <text x="200" y="275" font-family="Arial, sans-serif" font-size="12" letter-spacing="5" fill="#ffffff" text-anchor="middle">PLASTERING</text>
+</svg>

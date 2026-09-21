@@ -1,176 +1,158 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Image } from 'expo-image';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Pressable, Animated, Dimensions } from "react-native";
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Pressable, Animated, Dimensions
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { colors, typography, spacing } from "../../theme";
 import luminaApi from "../../services/luminaApi";
 import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = 170;
-const MAX_SECTIONS = 6;
-const HERO_HEIGHT = 280;
+const HERO_HEIGHT = 420;
+const CARD_WIDTH = SCREEN_WIDTH * 0.72;
+const CARD_HEIGHT = 340;
 
-// Timezone-safe date parser
-const parseEventDate = (dateString: string): Date => {
-  if (!dateString) return new Date();
-  
-  // If ISO datetime with time (2025-01-30T20:00:00), parse normally
-  if (dateString.includes('T')) {
-    return new Date(dateString);
-  }
-  
-  // If date-only string (2025-01-30), parse as local date to avoid timezone shift
-  const parts = dateString.split('-').map(p => parseInt(p));
-  if (parts.length === 3) {
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-  }
-  
-  return new Date(dateString);
+// ─── Upscale venue list ────────────────────────────────────────────────────
+const UPSCALE_VENUES = [
+  'tao', 'marquee', 'lavo', 'avenue', 'fleur room', 'highlight room',
+  'ph-d', 'phd', 'magic hour', 'silver lining', 'loosie', 'little sister',
+  '1 oak', 'catch', 'omnia', 'jewel', 'hakkasan', 'skylight',
+];
+const isUpscaleVenue = (v?: string) => !!v && UPSCALE_VENUES.some(u => v.toLowerCase().includes(u));
+const isUpscaleEvent = (e: Event) => isUpscaleVenue(e.venue_name) || e.source_type === 'tao';
+const isRooftopEvent = (e: Event) => `${e.name} ${e.venue_name || ''}`.toLowerCase().match(/rooftop|roof top|sky bar|skybar/) != null;
+const isDayParty   = (e: Event) => `${e.name} ${e.event_type || ''}`.toLowerCase().match(/day party|brunch party|afternoon/) != null;
+
+// ─── Vibe intents (human-question-driven) ────────────────────────────────
+const VIBES = [
+  { id: 'all',      label: 'All' },
+  { id: 'upscale',  label: 'Dressed Up' },
+  { id: 'turnup',   label: 'Turn Up' },
+  { id: 'date',     label: 'Date Night' },
+  { id: 'rooftop',  label: 'Rooftop' },
+  { id: 'afro',     label: 'Afrobeats' },
+  { id: 'latin',    label: 'Latin' },
+  { id: 'house',    label: 'House' },
+];
+
+// ─── Editorial sections (answer a human question) ────────────────────────
+const SECTIONS = [
+  { key: 'pick',     headline: 'Your move tonight',          sub: 'The city is alive right now',    upscale: false },
+  { key: 'upscale',  headline: 'Best for a dressed-up night',  sub: 'Upscale lounges & rooftops',          upscale: true  },
+  { key: 'tonight',  headline: 'Where to go tonight',        sub: 'Doors open now or soon',              upscale: false },
+  { key: 'weekend',  headline: 'Plan your weekend',          sub: 'Best bets for Fri & Sat',             upscale: false },
+  { key: 'afro',     headline: 'Afrobeats & Amapiano',       sub: 'African rhythms in the city',         upscale: false },
+  { key: 'latin',    headline: 'Latin nights',               sub: 'Reggaeton, salsa, bachata',           upscale: false },
+  { key: 'house',    headline: 'House & Electronic',         sub: 'Underground to rooftop',              upscale: false },
+  { key: 'hiphop',   headline: 'Hip-Hop & R&B',             sub: 'The culture, all night',              upscale: false },
+];
+
+// ─── Types ────────────────────────────────────────────────────────────────
+interface Event {
+  id: number; name: string; venue_name?: string;
+  image_url?: string; cover_image_url?: string;
+  date?: string; start_time?: string;
+  music_genre?: string; event_type?: string; source_type?: string;
+}
+interface EventsTabProps { filters?: { city?: string; searchQuery?: string; genre?: string[]; day?: string[]; type?: string[] }; }
+
+// ─── Date utils ───────────────────────────────────────────────────────────
+const parseDate = (s: string): Date => {
+  if (!s) return new Date();
+  if (s.includes('T')) return new Date(s);
+  const p = s.split('-').map(Number);
+  return p.length === 3 ? new Date(p[0], p[1]-1, p[2]) : new Date(s);
+};
+const getDate = (e: Event): Date | null => e.date ? parseDate(e.date) : e.start_time ? parseDate(e.start_time) : null;
+
+const fmtDate = (e: Event) => {
+  const d = getDate(e);
+  if (!d) return { label: 'TBA', isTonight: false, isTomorrow: false };
+  const today = new Date(); today.setHours(0,0,0,0);
+  const ev = new Date(d); ev.setHours(0,0,0,0);
+  const diff = Math.round((ev.getTime() - today.getTime()) / 86400000);
+  const isTonight = diff === 0, isTomorrow = diff === 1;
+  const label = isTonight ? 'Tonight' : isTomorrow ? 'Tomorrow' :
+    diff <= 6 ? d.toLocaleDateString('en-US',{weekday:'short'}) :
+    d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return { label, isTonight, isTomorrow };
 };
 
-// Animated pressable card wrapper
-const AnimatedPressable = ({ children, style, onPress }: any) => {
-  const scale = useRef(new Animated.Value(1)).current;
+const isTonightFn  = (e: Event) => { const d = getDate(e); return !!d && d.toDateString() === new Date().toDateString(); };
+const isWeekendFn  = (e: Event) => {
+  const d = getDate(e); if (!d) return false;
+  const dow = d.getDay(), diff = Math.floor((d.getTime()-Date.now())/86400000);
+  return (dow===5||dow===6||dow===0) && diff>=0 && diff<=7;
+};
+const genreCat = (e: Event) => {
+  const g = (e.music_genre||'').toLowerCase(), n = e.name.toLowerCase();
+  if (g.includes('afrobeat')||g.includes('amapiano')||n.includes('afro')||n.includes('amapiano')) return 'afro';
+  if (g.includes('latin')||g.includes('reggaeton')||g.includes('bachata')) return 'latin';
+  if (g.includes('house')||g.includes('tech house')||g.includes('afro house')) return 'house';
+  if (g.includes('hip-hop')||g.includes('hip hop')||g.includes('rap')||g.includes('r&b')) return 'hiphop';
+  return null;
+};
 
-  const handlePressIn = () => {
-    Animated.spring(scale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
+const normalizeCity = (c?: string) => {
+  if (c === 'Near Me') return 'New York';
+  const m: Record<string,string> = { Manhattan:'New York', Brooklyn:'New York', Queens:'New York', Bronx:'New York', 'Staten Island':'New York', 'Jersey City':'New Jersey', Newark:'New Jersey', 'North Jersey':'New York' };
+  return m[c||''] || c || 'New York';
+};
 
-  const handlePressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
-
+// ─── Animated pressable ───────────────────────────────────────────────────
+const Press = ({ children, style, onPress }: any) => {
+  const s = useRef(new Animated.Value(1)).current;
   return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[style, { transform: [{ scale }] }]}>
-        {children}
-      </Animated.View>
+    <Pressable onPress={onPress}
+      onPressIn={()=>Animated.spring(s,{toValue:0.96,useNativeDriver:true,speed:60,bounciness:3}).start()}
+      onPressOut={()=>Animated.spring(s,{toValue:1,useNativeDriver:true,speed:60,bounciness:3}).start()}>
+      <Animated.View style={[style,{transform:[{scale:s}]}]}>{children}</Animated.View>
     </Pressable>
   );
 };
 
-// Hero Module Component
-const HeroModule = ({ event, onPress }: { event: Event | null; onPress: () => void }) => {
-  const scale = useRef(new Animated.Value(1)).current;
-  const glowOpacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    // Pulsing glow animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowOpacity, {
-          toValue: 0.6,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowOpacity, {
-          toValue: 0.3,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  const handlePressIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Animated.spring(scale, {
-      toValue: 0.98,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
-
-  if (!event) return null;
-
-  const imageUrl = event.image_url || event.cover_image_url;
-  const { label, time } = formatEventDate(event);
+// ─── Hero ─────────────────────────────────────────────────────────────────
+const Hero = ({ event, onPress }: { event: Event; onPress: ()=>void }) => {
+  const s = useRef(new Animated.Value(1)).current;
+  const img = event.image_url || event.cover_image_url;
+  const { label } = fmtDate(event);
+  const upscale = isUpscaleEvent(event);
 
   return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[styles.heroContainer, { transform: [{ scale }] }]}>
-        {/* Glow effect behind */}
-        <Animated.View style={[styles.heroGlow, { opacity: glowOpacity }]} />
-        
-        <View style={styles.heroCard}>
-          {imageUrl ? (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={styles.heroImage} 
-              contentFit="cover" 
-              transition={200}
-              priority="high"
-              cachePolicy="memory-disk"
-            />
-          ) : (
-            <View style={styles.heroPlaceholder}>
-              <Ionicons name="musical-notes" size={64} color={colors.zinc[700]} />
+    <Pressable onPress={onPress}
+      onPressIn={()=>{ Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Animated.spring(s,{toValue:0.975,useNativeDriver:true,speed:50,bounciness:3}).start(); }}
+      onPressOut={()=>Animated.spring(s,{toValue:1,useNativeDriver:true,speed:50,bounciness:3}).start()}>
+      <Animated.View style={[styles.hero,{transform:[{scale:s}]}]}>
+        {img
+          ? <Image source={{uri:img}} style={StyleSheet.absoluteFill} contentFit="cover" transition={400} priority="high" cachePolicy="memory-disk"/>
+          : <View style={[StyleSheet.absoluteFill,{backgroundColor:colors.zinc[900],justifyContent:'center',alignItems:'center'}]}>
+              <Ionicons name="musical-notes" size={56} color={colors.zinc[700]}/>
             </View>
-          )}
-          
-          {/* Gradient overlay */}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.95)']}
-            locations={[0, 0.5, 1]}
-            style={styles.heroGradient}
-          />
-          
-          {/* Featured badge */}
-          <View style={styles.heroBadge}>
-            <Ionicons name="flame" size={12} color="#000" />
-            <Text style={styles.heroBadgeText}>FEATURED TONIGHT</Text>
-          </View>
-          
-          {/* Content */}
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle} numberOfLines={2}>{event.name}</Text>
-            
-            <View style={styles.heroMeta}>
-              <View style={styles.heroMetaRow}>
-                <Ionicons name="location-outline" size={14} color={colors.violet[400]} />
-                <Text style={styles.heroVenue} numberOfLines={1}>{event.venue_name || 'Venue TBA'}</Text>
-              </View>
-              
-              <View style={styles.heroMetaRow}>
-                <Ionicons name="calendar-outline" size={14} color={colors.violet[400]} />
-                <Text style={styles.heroDate}>{label}</Text>
-                {time && (
-                  <>
-                    <Text style={styles.heroDateDivider}>•</Text>
-                    <Text style={styles.heroTime}>{time}</Text>
-                  </>
-                )}
-              </View>
-              
-              {event.music_genre && (
-                <View style={styles.heroGenreTag}>
-                  <Text style={styles.heroGenreText}>{event.music_genre}</Text>
-                </View>
-              )}
-            </View>
+        }
+        <LinearGradient colors={['rgba(0,0,0,0.05)','rgba(0,0,0,0.55)','rgba(0,0,0,0.97)']} locations={[0,0.45,1]} style={StyleSheet.absoluteFill}/>
+
+        {/* Minimal top label */}
+        <View style={styles.heroTop}>
+          <BlurView intensity={28} tint="dark" style={styles.heroTopPill}>
+            <View style={[styles.heroTopDot,{backgroundColor: upscale ? '#D4AF6A' : '#A78BFA'}]}/>
+            <Text style={styles.heroTopText}>{upscale ? 'UPSCALE PICK' : 'TONIGHT'}</Text>
+          </BlurView>
+        </View>
+
+        {/* Bottom content */}
+        <View style={styles.heroBottom}>
+          <Text style={styles.heroLabel}>{label}</Text>
+          <Text style={styles.heroTitle} numberOfLines={2}>{event.name}</Text>
+          <Text style={styles.heroVenue} numberOfLines={1}>{event.venue_name || 'Venue TBA'}</Text>
+
+          <View style={styles.heroCTA}>
+            <Text style={styles.heroCTAText}>View Details</Text>
+            <Ionicons name="arrow-forward" size={14} color="#fff"/>
           </View>
         </View>
       </Animated.View>
@@ -178,530 +160,262 @@ const HeroModule = ({ event, onPress }: { event: Event | null; onPress: () => vo
   );
 };
 
-// Editorial control: Categories appear in this exact order
-const CATEGORY_ORDER = [
-  '🔥 Tonight',
-  'This Weekend',
-  'Afrobeats Parties',
-  'Hip-Hop Shows',
-  'Latin Nights',
-  'House Music',
-  'R&B Soul',
-  'EDM Parties',
-  'Reggae & Dancehall',
-  'Jazz Nights',
-  'All Events',
-];
+// ─── Vibe pill ────────────────────────────────────────────────────────────
+const VibePill = ({ vibe, active, onPress }: { vibe: any; active: boolean; onPress: ()=>void }) => (
+  <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
+    <View style={[styles.pill, active && styles.pillActive]}>
+      <Text style={[styles.pillText, active && styles.pillTextActive]}>{vibe.label.toUpperCase()}</Text>
+    </View>
+  </TouchableOpacity>
+);
 
-interface Event {
-  id: number;
-  name: string;
-  venue_name?: string;
-  image_url?: string;
-  cover_image_url?: string;
-  date?: string;
-  start_time?: string;
-  end_time?: string;
-  music_genre?: string;
-  event_type?: string;
-  neighborhood?: string;
-}
+// ─── Event card ───────────────────────────────────────────────────────────
+const Card = ({ event, onPress }: { event: Event; onPress: ()=>void }) => {
+  const img = event.image_url || event.cover_image_url;
+  const { label, isTonight } = fmtDate(event);
+  const upscale = isUpscaleEvent(event);
 
-interface EventsFilters {
-  city?: string;
-  searchQuery?: string;
-  genre?: string[];
-  day?: string[];
-  type?: string[];
-}
+  return (
+    <Press style={styles.card} onPress={onPress}>
+      {img
+        ? <Image source={{uri:img}} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} cachePolicy="memory-disk"/>
+        : <View style={[StyleSheet.absoluteFill,{backgroundColor:colors.zinc[900]}]}/>
+      }
+      <LinearGradient colors={['transparent','rgba(0,0,0,0.65)','rgba(0,0,0,0.96)']} locations={[0.3,0.65,1]} style={StyleSheet.absoluteFill}/>
 
-interface EventsTabProps {
-  filters?: EventsFilters;
-}
+      {/* Date pill — minimal */}
+      <View style={styles.cardTop}>
+        <BlurView intensity={35} tint="dark" style={[styles.cardPill, isTonight && styles.cardPillTonight]}>
+          <Text style={[styles.cardPillText, isTonight && styles.cardPillTextTonight]}>{label}</Text>
+        </BlurView>
+        {upscale && <View style={styles.cardDot}/>}
+      </View>
 
-// Get event date using timezone-safe parser
-const getEventDate = (event: Event): Date | null => {
-  if (event.date) return parseEventDate(event.date);
-  if (event.start_time) return parseEventDate(event.start_time);
-  return null;
+      <View style={styles.cardBottom}>
+        <Text style={styles.cardTitle} numberOfLines={2}>{event.name}</Text>
+        <Text style={styles.cardVenue} numberOfLines={1}>{event.venue_name || 'Venue TBA'}</Text>
+        {event.music_genre ? (
+          <View style={styles.genreTag}>
+            <Text style={styles.genreTagText}>{event.music_genre}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Press>
+  );
 };
 
-// City normalization helper
-const normalizeCity = (city?: string): string => {
-  if (city === 'Near Me') return 'New York';
-  
-  const cityMap: { [key: string]: string } = {
-    'Manhattan': 'New York',
-    'Brooklyn': 'New York',
-    'Queens': 'New York',
-    'Bronx': 'New York',
-    'Staten Island': 'New York',
-    'Jersey City': 'New Jersey',
-    'Hoboken': 'New Jersey',
-    'Newark': 'New Jersey',
-    'North Jersey': 'New York',
-    'New Jersey': 'New York',
-  };
-  return cityMap[city || ''] || city || 'New York';
-};
+// ─── Section ──────────────────────────────────────────────────────────────
+const Section = ({ meta, events, onSeeAll, onEvent }: { meta: any; events: Event[]; onSeeAll: ()=>void; onEvent: (e:Event)=>void }) => (
+  <View style={styles.section}>
+    <View style={styles.sectionHead}>
+      <View style={{flex:1}}>
+        <Text style={[styles.sectionHeadline, meta.upscale && styles.sectionHeadlineGold]}>{meta.headline}</Text>
+        <Text style={styles.sectionSub}>{meta.sub}</Text>
+      </View>
+      <TouchableOpacity onPress={onSeeAll} activeOpacity={0.7} style={styles.seeAll}>
+        <Text style={styles.seeAllText}>See all</Text>
+      </TouchableOpacity>
+    </View>
+    {meta.upscale && <View style={styles.goldLine}/>}
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      {events.map(e => <Card key={e.id} event={e} onPress={()=>onEvent(e)}/>)}
+    </ScrollView>
+  </View>
+);
 
-// Smart date formatting
-const formatEventDate = (event: Event): { label: string; time: string; isTonight: boolean; isTomorrow: boolean } => {
-  const eventDate = getEventDate(event);
-  if (!eventDate) return { label: 'Date TBA', time: '', isTonight: false, isTomorrow: false };
-
-  const today = new Date();
-  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-
-  const diffDays = Math.floor((eventDay.getTime() - todayDay.getTime()) / (1000 * 60 * 60 * 24));
-  const dayOfWeek = eventDate.toLocaleDateString('en-US', { weekday: 'short' });
-  const monthDay = eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  // Format time
-  let formattedTime = '';
-  const hours = eventDate.getHours();
-  const minutes = eventDate.getMinutes();
-  if (hours > 0 || minutes > 0) {
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    formattedTime = `${displayHours}${minutes > 0 ? ':' + minutes.toString().padStart(2, '0') : ''} ${ampm}`;
-  }
-
-  let label = '';
-  const isTonight = diffDays === 0;
-  const isTomorrow = diffDays === 1;
-
-  if (isTonight) {
-    label = 'Tonight';
-  } else if (isTomorrow) {
-    label = 'Tomorrow';
-  } else if (diffDays > 1 && diffDays <= 6) {
-    label = `This ${dayOfWeek}`;
-  } else if (diffDays > 6 && diffDays <= 13) {
-    label = `Next ${dayOfWeek}`;
-  } else {
-    label = monthDay;
-  }
-
-  return { label, time: formattedTime, isTonight, isTomorrow };
-};
-
-// Check if event is this weekend
-const isThisWeekend = (event: Event): boolean => {
-  const eventDate = getEventDate(event);
-  if (!eventDate) return false;
-  
-  const today = new Date();
-  const dayOfWeek = eventDate.getDay();
-  
-  const isWeekendDay = dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0;
-  const diffDays = Math.floor((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  
-  return isWeekendDay && diffDays >= 0 && diffDays <= 7;
-};
-
-// Check if event is tonight
-const isTonight = (event: Event): boolean => {
-  const eventDate = getEventDate(event);
-  if (!eventDate) return false;
-  
-  const today = new Date();
-  return eventDate.toDateString() === today.toDateString();
-};
-
-// Genre categorization
-const categorizeByGenre = (event: Event): string | null => {
-  const name = event.name.toLowerCase();
-  const genre = (event.music_genre || '').toLowerCase();
-  
-  if (genre.includes('afrobeat') || name.includes('afrobeat') || name.includes('amapiano')) return 'Afrobeats Parties';
-  if (genre.includes('hip-hop') || genre.includes('hip hop') || name.includes('hip-hop') || name.includes('hip hop') || genre.includes('rap')) return 'Hip-Hop Shows';
-  if (genre.includes('latin') || genre.includes('reggaeton') || genre.includes('bachata') || genre.includes('salsa') || genre.includes('merengue')) return 'Latin Nights';
-  if (genre.includes('house') || genre.includes('deep house') || genre.includes('tech house') || genre.includes('afro house')) return 'House Music';
-  if (genre.includes('r&b') || genre.includes('rnb') || genre.includes('soul') || genre.includes('neo-soul')) return 'R&B Soul';
-  if (genre.includes('edm') || genre.includes('electronic') || genre.includes('techno') || genre.includes('trance') || genre.includes('dubstep')) return 'EDM Parties';
-  if (genre.includes('reggae') || genre.includes('dancehall') || genre.includes('soca')) return 'Reggae & Dancehall';
-  if (genre.includes('jazz')) return 'Jazz Nights';
-  
-  return null;
-};
-
-// Select best hero event (tonight's most appealing event with an image)
-const selectHeroEvent = (events: Event[]): Event | null => {
-  const tonightWithImages = events
-    .filter(e => isTonight(e) && (e.image_url || e.cover_image_url))
-    .sort((a, b) => {
-      const aScore = (a.music_genre ? 1 : 0) + (a.venue_name ? 1 : 0);
-      const bScore = (b.music_genre ? 1 : 0) + (b.venue_name ? 1 : 0);
-      return bScore - aScore;
-    });
-  
-  if (tonightWithImages.length > 0) return tonightWithImages[0];
-  
-  const withImages = events
-    .filter(e => e.image_url || e.cover_image_url)
-    .sort((a, b) => {
-      const aDate = getEventDate(a);
-      const bDate = getEventDate(b);
-      if (!aDate) return 1;
-      if (!bDate) return -1;
-      return aDate.getTime() - bDate.getTime();
-    });
-  
-  return withImages[0] || null;
-};
-
+// ─── Main ─────────────────────────────────────────────────────────────────
 export default function EventsTab({ filters = {} }: EventsTabProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [allEvents, setAllEvents] = useState<Event[]>([]);
+  const [all, setAll] = useState<Event[]>([]);
+  const [vibe, setVibe] = useState('all');
 
-  useEffect(() => {
-    fetchEvents();
-  }, [filters.city]);
+  useEffect(() => { load(); }, [filters.city]);
 
-  const fetchEvents = async () => {
+  const load = async () => {
     try {
       setLoading(true);
-      const city = normalizeCity(filters.city);
-      console.log('[EventsTab] Fetching events for city:', city);
-      const events = await luminaApi.getEvents(city);
-      console.log('[EventsTab] Received events:', events?.length || 0);
-      setAllEvents(events || []);
-    } catch (error) {
-      console.error('[EventsTab] Error fetching events:', error);
-      setAllEvents([]);
-    } finally {
-      setLoading(false);
-    }
+      const ev = await luminaApi.getEvents(normalizeCity(filters.city));
+      setAll(ev || []);
+    } catch { setAll([]); }
+    finally { setLoading(false); }
   };
 
-  const applyFilters = (events: Event[]): Event[] => {
-    let filtered = [...events];
+  const filtered = useMemo(() => {
+    let ev = [...all];
 
     if (filters.searchQuery) {
-      const query = filters.searchQuery.toLowerCase();
-      filtered = filtered.filter(e =>
-        e.name.toLowerCase().includes(query) ||
-        e.venue_name?.toLowerCase().includes(query) ||
-        e.music_genre?.toLowerCase().includes(query) ||
-        e.event_type?.toLowerCase().includes(query)
-      );
+      const q = filters.searchQuery.toLowerCase();
+      ev = ev.filter(e => e.name.toLowerCase().includes(q) || e.venue_name?.toLowerCase().includes(q));
     }
 
-    if (filters.genre && filters.genre.length > 0) {
-      filtered = filtered.filter(e => {
-        const eventGenre = (e.music_genre || '').toLowerCase();
-        const eventName = e.name.toLowerCase();
-        return filters.genre!.some((g: string) => {
-          const genreLower = g.toLowerCase();
-          return eventGenre.includes(genreLower) || eventName.includes(genreLower);
-        });
+    if (vibe !== 'all') {
+      ev = ev.filter(e => {
+        if (vibe === 'upscale')  return isUpscaleEvent(e);
+        if (vibe === 'turnup')   return !isUpscaleEvent(e) && !isRooftopEvent(e);
+        if (vibe === 'date')     return isUpscaleEvent(e) || isRooftopEvent(e);
+        if (vibe === 'rooftop')  return isRooftopEvent(e);
+        if (vibe === 'afro')     return genreCat(e) === 'afro';
+        if (vibe === 'latin')    return genreCat(e) === 'latin';
+        if (vibe === 'house')    return genreCat(e) === 'house';
+        return true;
       });
     }
 
-    if (filters.day && filters.day.length > 0) {
-      const today = new Date();
-      
-      filtered = filtered.filter(e => {
-        const eventDate = getEventDate(e);
-        if (!eventDate) return false;
-        
-        const diffDays = Math.floor((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        const dayOfWeek = eventDate.getDay();
-        
-        return filters.day!.some((d: string) => {
-          const dayLower = d.toLowerCase();
-          if (dayLower === 'tonight') return eventDate.toDateString() === today.toDateString();
-          if (dayLower === 'tomorrow') return diffDays >= 0 && diffDays < 2;
-          if (dayLower === 'thisweek' || dayLower === 'this week') return diffDays >= 0 && diffDays <= 7;
-          if (dayLower === 'weekend') return (dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0) && diffDays >= 0 && diffDays <= 7;
-          return true;
-        });
-      });
-    }
-
-    if (filters.type && filters.type.length > 0) {
-      filtered = filtered.filter(e => {
-        const eventType = (e.event_type || '').toLowerCase();
-        const eventName = e.name.toLowerCase();
-        return filters.type!.some((t: string) => {
-          const typeLower = t.toLowerCase();
-          return eventType.includes(typeLower) || eventName.includes(typeLower);
-        });
-      });
-    }
-
-    filtered.sort((a, b) => {
-      const aDate = getEventDate(a);
-      const bDate = getEventDate(b);
-      if (!aDate) return 1;
-      if (!bDate) return -1;
-      return aDate.getTime() - bDate.getTime();
+    return ev.sort((a,b) => {
+      const da = getDate(a), db = getDate(b);
+      if (!da) return 1; if (!db) return -1;
+      return da.getTime()-db.getTime();
     });
+  }, [all, filters.searchQuery, vibe]);
 
-    return filtered;
-  };
-
-  const filteredEvents = useMemo(() => {
-    const result = applyFilters(allEvents);
-    console.log('[EventsTab] Filtered events:', result.length, 'from', allEvents.length);
-    return result;
-  }, [allEvents, filters.searchQuery, filters.genre, filters.day, filters.type]);
-
-  const heroEvent = useMemo(() => {
-    const hasActiveFilters = filters.searchQuery || 
-      (filters.genre && filters.genre.length > 0) ||
-      (filters.day && filters.day.length > 0) ||
-      (filters.type && filters.type.length > 0);
-    
-    if (hasActiveFilters) return null;
-    return selectHeroEvent(allEvents);
-  }, [allEvents, filters]);
+  const hero = useMemo(() => {
+    if (filters.searchQuery || vibe !== 'all') return null;
+    const candidates = all.filter(e => (e.image_url||e.cover_image_url) && isTonightFn(e));
+    if (candidates.length) return candidates.sort((a,b)=>(isUpscaleEvent(b)?1:0)-(isUpscaleEvent(a)?1:0))[0];
+    return all.find(e => e.image_url||e.cover_image_url) || null;
+  }, [all, filters.searchQuery, vibe]);
 
   const sections = useMemo(() => {
-    const usedEventIds = new Set<number>();
-    
-    if (heroEvent) {
-      usedEventIds.add(heroEvent.id);
-    }
-    
-    const sectionMap: { [key: string]: Event[] } = {
-      '🔥 Tonight': [],
-      'This Weekend': [],
-      'Afrobeats Parties': [],
-      'Hip-Hop Shows': [],
-      'Latin Nights': [],
-      'House Music': [],
-      'R&B Soul': [],
-      'EDM Parties': [],
-      'Reggae & Dancehall': [],
-      'Jazz Nights': [],
-      'All Events': [],
-    };
-    
-    filteredEvents.forEach(event => {
-      if (usedEventIds.has(event.id)) return;
-      if (isTonight(event) && sectionMap['🔥 Tonight'].length < 10) {
-        sectionMap['🔥 Tonight'].push(event);
-        usedEventIds.add(event.id);
-      }
-    });
-    
-    filteredEvents.forEach(event => {
-      if (usedEventIds.has(event.id)) return;
-      if (isThisWeekend(event) && sectionMap['This Weekend'].length < 10) {
-        sectionMap['This Weekend'].push(event);
-        usedEventIds.add(event.id);
-      }
-    });
-    
-    filteredEvents.forEach(event => {
-      if (usedEventIds.has(event.id)) return;
-      
-      const category = categorizeByGenre(event);
-      if (category && sectionMap[category] && sectionMap[category].length < 10) {
-        sectionMap[category].push(event);
-        usedEventIds.add(event.id);
-      }
-    });
-    
-    filteredEvents.forEach(event => {
-      if (usedEventIds.has(event.id)) return;
-      if (sectionMap['All Events'].length < 10) {
-        sectionMap['All Events'].push(event);
-        usedEventIds.add(event.id);
-      }
-    });
-    
-    console.log('[EventsTab] Sections built:', Object.entries(sectionMap).map(([k, v]) => `${k}: ${v.length}`).join(', '));
-    
-    return CATEGORY_ORDER
-      .map(title => ({ 
-        title, 
-        data: sectionMap[title] || [],
-        highlight: title === '🔥 Tonight',
-        key: title.replace(/[🔥\s]/g, '_').toLowerCase()
-      }))
-      .filter(section => section.data.length > 0)
-      .slice(0, MAX_SECTIONS);
-  }, [filteredEvents, heroEvent]);
+    const used = new Set<number>();
+    if (hero) used.add(hero.id);
 
-  const handleSectionPress = (sectionTitle: string) => {
-    const cleanTitle = sectionTitle.replace(/[🔥]/g, '').trim();
-    router.push({
-      pathname: "/see-all-events",
-      params: {
-        title: cleanTitle === 'Tonight' ? 'All Events' : cleanTitle,
-        city: filters.city || "New York"
-      }
+    const map: Record<string,Event[]> = { pick:[], upscale:[], tonight:[], weekend:[], afro:[], latin:[], house:[], hiphop:[] };
+
+    // "pick" = tonight's top 3 diverse events
+    filtered.filter(e=>isTonightFn(e)&&(e.image_url||e.cover_image_url)&&!used.has(e.id)).slice(0,3).forEach(e=>{map.pick.push(e);used.add(e.id);});
+
+    // upscale — max 5
+    filtered.filter(e=>isUpscaleEvent(e)&&!used.has(e.id)).slice(0,5).forEach(e=>{map.upscale.push(e);used.add(e.id);});
+
+    // tonight — max 6
+    filtered.filter(e=>isTonightFn(e)&&!used.has(e.id)).slice(0,6).forEach(e=>{map.tonight.push(e);used.add(e.id);});
+
+    // weekend — max 6
+    filtered.filter(e=>isWeekendFn(e)&&!used.has(e.id)).slice(0,6).forEach(e=>{map.weekend.push(e);used.add(e.id);});
+
+    // genre sections — max 5 each
+    filtered.forEach(e=>{
+      if (used.has(e.id)) return;
+      const c = genreCat(e);
+      if (c && map[c] && map[c].length < 5) { map[c].push(e); used.add(e.id); }
     });
-  };
 
-  const goToEvent = (event: Event) => {
-    router.push(`/event/${event.id}`);
-  };
+    return SECTIONS.map(s=>({...s, events: map[s.key]||[]})).filter(s=>s.events.length>0).slice(0,6);
+  }, [filtered, hero]);
 
-  const renderEventCard = (event: Event) => {
-    const imageUrl = event.image_url || event.cover_image_url;
-    const { label, time, isTonight: tonight, isTomorrow } = formatEventDate(event);
-    
-    return (
-      <AnimatedPressable
-        key={event.id}
-        style={styles.card}
-        onPress={() => goToEvent(event)}
-      >
-        <View style={styles.imageContainer}>
-          {imageUrl ? (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={styles.image} 
-              contentFit="cover" 
-              transition={200}
-              cachePolicy="memory-disk"
-            />
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Ionicons name="ticket-outline" size={32} color={colors.zinc[700]} />
-            </View>
-          )}
-          <View style={[
-            styles.dateBadge, 
-            tonight && styles.dateBadgeTonight,
-            isTomorrow && styles.dateBadgeTomorrow
-          ]}>
-            <Text style={[
-              styles.dateBadgeText, 
-              tonight && styles.dateBadgeTextDark,
-              isTomorrow && styles.dateBadgeTextDark
-            ]}>
-              {label}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.cardContent}>
-          <Text style={styles.eventName} numberOfLines={2}>{event.name}</Text>
-          <Text style={styles.eventVenue} numberOfLines={1}>
-            {event.venue_name || 'Venue TBA'}
-          </Text>
-          {time ? (
-            <View style={styles.timeRow}>
-              <Ionicons name="time-outline" size={12} color={colors.violet[400]} />
-              <Text style={styles.eventTime}>{time}</Text>
-            </View>
-          ) : null}
-        </View>
-      </AnimatedPressable>
-    );
-  };
+  const go = (e: Event) => router.push(`/event/${e.id}`);
+  const seeAll = (title: string) => router.push({ pathname:'/see-all-events', params:{ title, city: filters.city||'New York' }});
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="small" color={colors.violet[500]} />
-        <Text style={styles.loadingText}>Finding events near you…</Text>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={styles.center}>
+      <ActivityIndicator size="small" color={colors.violet[500]}/>
+      <Text style={styles.loadingText}>Finding tonight's best spots…</Text>
+    </View>
+  );
 
-  if (sections.length === 0 && !heroEvent) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="calendar-outline" size={48} color={colors.zinc[700]} />
-        <Text style={styles.emptyText}>No events found</Text>
-        <Text style={styles.emptySubtext}>Check back soon for upcoming events</Text>
-      </View>
-    );
-  }
+  if (!hero && sections.length === 0) return (
+    <View style={styles.center}>
+      <Text style={styles.emptyTitle}>Nothing yet</Text>
+      <Text style={styles.emptySub}>Check back soon</Text>
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {heroEvent && (
-        <HeroModule 
-          event={heroEvent} 
-          onPress={() => goToEvent(heroEvent)} 
-        />
-      )}
-      
-      {sections.map((section, index) => (
-        <View key={section.key || index} style={styles.section}>
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => handleSectionPress(section.title)}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.sectionTitle,
-              section.highlight && styles.sectionTitleHighlight
-            ]}>
-              {section.title}
-            </Text>
-            <View style={styles.seeAllRow}>
-              <Text style={styles.seeAllText}>See All</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.violet[400]} />
-            </View>
-          </TouchableOpacity>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {section.data.map((event) => renderEventCard(event))}
-          </ScrollView>
-        </View>
+    <ScrollView style={{flex:1}} showsVerticalScrollIndicator={false}>
+      {/* Vibe filter */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.vibes} style={{marginTop:spacing.md}}>
+        {VIBES.map(v=>(
+          <VibePill key={v.id} vibe={v} active={vibe===v.id} onPress={()=>{ Haptics.selectionAsync(); setVibe(v.id); }}/>
+        ))}
+      </ScrollView>
+
+      {/* Hero */}
+      {hero && <View style={styles.heroWrap}><Hero event={hero} onPress={()=>go(hero)}/></View>}
+
+      {/* Editorial sections */}
+      {sections.map(s=>(
+        <Section key={s.key} meta={s} events={s.events} onSeeAll={()=>seeAll(s.headline)} onEvent={go}/>
       ))}
-      <View style={styles.bottomPadding} />
+
+      <View style={{height:100}}/>
     </ScrollView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 12 },
-  loadingText: { color: colors.zinc[500], fontSize: typography.sizes.sm },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 12 },
-  emptyText: { color: colors.zinc[500], fontSize: typography.sizes.md, fontWeight: '600' },
-  emptySubtext: { color: colors.zinc[600], fontSize: typography.sizes.sm },
-  heroContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, marginBottom: spacing.sm },
-  heroGlow: { position: 'absolute', top: spacing.md + 10, left: spacing.lg + 10, right: spacing.lg + 10, bottom: 10, backgroundColor: colors.violet[500], borderRadius: 20, transform: [{ scale: 1.02 }] },
-  heroCard: { height: HERO_HEIGHT, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.zinc[900] },
-  heroImage: { width: '100%', height: '100%' },
-  heroPlaceholder: { width: '100%', height: '100%', backgroundColor: colors.zinc[800], justifyContent: 'center', alignItems: 'center' },
-  heroGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
-  heroBadge: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fb923c', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  heroBadgeText: { fontSize: 10, fontWeight: '700', color: '#000', letterSpacing: 0.5 },
-  heroContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.md },
-  heroTitle: { fontSize: 22, fontWeight: '700', color: colors.white, marginBottom: 8, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  heroMeta: { gap: 6 },
-  heroMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  heroVenue: { fontSize: 14, color: colors.zinc[300], fontWeight: '500', flex: 1 },
-  heroDate: { fontSize: 13, color: colors.zinc[300], fontWeight: '500' },
-  heroDateDivider: { fontSize: 13, color: colors.zinc[500] },
-  heroTime: { fontSize: 13, color: colors.violet[400], fontWeight: '600' },
-  heroGenreTag: { alignSelf: 'flex-start', backgroundColor: 'rgba(139, 92, 246, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 4 },
-  heroGenreText: { fontSize: 11, color: colors.violet[400], fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  section: { marginTop: spacing.xl },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
-  sectionTitle: { fontSize: typography.sizes.md, fontWeight: '600', color: colors.white },
-  sectionTitleHighlight: { color: '#fb923c' },
-  seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  seeAllText: { fontSize: 14, color: colors.violet[400], fontWeight: '600' },
-  horizontalScroll: { paddingHorizontal: spacing.lg, gap: spacing.md },
-  card: { width: CARD_WIDTH, backgroundColor: colors.zinc[900], borderRadius: 12, overflow: 'hidden' },
-  imageContainer: { width: '100%', height: 130, position: 'relative' },
-  image: { width: '100%', height: '100%' },
-  placeholderImage: { width: '100%', height: '100%', backgroundColor: colors.zinc[800], justifyContent: 'center', alignItems: 'center' },
-  dateBadge: { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0, 0, 0, 0.75)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  dateBadgeTonight: { backgroundColor: '#fb923c' },
-  dateBadgeTomorrow: { backgroundColor: '#8b5cf6' },
-  dateBadgeText: { fontSize: 11, fontWeight: '600', color: colors.white },
-  dateBadgeTextDark: { color: '#000' },
-  cardContent: { padding: spacing.sm },
-  eventName: { fontSize: typography.sizes.sm, fontWeight: '600', color: colors.white, marginBottom: 4, lineHeight: 18 },
-  eventVenue: { fontSize: typography.sizes.xs, color: colors.zinc[500], marginBottom: 4 },
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  eventTime: { fontSize: typography.sizes.xs, color: colors.violet[400], fontWeight: '500' },
-  bottomPadding: { height: 100 },
+  center: { flex:1, justifyContent:'center', alignItems:'center', paddingTop:80, gap:10 },
+  loadingText: { color:colors.zinc[500], fontSize:typography.sizes.sm },
+  emptyTitle: { color:colors.zinc[400], fontSize:typography.sizes.md, fontWeight:'600' },
+  emptySub: { color:colors.zinc[600], fontSize:typography.sizes.sm },
+
+  // Vibe pills
+  vibes: { paddingHorizontal:spacing.lg, gap:8, paddingBottom:4 },
+  pill: {
+    paddingHorizontal:14, paddingVertical:7,
+    borderRadius:4, backgroundColor:'transparent',
+    borderWidth:1, borderColor:colors.zinc[800],
+  },
+  pillActive: { backgroundColor:colors.zinc[800], borderColor:colors.zinc[600] },
+  pillText: { fontSize:11, fontWeight:'700', color:colors.zinc[600], letterSpacing:0.8 },
+  pillTextActive: { color:colors.white },
+
+  // Hero
+  heroWrap: { paddingHorizontal:spacing.lg, paddingTop:spacing.lg },
+  hero: { height:HERO_HEIGHT, borderRadius:20, overflow:'hidden', backgroundColor:colors.zinc[900] },
+  heroTop: { position:'absolute', top:16, left:16 },
+  heroTopPill: {
+    flexDirection:'row', alignItems:'center', gap:6,
+    paddingHorizontal:11, paddingVertical:6,
+    borderRadius:4, overflow:'hidden',
+    borderWidth:1, borderColor:'rgba(255,255,255,0.08)',
+  },
+  heroTopDot: { width:5, height:5, borderRadius:3 },
+  heroTopText: { fontSize:10, fontWeight:'700', color:'rgba(255,255,255,0.8)', letterSpacing:1.2 },
+  heroBottom: { position:'absolute', bottom:0, left:0, right:0, padding:20, gap:4 },
+  heroLabel: { fontSize:11, fontWeight:'600', color:'rgba(255,255,255,0.45)', letterSpacing:0.6, textTransform:'uppercase', marginBottom:2 },
+  heroTitle: { fontSize:26, fontWeight:'700', color:'#fff', lineHeight:32, letterSpacing:-0.5 },
+  heroVenue: { fontSize:14, color:'rgba(255,255,255,0.5)', fontWeight:'500', marginTop:2 },
+  heroCTA: { flexDirection:'row', alignItems:'center', gap:6, marginTop:14, alignSelf:'flex-start', borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.2)', paddingBottom:2 },
+  heroCTAText: { fontSize:13, fontWeight:'600', color:'#fff' },
+
+  // Section
+  section: { marginTop:36 },
+  sectionHead: { flexDirection:'row', alignItems:'flex-start', paddingHorizontal:spacing.lg, marginBottom:14 },
+  sectionHeadline: { fontSize:18, fontWeight:'700', color:'#fff', letterSpacing:-0.3 },
+  sectionHeadlineGold: { color:'#D4AF6A' },
+  sectionSub: { fontSize:12, color:colors.zinc[600], marginTop:2, fontWeight:'500' },
+  seeAll: { paddingTop:3 },
+  seeAllText: { fontSize:12, fontWeight:'600', color:colors.zinc[500] },
+  goldLine: { height:1, backgroundColor:'rgba(212,175,106,0.15)', marginHorizontal:spacing.lg, marginBottom:14 },
+  row: { paddingHorizontal:spacing.lg, gap:14 },
+
+  // Cards
+  card: { width:CARD_WIDTH, height:CARD_HEIGHT, borderRadius:16, overflow:'hidden', backgroundColor:colors.zinc[900] },
+  cardTop: { position:'absolute', top:12, left:12, right:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+  cardPill: { paddingHorizontal:9, paddingVertical:5, borderRadius:4, overflow:'hidden', borderWidth:1, borderColor:'rgba(255,255,255,0.06)' },
+  cardPillTonight: { borderColor:'rgba(167,139,250,0.3)' },
+  cardPillText: { fontSize:10, fontWeight:'700', color:'rgba(255,255,255,0.6)', letterSpacing:0.6 },
+  cardPillTextTonight: { color:'#C4B5FD' },
+  cardDot: { width:6, height:6, borderRadius:3, backgroundColor:'#D4AF6A' },
+  cardBottom: { position:'absolute', bottom:0, left:0, right:0, padding:14 },
+  cardTitle: { fontSize:15, fontWeight:'700', color:'#fff', lineHeight:20, marginBottom:3 },
+  genreTag: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(139,92,246,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.4)',
+  },
+  genreTagText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#a78bfa',
+    letterSpacing: 0.3,
+  },
+  cardVenue: { fontSize:12, color:'rgba(255,255,255,0.4)', fontWeight:'500' },
 });

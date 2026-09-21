@@ -212,7 +212,18 @@ export const getAllMedia = (venue: any): MediaItem[] => {
   let tiktokIndex = 0;
   let galleryIndex = 0;
 
-  // Add google_photos (highest priority - our certified source)
+  // Add instagram REELS/videos first (highest visual impact)
+  if (venue.instagram_media && Array.isArray(venue.instagram_media)) {
+    venue.instagram_media.filter((item: any) => item.type === 'video').forEach((item: any) => {
+      addMedia({
+        type: 'video',
+        url: item.url,
+        thumbnail: item.thumbnail,
+      }, 'instagram', instagramIndex++);
+    });
+  }
+
+  // Add google_photos
   if (venue.google_photos) {
     try {
       const parsed = typeof venue.google_photos === 'string'
@@ -226,11 +237,11 @@ export const getAllMedia = (venue: any): MediaItem[] => {
     } catch (e) {}
   }
 
-  // Add instagram_media (from venue_instagram_media table - images AND videos)
+  // Add instagram_media IMAGES only (videos already added above)
   if (venue.instagram_media && Array.isArray(venue.instagram_media)) {
-    venue.instagram_media.forEach((item: any) => {
+    venue.instagram_media.filter((item: any) => item.type !== 'video').forEach((item: any) => {
       addMedia({
-        type: item.type === 'video' ? 'video' : 'image',
+        type: 'image',
         url: item.url,
         thumbnail: item.thumbnail,
       }, 'instagram', instagramIndex++);

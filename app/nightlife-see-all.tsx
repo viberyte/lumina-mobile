@@ -13,6 +13,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingScreen from '../components/LoadingScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing } from '../theme';
@@ -21,7 +22,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2; // 2 columns with gap
 const CARD_HEIGHT = 200;
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface Venue {
   id: number;
@@ -136,7 +137,7 @@ export default function NightlifeSeeAll() {
     if (!isRefresh) setLoading(true);
     
     try {
-      const url = `${API_BASE}/api/nightlife?row=${params.row}&city=${encodeURIComponent(params.city || 'Manhattan')}&mood=${params.mood || 'all'}&limit=100`;
+      const url = `${API_BASE}/api/nightlife?row=${params.row}&city=${encodeURIComponent(params.city || 'Manhattan')}&world=${params.world || 'all'}&limit=100`;
       console.log('[NightlifeSeeAll] Fetching:', url);
       
       const response = await fetch(url);
@@ -172,11 +173,7 @@ export default function NightlifeSeeAll() {
   };
 
   if (loading && !data) {
-    return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={colors.violet[500]} />
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   // Format areas string

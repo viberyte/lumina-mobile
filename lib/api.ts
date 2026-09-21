@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 // Get user_id from storage
 async function getUserId(): Promise<number | null> {
   try {
     const userId = await AsyncStorage.getItem('@lumina_user_id');
-    return userId ? Number(userId) : null;
+    if (!userId) return null;
+    const n = parseInt(String(userId), 10);
+    return Number.isNaN(n) ? null : n;
   } catch {
     return null;
   }
@@ -108,11 +110,42 @@ export async function updateProfile(updates: Record<string, any>) {
 // ============ FAVORITES ============
 
 export async function saveFavorite(venueId: number) {
-  await trackBehavior(venueId, 'save', 'detail');
+  const userId = await getUserId();
+  console.log('SAVE_DEBUG userId=', userId, 'venueId=', venueId);
+  if (!userId) return { success: false, error: 'not_logged_in' };
+  // fire-and-forget analytics
+  trackBehavior(venueId, 'save', 'detail').catch(() => {});
+  const res = await fetch(`${API_BASE}/api/favorites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: parseInt(String(userId),10), itemType: 'venue', itemId: parseInt(String(venueId),10) }),
+  });
+  return res.json();
 }
 
 export async function removeFavorite(venueId: number) {
-  await trackBehavior(venueId, 'unsave', 'detail');
+  const userId = await getUserId();
+  if (!userId) return { success: false, error: 'not_logged_in' };
+  trackBehavior(venueId, 'unsave', 'detail').catch(() => {});
+  const params = new URLSearchParams({
+    userId: String(userId),
+    itemType: 'venue',
+    itemId: String(venueId),
+  });
+  const res = await fetch(`${API_BASE}/api/favorites?${params}`, { method: 'DELETE' });
+  return res.json();
+}
+
+export async function isVenueSaved(venueId: number): Promise<boolean> {
+  const userId = await getUserId();
+  if (!userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/api/favorites?userId=${userId}&type=venue`);
+    const data = await res.json();
+    return (data.saved || []).some((it: any) => Number(it.item_id) === Number(venueId));
+  } catch {
+    return false;
+  }
 }
 
 // ============ EXPORTS ============
@@ -126,6 +159,7 @@ export const api = {
   updateProfile,
   saveFavorite,
   removeFavorite,
+  isVenueSaved,
   getUserId,
 };
 

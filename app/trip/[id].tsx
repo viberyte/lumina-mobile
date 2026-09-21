@@ -123,12 +123,12 @@ export default function TripDetailScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       
-      const shareUrl = `https://lumina.viberyte.com/trip/${trip.id}`;
+      const shareUrl = `https://viberyte.com/trip/${trip.id}`;
       const venueCount = trip.venues.length;
       const venueText = venueCount === 1 ? '1 place' : `${venueCount} places`;
       
       await Share.share({
-        message: `Check out my ${trip.name} plan on Lumina - ${venueText}!\n\n${shareUrl}`,
+        message: `Check out my ${trip.name} plan on Viberyte - ${venueText}!\n\n${shareUrl}`,
         url: shareUrl,
       });
     } catch (error) {
@@ -158,7 +158,7 @@ export default function TripDetailScreen() {
       {/* Hero */}
       <View style={styles.hero}>
         {heroImage ? (
-          <Image source={{ uri: heroImage?.startsWith("/") ? `https://lumina.viberyte.com${heroImage}` : heroImage }} style={styles.heroImage} />
+          <Image source={{ uri: heroImage?.startsWith("/") ? `https://viberyte.com${heroImage}` : heroImage }} style={styles.heroImage} />
         ) : (
           <LinearGradient
             colors={['#18181b', '#27272a']}
@@ -200,7 +200,7 @@ export default function TripDetailScreen() {
             </View>
 
             <Image
-              source={{ uri: venue.venueImage?.startsWith("/") ? `https://lumina.viberyte.com${venue.venueImage}` : venue.venueImage }}
+              source={{ uri: venue.venueImage?.startsWith("/") ? `https://viberyte.com${venue.venueImage}` : venue.venueImage }}
               style={styles.venueImage}
             />
 

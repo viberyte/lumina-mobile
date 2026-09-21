@@ -16,7 +16,7 @@ export const getMediaType = (item: any): 'IMAGE' | 'VIDEO' => {
   return 'IMAGE';
 };
 
-export const getMediaUrl = (item: any, baseUrl: string = 'https://lumina.viberyte.com'): string => {
+export const getMediaUrl = (item: any, baseUrl: string = 'https://viberyte.com'): string => {
   if (!item.media_url) return '';
   
   if (item.media_url.startsWith('http')) {

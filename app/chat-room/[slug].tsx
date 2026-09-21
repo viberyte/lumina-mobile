@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../../theme';
 import { glassStyles } from '../../theme/vibeGradients';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface Message {
   id: number;

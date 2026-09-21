@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, typography, spacing } from '../theme';
 import ChatBubble from '../components/ChatBubble';
 import ButtonGroup from '../components/ButtonGroup';
 import LoadingDots from '../components/LoadingDots';
 import VenueCarousel from '../components/VenueCarousel';
+import FeaturedVenueCard from '../components/FeaturedVenueCard';
 import EventCarousel from '../components/EventCarousel';
 import luminaApi from '../services/lumina';
 
@@ -33,7 +36,7 @@ export default function HomeScreen() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hey! I'm Lumina, your nightlife concierge. Who's joining you tonight?",
+      content: "Hey! I'm Viberyte, your nightlife concierge. Who's joining you tonight?",
       showButtons: true,
       buttonType: 'who',
     }
@@ -51,6 +54,22 @@ export default function HomeScreen() {
   const whenOptions = ['Tonight', 'Tomorrow', 'This Weekend'];
   const planTypeOptions = ['Just dinner', 'Dinner + drinks', 'Full night out'];
   const vibeOptions = ['Dinner', 'Nightlife', 'Lounge', 'Something Unique'];
+  const [selectedCity, setSelectedCity] = useState('Manhattan');
+
+  useEffect(() => {
+    AsyncStorage.getItem('@lumina_profile').then(p => {
+      if (p) { const d = JSON.parse(p); if (d.city) setSelectedCity(d.city); }
+    }).catch(() => {});
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      AsyncStorage.getItem('@lumina_profile').then(p => {
+        if (p) { const d = JSON.parse(p); if (d.city) setSelectedCity(d.city); }
+      }).catch(() => {});
+    }, [])
+  );
+
   const cuisineOptions = ['Italian', 'Japanese', 'Soul Food', 'Caribbean', 'Mexican', 'Surprise Me'];
   const afterDinnerOptions = ['Keep it light', 'Go to a lounge', 'Find a club', 'Check out events', 'Call it a night'];
   const musicOptions = ['Hip-Hop', 'R&B', 'Afrobeats', 'Reggaeton', 'EDM / House', 'Open Format', "Doesn't Matter"];
@@ -64,7 +83,7 @@ export default function HomeScreen() {
     
     try {
       const response = await luminaApi.getRecommendations({
-        city: 'Manhattan',
+        city: selectedCity,
         flow: finalFlow,
       });
 
@@ -110,7 +129,7 @@ export default function HomeScreen() {
       params: {
         venues: JSON.stringify(allVenues),
         flow: JSON.stringify(flow),
-        city: 'Manhattan',
+        city: selectedCity,
       },
     });
   };
@@ -215,12 +234,12 @@ export default function HomeScreen() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.headerTitle}>Lumina</Text>
+            <Text style={styles.headerTitle}>Viberyte</Text>
             <Text style={styles.headerSubtitle}>Manhattan</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/profile')}>
             <View style={styles.profileButton}>
-              <Text style={styles.profileEmoji}>✨</Text>
+              <Text style={styles.profileEmoji}></Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -247,7 +266,10 @@ export default function HomeScreen() {
           {loading && <LoadingDots />}
 
           {topPicks.length > 0 && (
-            <VenueCarousel title="🔥 Top Picks For Your Night" venues={topPicks} />
+            <>
+              <FeaturedVenueCard venue={topPicks[0]} />
+              {topPicks.length > 1 && <VenueCarousel title="More Tonight" venues={topPicks.slice(1)} />}
+            </>
           )}
 
           {afterDinnerVenues.length > 0 && (
@@ -255,7 +277,7 @@ export default function HomeScreen() {
               title={
                 flow.afterDinner === 'Go to a lounge' ? '🍸 Lounge Vibes' :
                 flow.afterDinner === 'Find a club' ? '🎉 Club Scene' :
-                '✨ Keep It Light'
+                ' Keep It Light'
               }
               venues={afterDinnerVenues}
             />
@@ -286,7 +308,7 @@ export default function HomeScreen() {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Ask Lumina anything..."
+            placeholder="Ask Viberyte anything..."
             placeholderTextColor={colors.zinc[600]}
             value={input}
             onChangeText={setInput}

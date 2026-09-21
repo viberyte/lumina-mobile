@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../theme';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 const MUSIC_OPTIONS = [
   { id: 'afrobeats', label: 'Afrobeats' },

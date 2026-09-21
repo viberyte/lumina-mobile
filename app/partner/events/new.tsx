@@ -26,7 +26,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import * as Haptics from 'expo-haptics';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 const GOOGLE_PLACES_KEY = 'AIzaSyDvMcJrFjAc_Wrb_FJzqVRWv_z00YB_j0k';
 
 const EVENT_CATEGORIES = [
@@ -122,8 +122,6 @@ export default function NewEvent() {
   // ──────────────────────────────────────
   const getAuthToken = async (): Promise<string | null> => {
     try {
-      const t = await AsyncStorage.getItem('partner_token');
-      if (t) return t;
       const session = await AsyncStorage.getItem('lumina_partner_session');
       if (!session) return null;
       return JSON.parse(session).token;
@@ -442,7 +440,8 @@ export default function NewEvent() {
       let flyerUrl = null;
       if (flyerUri) {
         const fd = new FormData();
-        fd.append('image', { uri: flyerUri, type: 'image/jpeg', name: 'flyer.jpg' } as any);
+        fd.append('file', { uri: flyerUri, type: 'image/jpeg', name: 'flyer.jpg' } as any);
+        fd.append('type', 'event');
         const up = await partnerFetch('/api/partner/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
         if (up.ok) flyerUrl = (await up.json()).url;
       }
@@ -450,7 +449,8 @@ export default function NewEvent() {
       const photoUrls: string[] = [];
       for (const photoUri of photos) {
         const fd = new FormData();
-        fd.append('image', { uri: photoUri, type: 'image/jpeg', name: 'photo.jpg' } as any);
+        fd.append('file', { uri: photoUri, type: 'image/jpeg', name: 'photo.jpg' } as any);
+        fd.append('type', 'event');
         const up = await partnerFetch('/api/partner/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
         if (up.ok) photoUrls.push((await up.json()).url);
       }

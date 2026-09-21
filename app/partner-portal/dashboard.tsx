@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing } from '../../theme';
 import { glassStyles } from '../../theme/vibeGradients';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface PartnerStats {
   followers: number;

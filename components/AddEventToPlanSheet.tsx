@@ -263,7 +263,7 @@ export default function AddEventToPlanSheet({
                       />
                     ) : (
                       <View style={styles.planImagePlaceholder}>
-                        <Text style={styles.planEmoji}>{plan.emoji || '✨'}</Text>
+                        <Text style={styles.planEmoji}>{plan.emoji || ''}</Text>
                       </View>
                     )}
                   </View>

@@ -58,7 +58,7 @@ export default function MultiStopModal({
   const fetchRecommendations = async () => {
     setLoading(true);
     try {
-      const response = await fetch('https://lumina.viberyte.com/api/multi-stop', {
+      const response = await fetch('https://viberyte.com/api/multi-stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -227,7 +227,7 @@ export default function MultiStopModal({
           ) : (
             <>
               <Text style={styles.sectionTitle}>
-                💫 Pick your energy level:
+                 Pick your energy level:
               </Text>
 
               {renderVibeCard(
@@ -243,7 +243,7 @@ export default function MultiStopModal({
                 'elevated',
                 elevated,
                 'sparkles',
-                '✨ ELEVATED',
+                ' ELEVATED',
                 'Fun but refined, good vibes',
                 [colors.violet[600] + '40', colors.violet[700] + '20']
               )}

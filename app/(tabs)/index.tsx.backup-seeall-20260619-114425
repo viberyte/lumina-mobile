@@ -1,0 +1,1451 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Animated,
+  Dimensions,
+  RefreshControl,
+  FlatList,
+  Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Modal } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import * as Haptics from 'expo-haptics';
+import { colors, typography, spacing } from '../../theme';
+import luminaApi from '../../services/luminaApi';
+import FlowCard from '../../components/FlowCard';
+import FeaturedVenueCard from '../../components/FeaturedVenueCard';
+import InlineReel from '../../components/InlineReel';
+import { getPhotoUrl, parseVibeTags } from '../../utils/photoHelper';
+import { usePersona } from '../../hooks/usePersona';
+import StretchCitySelector from '../../components/StretchCitySelector';
+import personaService, { sortEventsByMusicPreference } from '../../services/personaService';
+import { useUserFollows } from '../../hooks/useFollow';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Safely parse vibe tags (could be string or array)
+const safeGetTags = (vibeTags: any): string[] => {
+  if (!vibeTags) return [];
+  if (Array.isArray(vibeTags)) return vibeTags;
+  if (typeof vibeTags === 'string') {
+    try {
+      const parsed = JSON.parse(vibeTags);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return vibeTags.split(',').map((t: string) => t.trim());
+    }
+  }
+  return [];
+};
+
+
+// Card sizes
+const CARD_WIDTH = 200;
+const CARD_HEIGHT = 300;
+const SUPER_CARD_WIDTH = 200;
+const SUPER_CARD_HEIGHT = 320;
+
+// Hero carousel
+const HERO_CARD_WIDTH = SCREEN_WIDTH - 60;
+const HERO_CARD_HEIGHT = 240;
+const HERO_CARD_SPACING = 12;
+
+// Daily refresh helper
+const getDailySeed = () => {
+  const today = new Date();
+  return today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+};
+
+const seededShuffle = (array: any[], seed: number) => {
+  const shuffled = [...array];
+  let currentSeed = seed;
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    currentSeed = (currentSeed * 9301 + 49297) % 233280;
+    const j = Math.floor((currentSeed / 233280) * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Get time-aware greeting
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Tonight';
+};
+
+// Get time-aware context
+const getTimeContext = () => {
+  const hour = new Date().getHours();
+  const day = new Date().getDay();
+  const isWeekend = day === 0 || day === 5 || day === 6;
+  
+  if (hour >= 17 && hour < 21) return isWeekend ? 'Weekend vibes starting' : 'The night is young';
+  if (hour >= 21) return 'Peak hours approaching';
+  if (hour < 12) return 'Planning ahead?';
+  return isWeekend ? 'Weekend mode' : 'Midweek escape';
+};
+
+// Section hints by persona intent
+const getSectionHint = (section: string, persona: any): string => {
+  const status = persona?.relationship_status || 'single';
+  const hints: Record<string, Record<string, string>> = {
+    tonight: {
+      single: 'Curated for your vibe tonight',
+      dating: 'Perfect spots to impress',
+      in_relationship: 'Date night awaits',
+    },
+    popular: {
+      single: 'Where the energy is',
+      dating: 'Trending this week',
+      in_relationship: 'Couple favorites',
+    },
+    dating: {
+      single: 'Great first date energy',
+      dating: 'Take them here',
+      in_relationship: 'Romantic picks for two',
+    },
+    lateNight: {
+      single: 'Keep the night going',
+      dating: 'After dinner moves',
+      in_relationship: 'Late night together',
+    },
+  };
+  return hints[section]?.[status] || '';
+};
+
+// Skeleton loader
+const SkeletonCard = ({ width = CARD_WIDTH, height = CARD_HEIGHT }) => (
+  <View style={[styles.skeletonCard, { width, height }]}>
+    <Animated.View style={styles.skeletonShimmer} />
+  </View>
+);
+
+const SkeletonHome = () => (
+  <View style={styles.skeletonContainer}>
+    <View style={styles.skeletonHeader}>
+      <View style={[styles.skeletonBar, { width: 180, height: 28 }]} />
+      <View style={[styles.skeletonBar, { width: 100, height: 16, marginTop: 8 }]} />
+    </View>
+    <SkeletonCard width={HERO_CARD_WIDTH} height={HERO_CARD_HEIGHT} />
+    <View style={styles.skeletonSection}>
+      <View style={[styles.skeletonBar, { width: 140, height: 20 }]} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </ScrollView>
+    </View>
+  </View>
+);
+
+
+// Animated pressable card wrapper
+const AnimatedPressable = ({ children, style, onPress }: any) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+  
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+  
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+function ReelCardPlayer({ uri, photoUrl, playing = true }: { uri: string; photoUrl: string | null; playing?: boolean }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  React.useEffect(() => {
+    if (playing) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [playing]);
+
+  return (
+    <>
+      {photoUrl && <Image source={{ uri: photoUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />}
+      {playing && <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
+    </>
+  );
+}
+
+export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { persona, content, isLoading: personaLoading } = usePersona();
+  
+  const [userName, setUserName] = useState('');
+  const [userCity, setUserCity] = useState('Manhattan');
+  const [heroVenues, setHeroVenues] = useState<any[]>([]);
+  const [pickedForYou, setPickedForYou] = useState<any[]>([]);
+  const [featuredEvents, setFeaturedEvents] = useState<any[]>([]);
+  const [happeningNow, setHappeningNow] = useState<any[]>([]);
+  const [flowsData, setFlowsData] = useState<any[]>([]);
+  const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
+  const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
+  const [nearYouVenues, setNearYouVenues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showCitySelector, setShowCitySelector] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadingCity, setReloadingCity] = useState('');
+  const [refreshSeed, setRefreshSeed] = useState(0);
+  const reloadOpacity = useRef(new Animated.Value(0)).current;
+  
+  // User follows for "Following" section
+  const { follows, loading: followsLoading, refresh: refreshFollows } = useUserFollows();
+  
+  // Hero carousel state
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const heroScrollX = useRef(new Animated.Value(0)).current;
+
+  // Subtle fade in animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    loadProfile();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+
+  // Pulsing glow effect for greeting
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0.5,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+  // Fetch nearest venues using device location
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude } = loc.coords;
+        const res = await fetch(
+          `https://viberyte.com/api/venues?lat=${latitude}&lng=${longitude}&limit=10&sort=distance`
+        ).then(r => r.json()).catch(() => null);
+        if (res?.venues?.length) {
+          setNearYouVenues(res.venues.filter((v: any) => getPhotoUrl(v)).slice(0, 8));
+        }
+      } catch (e) {
+        console.log('Location error:', e);
+      }
+    })();
+  }, []);
+
+  // Load content when persona is ready
+  useEffect(() => {
+    if (!personaLoading) {
+      loadContent();
+    }
+  }, [personaLoading]);
+
+  const loadProfile = async () => {
+    try {
+      const profile = await AsyncStorage.getItem('@lumina_profile');
+      const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+      if (profile) {
+        const data = JSON.parse(profile);
+        setUserName(data.name || '');
+      }
+      if (savedCity && savedCity !== "Near Me") {
+        setUserCity(savedCity);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const loadContent = async (cityOverride?: string) => {
+    const rawCity = cityOverride || userCity;
+    // "Near Me" is a UI label not a real city — resolve to saved city or default
+    const savedFallback = await AsyncStorage.getItem('@lumina_selected_city').catch(() => null);
+    const activeCity = (!rawCity || rawCity === 'Near Me') 
+      ? (savedFallback && savedFallback !== 'Near Me' ? savedFallback : 'Manhattan')
+      : rawCity;
+    try {
+      setLoading(true);
+      console.log('[loadContent] starting for city:', activeCity);
+      const [venues, events, flowsRes, featuredRes] = await Promise.all([
+        luminaApi.getVenues(activeCity || 'Manhattan').then(r => { console.log('[loadContent] venues done', r?.length); return r; }),
+        luminaApi.getEvents(activeCity || 'New York').then(r => { console.log('[loadContent] events done', r?.length); return r; }),
+        fetch('https://viberyte.com/api/flows?city=' + encodeURIComponent(activeCity || 'Manhattan') + (persona?.music_preferences?.[0] ? '&music=' + encodeURIComponent(persona.music_preferences[0]) : '')).then(r => r.json()).then(r => { console.log('[loadContent] flows done'); return r; }).catch(() => { console.log('[loadContent] flows failed'); return { ok: false, flows: [] }; }),
+        fetch('https://viberyte.com/api/events?city=' + encodeURIComponent(activeCity || 'New York') + '&limit=15').then(r => r.json()).then(r => { console.log('[loadContent] featured done'); return r; }).catch(() => { console.log('[loadContent] featured failed'); return { events: [] }; })
+      ]);
+      console.log('[loadContent] all promises resolved');
+      
+      const seed = refreshSeed > 0 ? refreshSeed : getDailySeed();
+      const shuffledVenues = seededShuffle(venues, seed);
+      const shuffledEvents = seededShuffle(events, seed + 1);
+      
+      // Apply persona-based sorting
+      const sortedVenues = personaService.sortVenuesByPersona(shuffledVenues, persona);
+      
+      // Hero carousel - top 5 standout venues
+      const heroes = sortedVenues
+        .filter((v: any) => (v.google_rating || v.rating) >= 4.3 && getPhotoUrl(v))
+        .slice(0, 5);
+      setHeroVenues(heroes);
+      
+      // Tonight's picks - persona sorted (skip heroes)
+      const heroIds = new Set(heroes.map((h: any) => h.id));
+      const picked = sortedVenues
+        .filter((v: any) => !heroIds.has(v.id) && getPhotoUrl(v))
+        .slice(0, 10);
+      setPickedForYou(picked);
+      
+      // Date night / romantic picks
+      const dateSpots = sortedVenues
+        .filter((v: any) => {
+          const tags = safeGetTags(v.vibe_tags);
+          const contextual = v.contextual_tags || {};
+          return (
+            tags.some((t: string) => 
+              t.toLowerCase().includes('romantic') || 
+              t.toLowerCase().includes('intimate') ||
+              t.toLowerCase().includes('cozy')
+            ) ||
+            contextual.date_spot ||
+            contextual.conversation_friendly
+          ) && getPhotoUrl(v) && !heroIds.has(v.id);
+        })
+        .slice(0, 6);
+      setDateNightPicks(dateSpots);
+      
+      // Late night spots
+      const lateNight = sortedVenues
+        .filter((v: any) => {
+          const tags = safeGetTags(v.vibe_tags);
+          const category = (v.category || '').toLowerCase();
+          return (
+            tags.some((t: string) => 
+              t.toLowerCase().includes('late') || 
+              t.toLowerCase().includes('club') ||
+              t.toLowerCase().includes('dance')
+            ) ||
+            category.includes('nightclub') ||
+            category.includes('lounge') ||
+            category.includes('bar')
+          ) && getPhotoUrl(v) && !heroIds.has(v.id);
+        })
+        .slice(0, 6);
+      setLateNightSpots(lateNight);
+      
+      // Happening now - upcoming events (sorted by music preference)
+      const musicPrefs = persona?.music_preferences || [];
+      const musicSortedEvents = sortEventsByMusicPreference(shuffledEvents, musicPrefs);
+      const upcoming = musicSortedEvents
+        .filter((e: any) => e.image_url || e.cover_image_url)
+        .slice(0, 8);
+      setFeaturedEvents((featuredRes?.events || []).slice(0, 10));
+        if (flowsRes?.ok && flowsRes?.flows) setFlowsData(flowsRes.flows);
+      setHappeningNow(upcoming);
+
+      // Prefetch images for instant loading
+      const allImages = [
+        ...heroes.map((v: any) => getPhotoUrl(v)),
+        ...picked.map((v: any) => getPhotoUrl(v)),
+        ...dateSpots.slice(0, 10).map((v: any) => getPhotoUrl(v)),
+      ].filter(Boolean);
+      if (allImages.length > 0) Image.prefetch(allImages);
+
+    } catch (error) {
+      console.error('Error loading content:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // City change with context reload effect
+  const handleCityChange = async (newCity: string) => {
+    setShowCitySelector(false);
+    if (newCity === userCity) return;
+
+    // Fade to black first
+    setIsReloading(true);
+    setReloadingCity(newCity);
+    reloadOpacity.setValue(1); // Show splash instantly
+    // Clear old data immediately so skeleton shows
+    setHeroVenues([]);
+    setPickedForYou([]);
+    setDateNightPicks([]);
+    setLateNightSpots([]);
+    setFeaturedEvents([]);
+    setHappeningNow([]);
+    setLoading(true);
+    // Small delay so splash renders before fetch starts
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+
+    // Now safely update city and fetch
+    setUserCity(newCity);
+    if (newCity !== "Near Me") await AsyncStorage.setItem('@lumina_selected_city', newCity);
+    await loadContent(newCity);
+
+    // Hold splash for 1 second so it feels intentional not janky
+    await new Promise<void>(resolve => setTimeout(resolve, 1000));
+
+    // Fade back in slowly
+    await new Promise<void>(resolve => {
+      Animated.timing(reloadOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => resolve());
+    });
+    setIsReloading(false);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRefreshSeed(Math.floor(Math.random() * 999999));
+    await loadContent();
+    setRefreshing(false);
+  };
+
+  const handleVenuePress = useCallback((venue: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/venue/${venue.id}`);
+  }, [router]);
+
+  const handleEventPress = useCallback((event: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/event/${event.id}`);
+  }, [router]);
+
+  // Hero carousel item
+  const renderHeroItem = useCallback(({ item, index }: { item: any; index: number }) => {
+    const photoUrl = getPhotoUrl(item);
+    const tags = parseVibeTags(item.vibe_tags);
+    
+    const inputRange = [
+      (index - 1) * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
+      index * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
+      (index + 1) * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
+    ];
+    
+    const scale = heroScrollX.interpolate({
+      inputRange,
+      outputRange: [0.92, 1, 0.92],
+      extrapolate: 'clamp',
+    });
+    
+    const opacity = heroScrollX.interpolate({
+      inputRange,
+      outputRange: [0.7, 1, 0.7],
+      extrapolate: 'clamp',
+    });
+    
+    return (
+      <Animated.View style={[styles.heroCardWrapper, { transform: [{ scale }], opacity }]}>
+        <FeaturedVenueCard venue={item} isVisible={index === activeHeroIndex} isNearby={Math.abs(index - activeHeroIndex) <= 1} />
+      </Animated.View>
+    );
+  }, [heroScrollX]);
+
+  const _UNUSED_renderHeroItem = useCallback(({ item, index }: { item: any; index: number }) => {
+    const photoUrl = getPhotoUrl(item);
+    const tags = parseVibeTags(item.vibe_tags);
+    return (
+      <Animated.View style={[styles.heroCardWrapper]}>
+        <TouchableOpacity
+          style={styles.heroCard}
+          onPress={() => handleVenuePress(item)}
+          activeOpacity={0.95}
+        >
+          <Image source={{ uri: photoUrl }} style={styles.heroImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.9)']}
+            style={styles.heroGradient}
+          />
+          <View style={styles.heroBadge}>
+            <Text style={styles.heroBadgeText}>Featured</Text>
+          </View>
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>{item.name}</Text>
+            <Text style={styles.heroSubtitle}>
+              {item.neighborhood} · {item.category}
+            </Text>
+            {tags.length > 0 && (
+              <View style={styles.heroTags}>
+                {tags.slice(0, 2).map((tag, i) => (
+                  <View key={i} style={styles.heroTag}>
+                    <Text style={styles.heroTagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }, [heroScrollX, handleVenuePress]);
+
+  // Regular venue card
+  const renderVenueCard = useCallback((venue: any, isSuper: boolean = false) => {
+    const photoUrl = getPhotoUrl(venue);
+    const tags = parseVibeTags(venue.vibe_tags);
+    const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
+    const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
+    const reelUrl = venue.reel_url || null;
+
+    return (
+      <AnimatedPressable
+        key={venue.id}
+        style={[styles.card, { width, height }]}
+        onPress={() => handleVenuePress(venue)}
+      >
+        <InlineReel
+          reelUrl={reelUrl}
+          photoUrl={photoUrl}
+          style={styles.cardImage}
+          shouldPlay={false}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.85)']}
+          style={styles.cardGradient}
+        />
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{venue.name}</Text>
+          <Text style={styles.cardSubtitle} numberOfLines={1}>
+            {venue.neighborhood || venue.category}
+          </Text>
+          {tags.length > 0 && (
+            <View style={styles.tagRow}>
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{tags[0]}</Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </AnimatedPressable>
+    );
+  }, [handleVenuePress]);
+
+  // Event card
+  // Derive mood from genre
+  const getMoodFromGenre = (genre: string): { label: string; color: string } | null => {
+    if (!genre) return null;
+    const g = genre.toLowerCase();
+    if (g.includes('hip-hop') || g.includes('hiphop') || g.includes('rap')) return { label: 'Hip-Hop', color: '#f59e0b' };
+    if (g.includes('afrobeats') || g.includes('afro')) return { label: 'Afrobeats', color: '#22c55e' };
+    if (g.includes('reggaeton')) return { label: 'Reggaeton', color: '#ef4444' };
+    if (g.includes('reggae')) return { label: 'Reggae', color: '#16a34a' };
+    if (g.includes('r&b') || g.includes('rnb')) return { label: 'R&B', color: '#ec4899' };
+    if (g.includes('latin') || g.includes('salsa')) return { label: 'Latin', color: '#f97316' };
+    if (g.includes('house')) return { label: 'House', color: '#8b5cf6' };
+    if (g.includes('techno')) return { label: 'Techno', color: '#6366f1' };
+    if (g.includes('edm')) return { label: 'EDM', color: '#3b82f6' };
+    if (g.includes('jazz') || g.includes('live music') || g.includes('live')) return { label: 'Live', color: '#14b8a6' };
+    if (g.includes('pop')) return { label: 'Pop', color: '#a78bfa' };
+    return null;
+  };
+
+  const renderEventCard = useCallback((event: any) => {
+    const imageUrl = event.image_url || event.cover_image_url;
+    const genre = event.genre || event.music_genre;
+    const mood = getMoodFromGenre(genre);
+    
+    return (
+      <AnimatedPressable
+        key={event.id}
+        style={styles.card}
+        onPress={() => handleEventPress(event)}
+      >
+        <Image source={{ uri: imageUrl }} style={styles.cardImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.88)']}
+          style={styles.cardGradient}
+        />
+
+        {/* Top badges row */}
+        <View style={styles.cardTopRow}>
+          {genre && (
+            <View style={styles.genreBadge}>
+              <Ionicons name="musical-note" size={10} color="#fff" style={{ marginRight: 3 }} />
+              <Text style={styles.genreBadgeText} numberOfLines={1}>{genre}</Text>
+            </View>
+          )}
+          {mood && (
+            <View style={[styles.moodBadge, { backgroundColor: mood.color + '33', borderColor: mood.color + '66' }]}>
+              <Text style={[styles.moodBadgeText, { color: mood.color }]}>{mood.label}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{event.title}</Text>
+          <Text style={styles.cardSubtitle} numberOfLines={1}>
+            {event.venue_name || genre}
+          </Text>
+        </View>
+      </AnimatedPressable>
+    );
+  }, [handleEventPress]);
+
+  // Horizontal venue row component
+  const HorizontalVenueRow = ({ venues, isSuper = false }: { venues: any[]; isSuper?: boolean }) => {
+    const [visibleIds, setVisibleIds] = React.useState<Set<number>>(new Set());
+    const viewConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
+    const onViewable = React.useRef(({ viewableItems }: any) => {
+      const ids = new Set<number>();
+      for (const v of viewableItems) { if (v?.item?.id != null) ids.add(v.item.id); }
+      setVisibleIds(ids);
+    }).current;
+    const pairs = React.useRef([{ viewabilityConfig: viewConfig, onViewableItemsChanged: onViewable }]).current;
+
+    return (
+      <FlatList
+        data={venues}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.horizontalScroll, isSuper && styles.superScroll]}
+        decelerationRate="fast"
+        keyExtractor={(item) => String(item.id)}
+        viewabilityConfigCallbackPairs={pairs}
+        renderItem={({ item }) => {
+          const photoUrl = getPhotoUrl(item);
+          const tags = parseVibeTags(item.vibe_tags);
+          const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
+          const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
+          const reelUrl = item.reel_url || null;
+
+          return (
+            <AnimatedPressable
+              key={item.id}
+              style={[styles.card, { width, height }]}
+              onPress={() => handleVenuePress(item)}
+            >
+              <InlineReel
+                reelUrl={reelUrl}
+                photoUrl={photoUrl}
+                style={styles.cardImage}
+                shouldPlay={true}
+              />
+              {reelUrl ? (
+                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="play-circle" size={12} color="#fff" />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
+                </View>
+              ) : null}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.85)']}
+                style={styles.cardGradient}
+              />
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.cardSubtitle} numberOfLines={1}>{item.neighborhood || item.city}</Text>
+                {tags.length > 0 && (
+                  <View style={styles.tagRow}>
+                    {tags.slice(0, 1).map((tag: string) => (
+                      <View key={tag} style={styles.tagPill}>
+                        <Text style={styles.tagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </AnimatedPressable>
+          );
+        }}
+      />
+    );
+  };
+
+  // Section header with hint
+  const renderSectionHeader = (title: string, hint: string, icon?: string, onSeeAll?: () => void) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderTop}>
+        <View style={styles.sectionTitleRow}>
+          {icon && <Ionicons name={icon as any} size={20} color={colors.violet[400]} style={{ marginRight: 8 }} />}
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        {onSeeAll && (
+          <TouchableOpacity style={styles.seeAllButton} onPress={onSeeAll} activeOpacity={0.7}>
+            <Text style={styles.seeAllText}>See All</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.violet[400]} />
+          </TouchableOpacity>
+        )}
+      </View>
+      {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
+    </View>
+  );
+
+  // Hero pagination dots
+  const renderHeroPagination = () => (
+    <View style={styles.heroPagination}>
+      {heroVenues.map((_, index) => (
+        <View
+          key={index}
+          style={[
+            styles.heroDot,
+            index === activeHeroIndex && styles.heroDotActive,
+          ]}
+        />
+      ))}
+    </View>
+  );
+
+  // Show skeleton while loading
+  if (personaLoading || (loading && heroVenues.length === 0)) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <SkeletonHome />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.violet[400]}
+          />
+        }
+      >
+        <Animated.View style={{ opacity: fadeAnim }}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <View style={styles.greetingContainer}>
+                <Animated.Text style={[styles.greetingGlow, { opacity: glowAnim }]}>
+                  {getGreeting()}{userName ? `, ${userName}` : ''}
+                </Animated.Text>
+                <Text style={styles.greeting}>
+                  {getGreeting()}{userName ? `, ${userName}` : ''}
+                </Text>
+              </View>
+              <Text style={styles.context}>{getTimeContext()}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.citySelector}
+              onPress={() => setShowCitySelector(true)}
+            >
+              <Ionicons name="location" size={16} color={colors.violet[400]} />
+              <Text style={styles.cityText}>{userCity}</Text>
+            </TouchableOpacity>
+          </View>
+
+
+          {/* Smart Search Bar */}
+          <TouchableOpacity 
+            style={styles.searchBar}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/search');
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.searchLeft}>
+              <Ionicons name="search" size={18} color={colors.zinc[500]} />
+              <Text style={styles.searchPlaceholder}>Search vibes, venues, events...</Text>
+            </View>
+
+          </TouchableOpacity>
+
+          {/* Hero Carousel */}
+          {heroVenues.length > 0 && (
+            <View style={styles.heroSection}>
+              <Animated.FlatList
+                data={heroVenues}
+                renderItem={renderHeroItem}
+                keyExtractor={(item) => item.id.toString()}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={HERO_CARD_WIDTH + HERO_CARD_SPACING}
+                decelerationRate="fast"
+                contentContainerStyle={styles.heroList}
+                onScroll={Animated.event(
+                  [{ nativeEvent: { contentOffset: { x: heroScrollX } } }],
+                  { useNativeDriver: true }
+                )}
+                scrollEventThrottle={16}
+                onMomentumScrollEnd={(e) => {
+                  const index = Math.round(e.nativeEvent.contentOffset.x / (HERO_CARD_WIDTH + HERO_CARD_SPACING));
+                  setActiveHeroIndex(index);
+                }}
+              />
+              {renderHeroPagination()}
+            </View>
+          )}
+
+          {/* Following Section */}
+          {(follows.venues.length > 0 || follows.promoters.length > 0) && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionTitleGroup}>
+                  <Ionicons name="heart" size={18} color={colors.violet[400]} style={{ marginRight: 8 }} />
+                  <Text style={styles.sectionTitle}>Following</Text>
+                </View>
+                <Text style={styles.sectionHint}>{follows.venues.length + follows.promoters.length} total</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScroll}
+                decelerationRate="fast"
+              >
+                {follows.venues.map((venue: any) => {
+                  const photoUrl = venue.professional_photo_url || 
+                    (venue.google_photos && venue.google_photos[0]) || 
+                    venue.image_url ||
+                    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400';
+                  return (
+                    <TouchableOpacity
+                      key={`venue-${venue.id}`}
+                      style={styles.followCard}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        router.push(`/venue/${venue.id}`);
+                      }}
+                      activeOpacity={0.9}
+                    >
+                      <Image source={{ uri: photoUrl }} style={styles.followImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
+                      <LinearGradient
+                        colors={['transparent', 'rgba(0,0,0,0.85)']}
+                        style={styles.cardGradient}
+                      />
+                      <View style={styles.followBadge}>
+                        <Ionicons name="business-outline" size={10} color="#fff" />
+                      </View>
+                      <View style={styles.followContent}>
+                        <Text style={styles.followName} numberOfLines={1}>{venue.name}</Text>
+                        <Text style={styles.followMeta} numberOfLines={1}>{venue.category}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+                {follows.promoters.map((promoter: any) => {
+                  const photoUrl = promoter.profile_picture || 
+                    'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400';
+                  return (
+                    <TouchableOpacity
+                      key={`promoter-${promoter.id}`}
+                      style={styles.followCard}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        router.push(`/promoter/${promoter.instagram_handle}`);
+                      }}
+                      activeOpacity={0.9}
+                    >
+                      <Image source={{ uri: photoUrl }} style={styles.followImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
+                      <LinearGradient
+                        colors={['transparent', 'rgba(0,0,0,0.85)']}
+                        style={styles.cardGradient}
+                      />
+                      <View style={[styles.followBadge, { backgroundColor: colors.violet[500] }]}>
+                        <Ionicons name="person" size={10} color="#fff" />
+                      </View>
+                      <View style={styles.followContent}>
+                        <Text style={styles.followName} numberOfLines={1}>{promoter.business_name || promoter.instagram_handle}</Text>
+                        <Text style={styles.followMeta} numberOfLines={1}>{promoter.primary_genre || 'Promoter'}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Flow of the Night */}
+          {flowsData.length > 0 && (
+            <View style={[styles.section, { overflow: 'hidden' }]}>
+              <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', letterSpacing: -0.3 }}>Flow of the Night</Text>
+                <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Your night, planned out</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 40 }} decelerationRate="fast" snapToInterval={SCREEN_WIDTH * 0.82 + 14} snapToAlignment="start">
+                {flowsData.slice(0, 5).map((flow: any) => (
+                  <FlowCard key={flow.slug} flow={flow} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 1. Tonight's Picks */}
+          {pickedForYou.length > 0 && (
+            <View style={styles.section}>
+              {renderSectionHeader(
+                "Tonight's Picks",
+                'Curated for your taste',
+                'moon',
+                () => router.push('/explore?filter=tonight')
+              )}
+              <HorizontalVenueRow venues={pickedForYou} />
+            </View>
+          )}
+
+          {/* 2. Nearest to You */}
+          {nearYouVenues.length > 0 && (
+            <View style={styles.section}>
+              {renderSectionHeader(
+                'Nearest to You',
+                'Spots close by right now',
+                'location',
+                () => router.push('/explore?filter=nearby')
+              )}
+              <HorizontalVenueRow venues={nearYouVenues} />
+            </View>
+          )}
+
+          {/* 3. Events happening tonight */}
+          {happeningNow.length > 0 && (
+            <View style={styles.section}>
+              {renderSectionHeader(
+                'Events Tonight',
+                'Live music, parties & more',
+                'flame',
+                () => router.push('/explore?filter=events')
+              )}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScroll}
+                decelerationRate="fast"
+              >
+                {happeningNow.slice(0, 8).map((event) => renderEventCard(event))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 4. One smart contextual section based on time */}
+          {(() => {
+            const hour = new Date().getHours();
+            const isLateNight = hour >= 22 || hour < 4;
+            const isEvening = hour >= 18 && hour < 22;
+            
+            if (isLateNight && lateNightSpots.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Still Going', 'Open late tonight', 'moon', () => router.push('/explore?filter=latenight'))}
+                  <HorizontalVenueRow venues={lateNightSpots} />
+                </View>
+              );
+            }
+            if (isEvening && dateNightPicks.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Date Night', 'Great first date energy', 'heart', () => router.push('/explore?filter=datenight'))}
+                  <HorizontalVenueRow venues={dateNightPicks} isSuper />
+                </View>
+              );
+            }
+            if (featuredEvents.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Partner Events', 'Book directly through Viberyte', 'star', () => router.push('/explore?filter=events'))}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+                    {featuredEvents.slice(0, 5).map((event: any) => renderEventCard(event))}
+                  </ScrollView>
+                </View>
+              );
+            }
+            return null;
+          })()}
+
+          <View style={{ height: 100 }} />
+        </Animated.View>
+      </ScrollView>
+
+      {/* City Selector Modal */}
+      <Modal
+        visible={showCitySelector}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCitySelector(false)}
+      >
+        <StretchCitySelector
+          currentCity={userCity}
+          onSelectCity={handleCityChange}
+        />
+      </Modal>
+
+      {/* City Switch Splash Overlay */}
+      {isReloading && (
+        <Animated.View
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            backgroundColor: '#08080d',
+            opacity: reloadOpacity,
+            zIndex: 999,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{
+            fontSize: 32,
+            fontWeight: '300',
+            color: '#ffffff',
+            letterSpacing: 8,
+            marginBottom: 24,
+          }}>VIBERYTE</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
+            <Text style={{
+              fontSize: 12,
+              fontWeight: '400',
+              color: '#7C3AED',
+              letterSpacing: 2,
+            }}>{reloadingCity.toUpperCase()}</Text>
+            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
+          </View>
+        </Animated.View>
+      )}
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  // Following section
+  followCard: {
+    width: 130,
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: colors.zinc[800],
+  },
+  followImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  followBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  followContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 10,
+  },
+  followName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  followMeta: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'capitalize',
+  },
+  // Search Bar
+  searchBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.zinc[800],
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.zinc[700],
+  },
+  searchPlaceholder: {
+    marginLeft: 10,
+    fontSize: 15,
+    color: colors.zinc[500],
+  },
+  searchLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchSparkle: {
+    backgroundColor: colors.violet[500] + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.lg,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  greetingContainer: {
+    position: 'relative',
+  },
+  greetingGlow: {
+    position: 'absolute',
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.violet[400],
+    letterSpacing: -0.5,
+    textShadowColor: colors.violet[500],
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  },
+  greeting: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  context: {
+    fontSize: 15,
+    color: colors.zinc[400],
+    marginTop: 4,
+  },
+  citySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.zinc[800],
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  cityText: {
+    fontSize: 14,
+    color: colors.white,
+    fontWeight: '500',
+  },
+  
+  // Hero Carousel
+  heroSection: {
+    marginBottom: spacing.xl,
+  },
+  heroList: {
+    paddingHorizontal: 30,
+  },
+  heroCardWrapper: {
+    width: HERO_CARD_WIDTH,
+    marginRight: HERO_CARD_SPACING,
+  },
+  heroCard: {
+    width: '100%',
+    height: HERO_CARD_HEIGHT,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: colors.zinc[800],
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '70%',
+  },
+  heroBadge: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 4,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    color: colors.violet[300],
+    fontWeight: '600',
+  },
+  heroContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: spacing.lg,
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: 4,
+  },
+  heroSubtitle: {
+    fontSize: 14,
+    color: colors.zinc[300],
+    marginBottom: 10,
+  },
+  heroTags: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  heroTag: {
+    backgroundColor: colors.violet[600] + '50',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  heroTagText: {
+    fontSize: 12,
+    color: colors.violet[200],
+    fontWeight: '600',
+  },
+  heroPagination: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    gap: 6,
+  },
+  heroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.violet[500],
+    opacity: 0.4,
+  },
+  heroDotActive: {
+    width: 24,
+    opacity: 1,
+  },
+
+  // Sections
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  sectionHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  seeAllText: {
+    fontSize: 14,
+    color: colors.violet[400],
+    fontWeight: '600',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.3,
+  },
+  sectionHint: {
+    fontSize: 13,
+    color: colors.zinc[500],
+    marginTop: 4,
+    fontWeight: '400',
+  },
+  horizontalScroll: {
+    paddingLeft: spacing.lg,
+    paddingRight: spacing.xl,
+    gap: spacing.md,
+  },
+  superScroll: {
+    gap: spacing.lg,
+  },
+
+  // Cards
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: colors.zinc[800],
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+  },
+  cardTopRow: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  genreBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  genreBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  moodBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  moodBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  cardContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: spacing.sm + 2,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: colors.zinc[400],
+  },
+  tagRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  tag: {
+    backgroundColor: colors.pink[500] + '35',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  tagText: {
+    fontSize: 10,
+    color: colors.pink[300],
+    fontWeight: '600',
+  },
+
+  // Skeleton
+  skeletonContainer: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  skeletonHeader: {
+    marginVertical: spacing.lg,
+  },
+  skeletonBar: {
+    backgroundColor: colors.zinc[800],
+    borderRadius: 8,
+  },
+  skeletonCard: {
+    backgroundColor: colors.zinc[800],
+    borderRadius: 18,
+    marginRight: spacing.md,
+    overflow: 'hidden',
+  },
+  skeletonShimmer: {
+    flex: 1,
+    backgroundColor: colors.zinc[700],
+    opacity: 0.5,
+  },
+  skeletonSection: {
+    marginTop: spacing.xl,
+  },
+});

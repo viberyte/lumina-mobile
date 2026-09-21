@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
+import MapView, { Marker } from 'react-native-maps';
 import { Video, ResizeMode } from 'expo-av';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,11 +90,13 @@ interface Promoter {
 }
 
 export default function VenueProfileScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, handle } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   
   const [venue, setVenue] = useState<any>(null);
+  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [distanceText, setDistanceText] = useState<string | null>(null);
   const { isFollowing, toggleFollow } = useFollow('venue', id ? Number(id) : null);
   const [events, setEvents] = useState<{ upcoming: VenueEvent[]; past: VenueEvent[] }>({ upcoming: [], past: [] });
   const [promoters, setPromoters] = useState<Promoter[]>([]);
@@ -106,36 +109,60 @@ export default function VenueProfileScreen() {
 
   useEffect(() => {
     fetchAllData();
-  }, [id]);
+  }, [id, handle]);
 
   const fetchAllData = async () => {
     try {
       setLoading(true);
-      
-      // Parallel fetch calls for better performance
+
+      // PROMOTER MODE: load a partner/promoter profile by handle, shaped like a venue.
+      if (handle) {
+        const res = await fetch(`https://viberyte.com/api/promoters/${handle}`);
+        const data = await res.json();
+        const pr = data.promoter || {};
+        const shaped = {
+          ...pr,
+          name: pr.business_name || pr.instagram_handle,
+          description: pr.bio,
+          primary_vibes: pr.vibes || [],
+          music_genres: pr.music_genres || [],
+          gallery_photos: pr.gallery_photos || [],
+          instagram_media: (pr.reels || []).map((url: string, i: number) => ({ id: `reel-${i}`, type: 'video', url })),
+        };
+        setVenue(shaped);
+        const evs = data.events || [];
+        const today = new Date().toISOString().split('T')[0];
+        setEvents({
+          upcoming: evs.filter((e: any) => (e.event_date || '') >= today),
+          past: evs.filter((e: any) => (e.event_date || '') < today),
+        });
+        setLoading(false);
+        return;
+      }
+
+      // VENUE MODE (default)
       const [venueRes, eventsRes, promotersRes] = await Promise.all([
-        fetch(`https://lumina.viberyte.com/api/venues/${id}`),
-        fetch(`https://lumina.viberyte.com/api/venues/${id}/events`),
-        fetch(`https://lumina.viberyte.com/api/venues/${id}/promoters`)
+        fetch(`https://viberyte.com/api/venues/${id}`),
+        fetch(`https://viberyte.com/api/venues/${id}/events`),
+        fetch(`https://viberyte.com/api/venues/${id}/promoters`)
       ]);
-      
-const venueData = await venueRes.json();
+
+      const venueData = await venueRes.json();
       setVenue(venueData);
-      
+
       const eventsData = await eventsRes.json();
       if (eventsData.success && eventsData.events) {
         const upcoming = eventsData.events.filter((e: VenueEvent) => e.is_upcoming);
         const past = eventsData.events.filter((e: VenueEvent) => !e.is_upcoming);
         setEvents({ upcoming, past });
       }
-      
+
       const promotersData = await promotersRes.json();
       if (promotersData.success && promotersData.promoters) {
         setPromoters(promotersData.promoters);
       }
-      
     } catch (error) {
-      console.error('Error fetching venue profile:', error);
+      console.error('Error fetching profile:', error);
     } finally {
       setLoading(false);
     }
@@ -153,8 +180,8 @@ const venueData = await venueRes.json();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `Check out ${venue.name} on Lumina - your AI nightlife concierge`,
-        url: `https://lumina.viberyte.com/venue/${id}`,
+        message: `Check out ${venue.name} on Viberyte - your AI nightlife concierge`,
+        url: `https://viberyte.com/venue/${id}`,
       });
     } catch (error) {
       console.error('Share error:', error);
@@ -167,6 +194,35 @@ const venueData = await venueRes.json();
       Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
     }
   }, [venue?.instagram_handle]);
+
+  // Get user location and calculate distance
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await import('expo-location').then(m => m.requestForegroundPermissionsAsync());
+        if (status === 'granted') {
+          const loc = await import('expo-location').then(m => m.getCurrentPositionAsync({}));
+          setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        }
+      } catch (e) {}
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (userLocation && venue?.latitude && venue?.longitude) {
+      const R = 3958.8;
+      const dLat = (venue.latitude - userLocation.latitude) * Math.PI / 180;
+      const dLon = (venue.longitude - userLocation.longitude) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(userLocation.latitude * Math.PI / 180) * Math.cos(venue.latitude * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const miles = R * c;
+      if (miles < 0.1) setDistanceText('< 0.1 mi away');
+      else if (miles < 1) setDistanceText(`${(miles * 5280 / 300).toFixed(0)} min walk`);
+      else setDistanceText(`${miles.toFixed(1)} mi away`);
+    }
+  }, [userLocation, venue]);
 
   const handleDirections = useCallback(() => {
     if (venue?.address) {
@@ -209,12 +265,26 @@ const venueData = await venueRes.json();
   // Memoized media array
   const allMedia = useMemo(() => {
     if (!venue) return [];
-    return getAllMedia(venue);
+    const media = getAllMedia(venue);
+    // If a hero is explicitly chosen, float it to the front so the swiper opens on it.
+    const heroUrl = venue.hero_media_url;
+    if (heroUrl) {
+      const idx = media.findIndex((m: any) => m.url === heroUrl || m.url?.endsWith(heroUrl) || heroUrl.endsWith(m.url));
+      if (idx > 0) {
+        const [chosen] = media.splice(idx, 1);
+        media.unshift(chosen);
+      } else if (idx === -1) {
+        // Hero set to something not in the list yet — prepend it.
+        const isVid = /\.(mov|mp4|m4v|webm)$/i.test(heroUrl) || /\/reel-/i.test(heroUrl);
+        media.unshift({ id: 'hero', type: isVid ? 'video' : 'image', url: heroUrl });
+      }
+    }
+    return media;
   }, [venue]);
 
   const heroImage = useMemo(() => {
     if (!venue) return null;
-    return getPhotoUrl(venue);
+    return venue.hero_media_url || getPhotoUrl(venue);
   }, [venue]);
 
 
@@ -312,9 +382,13 @@ const venueData = await venueRes.json();
 
   const renderEventCard = (event: VenueEvent, isPast: boolean = false) => {
     // Use event image, or venue hero as fallback
-    const eventImage = event.image_url && !event.image_url.includes('unsplash.com') 
-      ? event.image_url 
+    let rawImg = event.image_url && !event.image_url.includes('unsplash.com')
+      ? event.image_url
       : venueHeroImage;
+    // Prepend domain for relative upload paths
+    const eventImage = rawImg && rawImg.startsWith('/')
+      ? `https://viberyte.com${rawImg}`
+      : rawImg;
     
     return (
     <TouchableOpacity
@@ -725,18 +799,71 @@ const venueData = await venueRes.json();
           {venue.address && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Location</Text>
-              <TouchableOpacity style={styles.locationCard} onPress={handleDirections}>
-                <View style={styles.locationIcon}>
-                  <Ionicons name="location" size={24} color={colors.accent} />
-                </View>
-                <View style={styles.locationInfo}>
-                  <Text style={styles.locationAddress}>{venue.address}</Text>
-                  {venue.city && (
-                    <Text style={styles.locationCity}>{venue.city}, {venue.state}</Text>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+              {venue.latitude && venue.longitude ? (
+                <TouchableOpacity onPress={handleDirections} activeOpacity={0.9}>
+                  <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 0 }}>
+                    <MapView
+                      style={{ width: '100%', height: 220 }}
+                      mapType="mutedStandard"
+                      initialCamera={{
+                        center: { latitude: venue.latitude, longitude: venue.longitude },
+                        pitch: 60,
+                        heading: 0,
+                        altitude: 400,
+                        zoom: 16,
+                      }}
+                      scrollEnabled={false}
+                      zoomEnabled={false}
+                      pitchEnabled={false}
+                      rotateEnabled={false}
+                      showsUserLocation={true}
+                      showsMyLocationButton={false}
+                      showsBuildings={true}
+                      showsPointsOfInterest={false}
+                      userInterfaceStyle="dark"
+                    >
+                      <Marker
+                        coordinate={{ latitude: venue.latitude, longitude: venue.longitude }}
+                        title={venue.name}
+                      >
+                        <View style={{ alignItems: 'center' }}>
+                          <View style={{ backgroundColor: '#8b5cf6', borderRadius: 20, padding: 6, borderWidth: 2, borderColor: '#fff' }}>
+                            <Ionicons name="location" size={16} color="#fff" />
+                          </View>
+                        </View>
+                      </Marker>
+                    </MapView>
+                    {distanceText && (
+                      <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.75)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="navigate" size={12} color="#8b5cf6" />
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{distanceText}</Text>
+                      </View>
+                    )}
+                    <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View>
+                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{venue.address}</Text>
+                        {venue.city && <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>{venue.city}, {venue.state}</Text>}
+                      </View>
+                      <View style={{ backgroundColor: '#8b5cf6', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Directions</Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.locationCard} onPress={handleDirections}>
+                  <View style={styles.locationIcon}>
+                    <Ionicons name="location" size={24} color={colors.accent} />
+                  </View>
+                  <View style={styles.locationInfo}>
+                    <Text style={styles.locationAddress}>{venue.address}</Text>
+                    {venue.city && (
+                      <Text style={styles.locationCity}>{venue.city}, {venue.state}</Text>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
           

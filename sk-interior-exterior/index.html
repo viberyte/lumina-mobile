@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SK Interior Exterior | Professional Plastering</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="nav-wrap">
+    <div class="brand">
+      <img src="logo.svg" alt="SK Interior Exterior logo">
+      <div class="brand-text">SK Interior Exterior<span>PLASTERING</span></div>
+    </div>
+    <nav>
+      <ul>
+        <li><a href="#services">Services</a></li>
+        <li><a href="portfolio.html">Portfolio</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+    <a class="header-phone" href="tel:+1PHONE">[PHONE]</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <h1>Professional Interior &amp; Exterior Plastering</h1>
+    <p>Family-owned craftsmanship for smooth walls, lasting finishes, and repairs done right — inside and out.</p>
+    <a href="#contact" class="btn">Get a Free Quote</a>
+  </div>
+</section>
+
+<section id="services">
+  <div class="container">
+    <h2 class="section-title">Our Services</h2>
+    <p class="section-sub">From new construction to repairs, we handle every plastering job with precision.</p>
+    <div class="services-grid">
+      <div class="service-card">
+        <h3>Interior Plastering</h3>
+        <p>Smooth, level walls and ceilings for a clean, finished look in any room.</p>
+      </div>
+      <div class="service-card">
+        <h3>Exterior Plastering &amp; Stucco</h3>
+        <p>Durable, weather-resistant finishes that protect and enhance your property.</p>
+      </div>
+      <div class="service-card">
+        <h3>Drywall Installation &amp; Repair</h3>
+        <p>Hanging, taping, and finishing — plus fast fixes for holes, cracks, and damage.</p>
+      </div>
+      <div class="service-card">
+        <h3>Texture &amp; Finishing</h3>
+        <p>Knockdown, orange peel, smooth skim coat, and custom textures.</p>
+      </div>
+      <div class="service-card">
+        <h3>Patch &amp; Crack Repair</h3>
+        <p>Restore damaged walls and ceilings so the repair blends in seamlessly.</p>
+      </div>
+      <div class="service-card">
+        <h3>Skim Coating</h3>
+        <p>Refresh old or uneven walls with a smooth new surface, ready to paint.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="about" class="about">
+  <div class="container about-wrap">
+    <div class="about-text">
+      <h2 class="section-title" style="text-align:left;">About SK Interior Exterior</h2>
+      <p>SK Interior Exterior is a family-owned plastering and finishing company proudly serving [CITY, STATE] and the surrounding area. We bring years of hands-on craftsmanship to every interior and exterior project, big or small — from full renovations to quick repairs.</p>
+      <br>
+      <p><strong>Service Area:</strong> [CITY / REGION AND SURROUNDING TOWNS]</p>
+    </div>
+    <div class="about-badge">
+      <img src="logo.svg" alt="SK Interior Exterior badge">
+      <p>Trusted. Local.<br>Family-Run.</p>
+    </div>
+  </div>
+</section>
+
+<section id="contact" class="contact">
+  <div class="container">
+    <h2 class="section-title">Get In Touch</h2>
+    <p class="section-sub">Ready to start your project? Reach out for a free quote — feel free to attach photos of the space.</p>
+    <div class="contact-wrap">
+      <div class="contact-info">
+        <p><strong>PHONE</strong>[PHONE]</p>
+        <p><strong>EMAIL</strong>xavierwest2455@gmail.com</p>
+        <p><strong>SERVICE AREA</strong>[CITY, STATE]</p>
+        <p><strong>HOURS</strong>Mon–Sat, 8am–6pm</p>
+      </div>
+      <form class="contact-form" action="https://formspree.io/f/xppaqond" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="_subject" value="New quote request — SK Interior Exterior">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" required>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required>
+        <label for="phone">Phone</label>
+        <input type="tel" id="phone" name="phone">
+        <label for="message">Project Details</label>
+        <textarea id="message" name="message" required></textarea>
+        <label for="photos">Attach Photos (optional)</label>
+        <input type="file" id="photos" name="photos" accept="image/*" multiple>
+        <button type="submit" class="btn">Send Message</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>&copy; <span id="year"></span> SK Interior Exterior. All rights reserved.</p>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+
+</body>
+</html>

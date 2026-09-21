@@ -98,7 +98,7 @@ export default function WhatsLitScreen() {
       }
 
       const response = await fetch(
-        `https://lumina.viberyte.com/api/explore/whats-lit?lat=${lat}&lng=${lng}&radius=10`
+        `https://viberyte.com/api/explore/whats-lit?lat=${lat}&lng=${lng}&radius=10`
       );
       const data = await response.json();
 

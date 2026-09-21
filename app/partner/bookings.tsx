@@ -14,8 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import PartnerTabBar from '../../components/partner/PartnerTabBar';
+import { useRequirePaid } from '../../components/partner/useRequirePaid';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type Booking = {
   id: number;
@@ -32,6 +34,7 @@ type Booking = {
 };
 
 export default function PartnerBookings() {
+  const __checkingPaid = useRequirePaid('has_booking_inquiries');
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -224,24 +227,7 @@ export default function PartnerBookings() {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/dashboard')}>
-            <Ionicons name="grid-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="calendar" size={22} color="#fff" />
-            <Text style={[styles.navText, styles.navTextActive]}>Bookings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/events')}>
-            <Ionicons name="sparkles-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Events</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/settings')}>
-            <Ionicons name="settings-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Settings</Text>
-          </TouchableOpacity>
-        </View>
+        <PartnerTabBar active="bookings" />
       </SafeAreaView>
     </View>
   );

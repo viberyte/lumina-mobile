@@ -162,7 +162,7 @@ export default function NightlifeSubcategoryScreen() {
         data: [...venues].sort((a, b) => (b.viberyte_score || 0) - (a.viberyte_score || 0)).slice(0, 15) 
       },
       { 
-        title: `🌟 Highest Rated`, 
+        title: ` Highest Rated`, 
         data: [...venues].filter(v => (v.rating || 0) >= 4.3).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 15) 
       },
       { 

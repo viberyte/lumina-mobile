@@ -7,11 +7,15 @@ import {
   Dimensions,
   Animated,
   Pressable,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
+import InlineReel from '../InlineReel';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingScreen from '../../components/LoadingScreen';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing } from '../../theme';
 
@@ -21,7 +25,7 @@ const CARD_HEIGHT = 120;
 const HERO_HEIGHT = 200;
 const FEATURE_CARD_HEIGHT = 140;
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface CuisineWorld {
   key: string;
@@ -151,6 +155,180 @@ const ALL_CUISINES: CuisineWorld[] = [
   },
 ];
 
+
+interface MoodDef {
+  key: string;
+  title: string;
+  emoji: string;
+  gradient: [string, string];
+  query: string; // perspectives API cuisine key or keyword
+  dial: string;
+}
+
+const MOODS: MoodDef[] = [
+  { key: 'calm', title: 'Calm Eats', emoji: '', gradient: ['#1a2420', '#0d1410'], query: 'mediterranean,japanese', dial: 'chill' },
+  { key: 'latenight', title: 'Late Night Vibes', emoji: '🌙', gradient: ['#1a1a2d', '#0d0d1a'], query: 'american,korean,mexican', dial: 'late_night' },
+  { key: 'upscale', title: 'Upscale', emoji: '', gradient: ['#241a24', '#140d14'], query: 'french,italian,japanese', dial: 'upscale' },
+  { key: 'datenight', title: 'Date Night', emoji: '', gradient: ['#2d1a1a', '#1a0d0d'], query: 'italian,french,japanese', dial: 'date' },
+  { key: 'pregame', title: 'Pregame Eats', emoji: '', gradient: ['#1f1a2d', '#0f0d1a'], query: 'american,mexican,korean', dial: 'all' },
+  { key: 'solo', title: 'Solo Vibes', emoji: '', gradient: ['#1a2024', '#0d1014'], query: 'japanese,mediterranean,thai', dial: 'chill' },
+  { key: 'group', title: 'Group Friendly', emoji: '', gradient: ['#1f2a1a', '#0d140a'], query: 'korean,mexican,caribbean', dial: 'group' },
+  { key: 'comfort', title: 'Comfort Food', emoji: '', gradient: ['#241a15', '#140d0a'], query: 'soul_food,caribbean,italian', dial: 'all' },
+];
+
+interface MoodVenue {
+  id: number;
+  name: string;
+  image_url: string;
+  neighborhood: string;
+  cuisine_primary?: string;
+  price_range?: string;
+}
+
+// Mood Venue Card (horizontal scroll item)
+const MoodVenueCard = ({ venue, onPress, shouldPlay }: { venue: MoodVenue; onPress: () => void; shouldPlay: boolean }) => {
+  const MOOD_CARD_WIDTH = 160;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+      }}
+      onPressOut={() => {
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+      }}
+    >
+      <Animated.View style={[moodStyles.venueCard, { transform: [{ scale }] }]}>
+        <View style={[moodStyles.venueImage, { backgroundColor: colors.zinc[800] }]}>
+          {venue.image_url ? (
+            <>
+              <InlineReel
+                reelUrl={venue?.reel_url || null}
+                photoUrl={venue.image_url.startsWith('/') ? `${API_BASE}${venue.image_url}` : venue.image_url}
+                style={{ width: '100%', height: '100%' }}
+                shouldPlay={false}
+              />
+              {venue?.reel_url ? (
+                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="play-circle" size={12} color="#fff" />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
+                </View>
+              ) : null}
+            </>
+          ) : null}
+        </View>
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.85)']}
+          style={moodStyles.venueGradient}
+        />
+        <View style={moodStyles.venueInfo}>
+          <Text style={moodStyles.venueName} numberOfLines={1}>{venue.name}</Text>
+          <Text style={moodStyles.venueNeighborhood} numberOfLines={1}>{venue.neighborhood || venue.cuisine_primary}</Text>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Single Mood Carousel Row
+const MoodCarousel = ({ mood, city, router, rowActive }: { mood: MoodDef; city: string; router: any; rowActive: boolean }) => {
+  const [venues, setVenues] = useState<MoodVenue[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const ids = new Set<number>();
+    for (const v of viewableItems) { if (v?.item?.id != null) ids.add(v.item.id); }
+    setVisibleIds(ids);
+  }).current;
+  const viewabilityPairs = useRef([{ viewabilityConfig, onViewableItemsChanged }]).current;
+
+  useEffect(() => {
+    fetchMoodVenues();
+  }, [city]);
+
+  const fetchMoodVenues = async () => {
+    try {
+      setLoading(true);
+      const queries = mood.query.split(',');
+      const allResults: MoodVenue[] = [];
+      const seenIds = new Set<number>();
+
+      // Fetch from multiple cuisine perspectives
+      await Promise.all(queries.map(async (q) => {
+        try {
+          const url = `${API_BASE}/api/perspectives/${q.trim()}?city=${encodeURIComponent(city)}&dial=${mood.dial}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            const sectionVenues = (data.sections || []).flatMap((s: any) => s.venues || []);
+            for (const v of sectionVenues) {
+              if (v.image_url && !seenIds.has(v.id)) {
+                seenIds.add(v.id);
+                allResults.push({
+                  id: v.id,
+                  name: v.name,
+                  image_url: v.image_url,
+                  neighborhood: v.neighborhood || v.city || city,
+                  cuisine_primary: v.cuisine_primary,
+                  price_range: v.price_range,
+                });
+              }
+            }
+          }
+        } catch {}
+      }));
+
+      // Shuffle and cap at 30
+      const shuffled = allResults.sort(() => Math.random() - 0.5);
+      setVenues(shuffled.slice(0, 30));
+    } catch (err) {
+      console.log(`[MoodCarousel] ${mood.key} error:`, err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!loading && venues.length === 0) return null;
+
+  return (
+    <View style={moodStyles.carouselContainer}>
+      <View style={moodStyles.carouselHeader}>
+        {mood.emoji ? <Text style={moodStyles.carouselEmoji}>{mood.emoji}</Text> : null}
+        <Text style={moodStyles.carouselTitle}>{mood.title}</Text>
+      </View>
+      {loading ? (
+        <View style={moodStyles.loadingRow}>
+          <ActivityIndicator size="small" color={colors.zinc[600]} />
+        </View>
+      ) : (
+        <FlatList
+          data={venues}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={moodStyles.carouselList}
+          keyExtractor={(item) => `mood-${mood.key}-${item.id}`}
+          viewabilityConfigCallbackPairs={viewabilityPairs}
+          renderItem={({ item }) => (
+            <MoodVenueCard
+              venue={item}
+              shouldPlay={rowActive && visibleIds.has(item.id)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/venue/${item.id}`);
+              }}
+            />
+          )}
+        />
+      )}
+    </View>
+  );
+};
+
 interface HeroVenue {
   id: number;
   name: string;
@@ -238,23 +416,7 @@ const FoodTrucksCard = ({ onPress }: { onPress: () => void }) => {
   const glowOpacity = useRef(new Animated.Value(0)).current;
   const shimmer = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    // Subtle shimmer animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 3000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmer, {
-          toValue: 0,
-          duration: 3000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
+  // shimmer disabled for performance
 
   const handlePressIn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -359,20 +521,7 @@ const HeroModule = ({
   const glowOpacity = useRef(new Animated.Value(0.25)).current;
 
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowOpacity, {
-          toValue: 0.45,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowOpacity, {
-          toValue: 0.25,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
+    
   }, []);
 
   const handlePressIn = () => {
@@ -407,12 +556,7 @@ const HeroModule = ({
         
         <View style={styles.heroCard}>
           {imageUrl ? (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={styles.heroImage} 
-              contentFit="cover" 
-              transition={300} 
-            />
+            <InlineReel reelUrl={venue?.reel_url || null} photoUrl={imageUrl} style={styles.heroImage} />
           ) : (
             <LinearGradient
               colors={['#2d1f1a', '#1a110d']}
@@ -428,7 +572,6 @@ const HeroModule = ({
           
           <View style={styles.heroBadge}>
             <View style={styles.heroBadgeDot} />
-            <Text style={styles.heroBadgeText}>FEATURED</Text>
           </View>
           
           <View style={styles.heroContent}>
@@ -463,10 +606,18 @@ export default function DiningTab({ filters = {} }: DiningTabProps) {
   const city = filters.city || 'Manhattan';
   const resolvedCity = city === 'Near Me' ? 'Manhattan' : city;
   const [heroVenue, setHeroVenue] = useState<HeroVenue | null>(null);
+  const [allRowsActive, setAllRowsActive] = useState(false);
 
   useEffect(() => {
     fetchHeroVenue();
   }, [city]);
+
+  // Mood rows are all below the fold here; activate their reels shortly
+  // after mount so they play once scrolled into view (gated per-card too).
+  useEffect(() => {
+    const t = setTimeout(() => setAllRowsActive(true), 2000);
+    return () => clearTimeout(t);
+  }, []);
 
   const fetchHeroVenue = async () => {
     try {
@@ -586,6 +737,17 @@ export default function DiningTab({ filters = {} }: DiningTabProps) {
             cuisine={cuisine}
             onPress={() => goToCuisine(cuisine)}
           />
+        ))}
+      </View>
+
+      {/* Mood Carousels — Netflix-style */}
+      <View style={moodStyles.moodSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Browse by Mood</Text>
+          <Text style={styles.sectionSubtitle}>Curated for every vibe</Text>
+        </View>
+        {MOODS.map((mood) => (
+          <MoodCarousel key={mood.key} mood={mood} city={resolvedCity} router={router} rowActive={allRowsActive} />
         ))}
       </View>
 
@@ -761,6 +923,13 @@ const styles = StyleSheet.create({
     color: colors.zinc[400],
     lineHeight: 16,
   },
+  cardTapHint: {
+    fontSize: 10,
+    color: colors.zinc[600],
+    fontWeight: '600',
+    marginTop: 4,
+    letterSpacing: 0.3,
+  },
   // Food Trucks Card
   foodTruckWrapper: {
     marginHorizontal: spacing.lg,
@@ -914,5 +1083,75 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+});
+
+const moodStyles = StyleSheet.create({
+  moodSection: {
+    marginTop: spacing.xl,
+  },
+  carouselContainer: {
+    marginBottom: spacing.lg,
+  },
+  carouselHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  carouselEmoji: {
+    fontSize: 18,
+  },
+  carouselTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.2,
+  },
+  carouselList: {
+    paddingHorizontal: spacing.lg,
+    gap: 12,
+  },
+  loadingRow: {
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  venueCard: {
+    width: 160,
+    height: 200,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: colors.zinc[900],
+  },
+  venueImage: {
+    width: '100%',
+    height: '100%',
+  },
+  venueGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '55%',
+  },
+  venueInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 12,
+  },
+  venueName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.2,
+  },
+  venueNeighborhood: {
+    fontSize: 11,
+    color: colors.zinc[400],
+    marginTop: 2,
   },
 });

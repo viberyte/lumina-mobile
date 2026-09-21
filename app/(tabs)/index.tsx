@@ -5,7 +5,6 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  
   Animated,
   Dimensions,
   RefreshControl,
@@ -18,12 +17,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../../theme';
 import luminaApi from '../../services/luminaApi';
+import FlowCard from '../../components/FlowCard';
+import FeaturedVenueCard from '../../components/FeaturedVenueCard';
+import InlineReel from '../../components/InlineReel';
 import { getPhotoUrl, parseVibeTags } from '../../utils/photoHelper';
 import { usePersona } from '../../hooks/usePersona';
 import StretchCitySelector from '../../components/StretchCitySelector';
@@ -49,10 +53,10 @@ const safeGetTags = (vibeTags: any): string[] => {
 
 
 // Card sizes
-const CARD_WIDTH = 175;
-const CARD_HEIGHT = 210;
-const SUPER_CARD_WIDTH = 220;
-const SUPER_CARD_HEIGHT = 280;
+const CARD_WIDTH = 200;
+const CARD_HEIGHT = 300;
+const SUPER_CARD_WIDTH = 200;
+const SUPER_CARD_HEIGHT = 320;
 
 // Hero carousel
 const HERO_CARD_WIDTH = SCREEN_WIDTH - 60;
@@ -181,6 +185,28 @@ const AnimatedPressable = ({ children, style, onPress }: any) => {
     </Pressable>
   );
 };
+function ReelCardPlayer({ uri, photoUrl, playing = true }: { uri: string; photoUrl: string | null; playing?: boolean }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  React.useEffect(() => {
+    if (playing) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [playing]);
+
+  return (
+    <>
+      {photoUrl && <Image source={{ uri: photoUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />}
+      {playing && <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
+    </>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -192,12 +218,16 @@ export default function HomeScreen() {
   const [pickedForYou, setPickedForYou] = useState<any[]>([]);
   const [featuredEvents, setFeaturedEvents] = useState<any[]>([]);
   const [happeningNow, setHappeningNow] = useState<any[]>([]);
+  const [flowsData, setFlowsData] = useState<any[]>([]);
   const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
   const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
+  const [nearYouVenues, setNearYouVenues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCitySelector, setShowCitySelector] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
+  const [reloadingCity, setReloadingCity] = useState('');
+  const [refreshSeed, setRefreshSeed] = useState(0);
   const reloadOpacity = useRef(new Animated.Value(0)).current;
   
   // User follows for "Following" section
@@ -238,12 +268,32 @@ export default function HomeScreen() {
       ])
     ).start();
   }, []);
+  // Fetch nearest venues using device location
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude } = loc.coords;
+        const res = await fetch(
+          `https://viberyte.com/api/venues?lat=${latitude}&lng=${longitude}&limit=10&sort=distance`
+        ).then(r => r.json()).catch(() => null);
+        if (res?.venues?.length) {
+          setNearYouVenues(res.venues.filter((v: any) => getPhotoUrl(v)).slice(0, 8));
+        }
+      } catch (e) {
+        console.log('Location error:', e);
+      }
+    })();
+  }, []);
+
   // Load content when persona is ready
   useEffect(() => {
     if (!personaLoading) {
       loadContent();
     }
-  }, [personaLoading, persona]);
+  }, [personaLoading]);
 
   const loadProfile = async () => {
     try {
@@ -253,7 +303,7 @@ export default function HomeScreen() {
         const data = JSON.parse(profile);
         setUserName(data.name || '');
       }
-      if (savedCity) {
+      if (savedCity && savedCity !== "Near Me") {
         setUserCity(savedCity);
       }
     } catch (error) {
@@ -261,16 +311,25 @@ export default function HomeScreen() {
     }
   };
 
-  const loadContent = async () => {
+  const loadContent = async (cityOverride?: string) => {
+    const rawCity = cityOverride || userCity;
+    // "Near Me" is a UI label not a real city — resolve to saved city or default
+    const savedFallback = await AsyncStorage.getItem('@lumina_selected_city').catch(() => null);
+    const activeCity = (!rawCity || rawCity === 'Near Me') 
+      ? (savedFallback && savedFallback !== 'Near Me' ? savedFallback : 'Manhattan')
+      : rawCity;
     try {
       setLoading(true);
-      const [venues, events, featuredRes] = await Promise.all([
-        luminaApi.getVenues(userCity || 'Manhattan'),
-        luminaApi.getEvents('New York'),
-        fetch('https://lumina.viberyte.com/api/events/featured?city=' + encodeURIComponent(userCity || 'New York')).then(r => r.json()).catch(() => ({ events: [] }))
+      console.log('[loadContent] starting for city:', activeCity);
+      const [venues, events, flowsRes, featuredRes] = await Promise.all([
+        luminaApi.getVenues(activeCity || 'Manhattan').then(r => { console.log('[loadContent] venues done', r?.length); return r; }),
+        luminaApi.getEvents(activeCity || 'New York').then(r => { console.log('[loadContent] events done', r?.length); return r; }),
+        fetch('https://viberyte.com/api/flows?city=' + encodeURIComponent(activeCity || 'Manhattan') + (persona?.music_preferences?.[0] ? '&music=' + encodeURIComponent(persona.music_preferences[0]) : '')).then(r => r.json()).then(r => { console.log('[loadContent] flows done'); return r; }).catch(() => { console.log('[loadContent] flows failed'); return { ok: false, flows: [] }; }),
+        fetch('https://viberyte.com/api/events?city=' + encodeURIComponent(activeCity || 'New York') + '&limit=15').then(r => r.json()).then(r => { console.log('[loadContent] featured done'); return r; }).catch(() => { console.log('[loadContent] featured failed'); return { events: [] }; })
       ]);
+      console.log('[loadContent] all promises resolved');
       
-      const seed = getDailySeed();
+      const seed = refreshSeed > 0 ? refreshSeed : getDailySeed();
       const shuffledVenues = seededShuffle(venues, seed);
       const shuffledEvents = seededShuffle(events, seed + 1);
       
@@ -334,17 +393,19 @@ export default function HomeScreen() {
         .filter((e: any) => e.image_url || e.cover_image_url)
         .slice(0, 8);
       setFeaturedEvents((featuredRes?.events || []).slice(0, 10));
+        if (flowsRes?.ok && flowsRes?.flows) setFlowsData(flowsRes.flows);
       setHappeningNow(upcoming);
-      
-    } catch (error) {
-      console.error('Error loading content:', error);
-    // Prefetch images for instant loading
+
+      // Prefetch images for instant loading
       const allImages = [
         ...heroes.map((v: any) => getPhotoUrl(v)),
         ...picked.map((v: any) => getPhotoUrl(v)),
         ...dateSpots.slice(0, 10).map((v: any) => getPhotoUrl(v)),
       ].filter(Boolean);
-      Image.prefetch(allImages);
+      if (allImages.length > 0) Image.prefetch(allImages);
+
+    } catch (error) {
+      console.error('Error loading content:', error);
     } finally {
       setLoading(false);
     }
@@ -354,40 +415,46 @@ export default function HomeScreen() {
   // City change with context reload effect
   const handleCityChange = async (newCity: string) => {
     setShowCitySelector(false);
-    
     if (newCity === userCity) return;
-    
-    // Start reload effect - fade to black
+
+    // Fade to black first
     setIsReloading(true);
-    Animated.timing(reloadOpacity, {
-      toValue: 1,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(async () => {
-      // Update city
-      setUserCity(newCity);
-      await AsyncStorage.setItem('@lumina_selected_city', newCity);
-      
-      // Reload content
-      setLoading(true);
-      await loadContent();
-      
-      // Fade back in
-      setTimeout(() => {
-        Animated.timing(reloadOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }).start(() => {
-          setIsReloading(false);
-        });
-      }, 100);
+    setReloadingCity(newCity);
+    reloadOpacity.setValue(1); // Show splash instantly
+    // Clear old data immediately so skeleton shows
+    setHeroVenues([]);
+    setPickedForYou([]);
+    setDateNightPicks([]);
+    setLateNightSpots([]);
+    setFeaturedEvents([]);
+    setHappeningNow([]);
+    setLoading(true);
+    // Small delay so splash renders before fetch starts
+    await new Promise<void>(resolve => setTimeout(resolve, 50));
+
+    // Now safely update city and fetch
+    setUserCity(newCity);
+    if (newCity !== "Near Me") await AsyncStorage.setItem('@lumina_selected_city', newCity);
+    await loadContent(newCity);
+
+    // Hold splash for 1 second so it feels intentional not janky
+    await new Promise<void>(resolve => setTimeout(resolve, 1000));
+
+    // Fade back in slowly
+    await new Promise<void>(resolve => {
+      Animated.timing(reloadOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => resolve());
     });
+    setIsReloading(false);
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRefreshSeed(Math.floor(Math.random() * 999999));
     await loadContent();
     setRefreshing(false);
   };
@@ -427,6 +494,16 @@ export default function HomeScreen() {
     
     return (
       <Animated.View style={[styles.heroCardWrapper, { transform: [{ scale }], opacity }]}>
+        <FeaturedVenueCard venue={item} isVisible={index === activeHeroIndex} isNearby={Math.abs(index - activeHeroIndex) <= 1} />
+      </Animated.View>
+    );
+  }, [heroScrollX]);
+
+  const _UNUSED_renderHeroItem = useCallback(({ item, index }: { item: any; index: number }) => {
+    const photoUrl = getPhotoUrl(item);
+    const tags = parseVibeTags(item.vibe_tags);
+    return (
+      <Animated.View style={[styles.heroCardWrapper]}>
         <TouchableOpacity
           style={styles.heroCard}
           onPress={() => handleVenuePress(item)}
@@ -438,7 +515,6 @@ export default function HomeScreen() {
             style={styles.heroGradient}
           />
           <View style={styles.heroBadge}>
-            <Ionicons name="sparkles" size={12} color={colors.violet[400]} />
             <Text style={styles.heroBadgeText}>Featured</Text>
           </View>
           <View style={styles.heroContent}>
@@ -467,14 +543,20 @@ export default function HomeScreen() {
     const tags = parseVibeTags(venue.vibe_tags);
     const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
     const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
-    
+    const reelUrl = venue.reel_url || null;
+
     return (
       <AnimatedPressable
         key={venue.id}
         style={[styles.card, { width, height }]}
         onPress={() => handleVenuePress(venue)}
       >
-        <Image source={{ uri: photoUrl }} style={styles.cardImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
+        <InlineReel
+          reelUrl={reelUrl}
+          photoUrl={photoUrl}
+          style={styles.cardImage}
+          shouldPlay={false}
+        />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.85)']}
           style={styles.cardGradient}
@@ -497,8 +579,28 @@ export default function HomeScreen() {
   }, [handleVenuePress]);
 
   // Event card
+  // Derive mood from genre
+  const getMoodFromGenre = (genre: string): { label: string; color: string } | null => {
+    if (!genre) return null;
+    const g = genre.toLowerCase();
+    if (g.includes('hip-hop') || g.includes('hiphop') || g.includes('rap')) return { label: 'Hip-Hop', color: '#f59e0b' };
+    if (g.includes('afrobeats') || g.includes('afro')) return { label: 'Afrobeats', color: '#22c55e' };
+    if (g.includes('reggaeton')) return { label: 'Reggaeton', color: '#ef4444' };
+    if (g.includes('reggae')) return { label: 'Reggae', color: '#16a34a' };
+    if (g.includes('r&b') || g.includes('rnb')) return { label: 'R&B', color: '#ec4899' };
+    if (g.includes('latin') || g.includes('salsa')) return { label: 'Latin', color: '#f97316' };
+    if (g.includes('house')) return { label: 'House', color: '#8b5cf6' };
+    if (g.includes('techno')) return { label: 'Techno', color: '#6366f1' };
+    if (g.includes('edm')) return { label: 'EDM', color: '#3b82f6' };
+    if (g.includes('jazz') || g.includes('live music') || g.includes('live')) return { label: 'Live', color: '#14b8a6' };
+    if (g.includes('pop')) return { label: 'Pop', color: '#a78bfa' };
+    return null;
+  };
+
   const renderEventCard = useCallback((event: any) => {
     const imageUrl = event.image_url || event.cover_image_url;
+    const genre = event.genre || event.music_genre;
+    const mood = getMoodFromGenre(genre);
     
     return (
       <AnimatedPressable
@@ -508,39 +610,103 @@ export default function HomeScreen() {
       >
         <Image source={{ uri: imageUrl }} style={styles.cardImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.85)']}
+          colors={['transparent', 'rgba(0,0,0,0.88)']}
           style={styles.cardGradient}
         />
+
+        {/* Top badges row */}
+        <View style={styles.cardTopRow}>
+          {genre && (
+            <View style={styles.genreBadge}>
+              <Ionicons name="musical-note" size={10} color="#fff" style={{ marginRight: 3 }} />
+              <Text style={styles.genreBadgeText} numberOfLines={1}>{genre}</Text>
+            </View>
+          )}
+          {mood && (
+            <View style={[styles.moodBadge, { backgroundColor: mood.color + '33', borderColor: mood.color + '66' }]}>
+              <Text style={[styles.moodBadgeText, { color: mood.color }]}>{mood.label}</Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={1}>{event.title}</Text>
           <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {event.venue_name || event.genre}
+            {event.venue_name || genre}
           </Text>
-          {event.genre && (
-            <View style={styles.tagRow}>
-              <View style={[styles.tag, { backgroundColor: colors.violet[600] + '40' }]}>
-                <Text style={[styles.tagText, { color: colors.violet[300] }]}>{event.genre}</Text>
-              </View>
-            </View>
-          )}
         </View>
       </AnimatedPressable>
     );
   }, [handleEventPress]);
 
   // Horizontal venue row component
-  const HorizontalVenueRow = useMemo(() => {
-    return ({ venues, isSuper = false }: { venues: any[]; isSuper?: boolean }) => (
-      <ScrollView
+  const HorizontalVenueRow = ({ venues, isSuper = false }: { venues: any[]; isSuper?: boolean }) => {
+    const [visibleIds, setVisibleIds] = React.useState<Set<number>>(new Set());
+    const viewConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
+    const onViewable = React.useRef(({ viewableItems }: any) => {
+      const ids = new Set<number>();
+      for (const v of viewableItems) { if (v?.item?.id != null) ids.add(v.item.id); }
+      setVisibleIds(ids);
+    }).current;
+    const pairs = React.useRef([{ viewabilityConfig: viewConfig, onViewableItemsChanged: onViewable }]).current;
+
+    return (
+      <FlatList
+        data={venues}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[styles.horizontalScroll, isSuper && styles.superScroll]}
         decelerationRate="fast"
-      >
-        {venues.map((venue) => renderVenueCard(venue, isSuper))}
-      </ScrollView>
+        keyExtractor={(item) => String(item.id)}
+        viewabilityConfigCallbackPairs={pairs}
+        renderItem={({ item }) => {
+          const photoUrl = getPhotoUrl(item);
+          const tags = parseVibeTags(item.vibe_tags);
+          const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
+          const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
+          const reelUrl = item.reel_url || null;
+
+          return (
+            <AnimatedPressable
+              key={item.id}
+              style={[styles.card, { width, height }]}
+              onPress={() => handleVenuePress(item)}
+            >
+              <InlineReel
+                reelUrl={reelUrl}
+                photoUrl={photoUrl}
+                style={styles.cardImage}
+                shouldPlay={true}
+              />
+              {reelUrl ? (
+                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="play-circle" size={12} color="#fff" />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
+                </View>
+              ) : null}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.85)']}
+                style={styles.cardGradient}
+              />
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.cardSubtitle} numberOfLines={1}>{item.neighborhood || item.city}</Text>
+                {tags.length > 0 && (
+                  <View style={styles.tagRow}>
+                    {tags.slice(0, 1).map((tag: string) => (
+                      <View key={tag} style={styles.tagPill}>
+                        <Text style={styles.tagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </AnimatedPressable>
+          );
+        }}
+      />
     );
-  }, [renderVenueCard]);
+  };
 
   // Section header with hint
   const renderSectionHeader = (title: string, hint: string, icon?: string, onSeeAll?: () => void) => (
@@ -636,9 +802,7 @@ export default function HomeScreen() {
               <Ionicons name="search" size={18} color={colors.zinc[500]} />
               <Text style={styles.searchPlaceholder}>Search vibes, venues, events...</Text>
             </View>
-            <View style={styles.searchSparkle}>
-              <Ionicons name="sparkles" size={14} color={colors.violet[400]} />
-            </View>
+
           </TouchableOpacity>
 
           {/* Hero Carousel */}
@@ -745,12 +909,32 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Tonight's Picks - PERSONA DRIVEN */}
+          {/* Flow of the Night */}
+          {flowsData.length > 0 && (
+            <View style={[styles.section, { overflow: 'hidden' }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 20, marginBottom: 12 }}>
+                <View>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', letterSpacing: -0.3 }}>Flow of the Night</Text>
+                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Your night, planned out</Text>
+                </View>
+                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/all-flows' as any); }} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#a78bfa' }}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 40 }} decelerationRate="fast" snapToInterval={SCREEN_WIDTH * 0.82 + 14} snapToAlignment="start">
+                {flowsData.slice(0, 5).map((flow: any) => (
+                  <FlowCard key={flow.slug} flow={flow} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 1. Tonight's Picks */}
           {pickedForYou.length > 0 && (
             <View style={styles.section}>
               {renderSectionHeader(
-                content.categories.tonight,
-                getSectionHint('tonight', persona),
+                "Tonight's Picks",
+                'Curated for your taste',
                 'moon',
                 () => router.push('/explore?filter=tonight')
               )}
@@ -758,74 +942,25 @@ export default function HomeScreen() {
             </View>
           )}
 
-          
-              {/* ═══ LUMINA PARTNER EVENTS ═══ */}
-              {featuredEvents.length > 0 && (
-                <View style={{ marginBottom: 28 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 14 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>Lumina Partner Events</Text>
-                      <View style={{ backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#a78bfa' }}>FEATURED</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 14 }}>
-                    {featuredEvents.map((event: any) => (
-                      <TouchableOpacity
-                        key={event.id + '_' + (event.date || '')}
-                        style={{
-                          width: 280, height: 180, borderRadius: 16, overflow: 'hidden',
-                          borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-                        }}
-                        onPress={() => router.push('/event/' + event.id)}
-                      >
-                        <Image
-                          source={{ uri: event.image_url ? (event.image_url.startsWith('/') ? 'https://lumina.viberyte.com' + event.image_url : event.image_url) : 'https://via.placeholder.com/400' }}
-                          style={{ width: '100%', height: '100%', position: 'absolute' }}
-                        />
-                        <LinearGradient
-                          colors={['transparent', 'rgba(0,0,0,0.85)']}
-                          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '70%' }}
-                        />
-                        <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 6 }}>
-                          <View style={{ backgroundColor: 'rgba(139,92,246,0.9)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff' }}>⭐ PARTNER</Text>
-                          </View>
-                          {event.is_recurring === 1 && (
-                            <View style={{ backgroundColor: 'rgba(34,197,94,0.9)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff' }}>WEEKLY</Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 14 }}>
-                          <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 2 }} numberOfLines={1}>{event.name}</Text>
-                          <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }} numberOfLines={1}>{event.venue_name}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            {event.event_category && event.event_category !== 'nightlife' && (
-                              <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                                <Text style={{ fontSize: 10, color: '#d4d4d8' }}>{event.event_category === 'happy_hour' ? 'Happy Hour' : event.event_category === 'live_music' ? 'Live Music' : event.event_category.charAt(0).toUpperCase() + event.event_category.slice(1)}</Text>
-                              </View>
-                            )}
-                            {event.music_genre && (
-                              <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                                <Text style={{ fontSize: 10, color: '#d4d4d8' }}>{event.music_genre}</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+          {/* 2. Nearest to You */}
+          {nearYouVenues.length > 0 && (
+            <View style={styles.section}>
+              {renderSectionHeader(
+                'Nearest to You',
+                'Spots close by right now',
+                'location',
+                () => router.push('/explore?filter=nearby')
               )}
+              <HorizontalVenueRow venues={nearYouVenues} />
+            </View>
+          )}
 
-{/* Happening Now - Events */}
+          {/* 3. Events happening tonight */}
           {happeningNow.length > 0 && (
             <View style={styles.section}>
               {renderSectionHeader(
-                content.categories.popular,
-                getSectionHint('popular', persona),
+                'Events Tonight',
+                'Live music, parties & more',
                 'flame',
                 () => router.push('/explore?filter=events')
               )}
@@ -835,36 +970,45 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.horizontalScroll}
                 decelerationRate="fast"
               >
-                {happeningNow.map((event) => renderEventCard(event))}
+                {happeningNow.slice(0, 8).map((event) => renderEventCard(event))}
               </ScrollView>
             </View>
           )}
 
-          {/* Date Night - SUPER CARDS - PERSONA DRIVEN */}
-          {dateNightPicks.length > 0 && (
-            <View style={styles.section}>
-              {renderSectionHeader(
-                content.categories.dating,
-                getSectionHint('dating', persona),
-                'heart',
-                () => router.push('/explore?filter=datenight')
-              )}
-              <HorizontalVenueRow venues={dateNightPicks} isSuper />
-            </View>
-          )}
-
-          {/* Late Night - PERSONA DRIVEN */}
-          {lateNightSpots.length > 0 && (
-            <View style={styles.section}>
-              {renderSectionHeader(
-                content.categories.lateNight,
-                getSectionHint('lateNight', persona),
-                'moon',
-                () => router.push('/explore?filter=latenight')
-              )}
-              <HorizontalVenueRow venues={lateNightSpots} />
-            </View>
-          )}
+          {/* 4. One smart contextual section based on time */}
+          {(() => {
+            const hour = new Date().getHours();
+            const isLateNight = hour >= 22 || hour < 4;
+            const isEvening = hour >= 18 && hour < 22;
+            
+            if (isLateNight && lateNightSpots.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Still Going', 'Open late tonight', 'moon', () => router.push('/explore?filter=latenight'))}
+                  <HorizontalVenueRow venues={lateNightSpots} />
+                </View>
+              );
+            }
+            if (isEvening && dateNightPicks.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Date Night', 'Great first date energy', 'heart', () => router.push('/explore?filter=datenight'))}
+                  <HorizontalVenueRow venues={dateNightPicks} isSuper />
+                </View>
+              );
+            }
+            if (featuredEvents.length > 0) {
+              return (
+                <View style={styles.section}>
+                  {renderSectionHeader('Partner Events', 'Book directly through Viberyte', 'star', () => router.push('/explore?filter=events'))}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+                    {featuredEvents.slice(0, 5).map((event: any) => renderEventCard(event))}
+                  </ScrollView>
+                </View>
+              );
+            }
+            return null;
+          })()}
 
           <View style={{ height: 100 }} />
         </Animated.View>
@@ -883,19 +1027,35 @@ export default function HomeScreen() {
         />
       </Modal>
 
-      {/* Context Reload Overlay */}
+      {/* City Switch Splash Overlay */}
       {isReloading && (
         <Animated.View
           style={{
             ...StyleSheet.absoluteFillObject,
-            backgroundColor: '#000',
+            backgroundColor: '#08080d',
             opacity: reloadOpacity,
             zIndex: 999,
             justifyContent: 'center',
             alignItems: 'center',
           }}
         >
-          <View style={{ width: 40, height: 3, backgroundColor: colors.violet[500], borderRadius: 2 }} />
+          <Text style={{
+            fontSize: 32,
+            fontWeight: '300',
+            color: '#ffffff',
+            letterSpacing: 8,
+            marginBottom: 24,
+          }}>VIBERYTE</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
+            <Text style={{
+              fontSize: 12,
+              fontWeight: '400',
+              color: '#7C3AED',
+              letterSpacing: 2,
+            }}>{reloadingCity.toUpperCase()}</Text>
+            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
+          </View>
         </Animated.View>
       )}
 
@@ -906,7 +1066,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.zinc[900],
+    backgroundColor: '#000',
   },
   // Following section
   followCard: {
@@ -1197,6 +1357,42 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: '60%',
+  },
+  cardTopRow: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  genreBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  genreBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  moodBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  moodBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   cardContent: {
     position: 'absolute',

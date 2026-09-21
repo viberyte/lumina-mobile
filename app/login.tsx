@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
   Alert,
   ActivityIndicator,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,9 +19,93 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
-import { colors, typography, spacing } from '../theme';
 
 const { width, height } = Dimensions.get('window');
+
+// Shooting star component
+function ShootingStar({ delay, startX, startY, angle }: { delay: number; startX: number; startY: number; angle: number }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = () => {
+      progress.setValue(0);
+      opacity.setValue(0);
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(progress, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.sequence([
+            Animated.timing(opacity, { toValue: 0.7, duration: 100, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 0, duration: 700, useNativeDriver: true }),
+          ]),
+        ]),
+        Animated.delay(Math.random() * 3000 + 2000),
+      ]).start(() => animate());
+    };
+    animate();
+  }, []);
+
+  const length = 120;
+  const rad = (angle * Math.PI) / 180;
+  const dx = Math.cos(rad) * length;
+  const dy = Math.sin(rad) * length;
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: startX,
+        top: startY,
+        opacity,
+        transform: [
+          {
+            translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }),
+          },
+          {
+            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }),
+          },
+        ],
+      }}
+    >
+      <View
+        style={{
+          width: length * 0.6,
+          height: 1.5,
+          borderRadius: 1,
+          transform: [{ rotate: `${angle}deg` }],
+          background: 'transparent',
+          overflow: 'visible',
+        }}
+      >
+        <View style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          width: length * 0.6,
+          height: 1.5,
+          borderRadius: 2,
+          backgroundColor: 'rgba(255,255,255,0.9)',
+          shadowColor: '#fff',
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.8,
+          shadowRadius: 3,
+        }} />
+      </View>
+    </Animated.View>
+  );
+}
+
+const STARS = [
+  { delay: 0,    startX: width * 0.1,  startY: height * 0.05, angle: 35 },
+  { delay: 1200, startX: width * 0.6,  startY: height * 0.02, angle: 40 },
+  { delay: 2400, startX: width * 0.3,  startY: height * 0.15, angle: 30 },
+  { delay: 3600, startX: width * 0.75, startY: height * 0.08, angle: 45 },
+  { delay: 800,  startX: width * 0.85, startY: height * 0.2,  angle: 38 },
+  { delay: 2000, startX: width * 0.05, startY: height * 0.3,  angle: 42 },
+  { delay: 4000, startX: width * 0.5,  startY: height * 0.01, angle: 35 },
+];
+
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -28,15 +114,32 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isPartnerLogin, setIsPartnerLogin] = useState(false);
+
+  const fadeIn = useRef(new Animated.Value(0)).current;
+  const slideUp = useRef(new Animated.Value(30)).current;
+  const glowPulse = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeIn, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(slideUp, { toValue: 0, duration: 900, useNativeDriver: true }),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowPulse, { toValue: 1, duration: 4000, useNativeDriver: true }),
+        Animated.timing(glowPulse, { toValue: 0.7, duration: 4000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
   const { request, response, promptAsync } = authService.useGoogleAuth();
 
   useEffect(() => {
     if (response?.type === 'success') {
       const { authentication } = response;
-      if (authentication?.accessToken) {
-        handleGoogleSignInWithToken(authentication.accessToken);
-      }
+      if (authentication?.accessToken) handleGoogleSignInWithToken(authentication.accessToken);
     }
   }, [response]);
 
@@ -45,451 +148,409 @@ export default function LoginScreen() {
       const persona = await AsyncStorage.getItem('@lumina_persona');
       const preferences = await AsyncStorage.getItem('@lumina_preferences');
       return !!(persona || preferences);
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   };
 
   const handleGoogleSignInWithToken = async (accessToken: string) => {
     setLoading(true);
     try {
       await authService.signInWithGoogle(accessToken);
-      const hasCompletedOnboarding = await checkOnboardingComplete();
-      router.replace(hasCompletedOnboarding ? '/(tabs)' : '/onboarding');
-    } catch (error: any) {
-      Alert.alert('Sign In Failed', error.message);
-    } finally {
-      setLoading(false);
-    }
+      const done = await checkOnboardingComplete();
+      router.replace(done ? '/(tabs)' : '/onboarding');
+    } catch (e: any) { Alert.alert('Sign In Failed', e.message); }
+    finally { setLoading(false); }
   };
 
   const handleGuestContinue = async () => {
     setLoading(true);
     try {
       await authService.continueAsGuest();
-      const hasCompletedOnboarding = await checkOnboardingComplete();
-      router.replace(hasCompletedOnboarding ? '/(tabs)' : '/onboarding');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
+      const done = await checkOnboardingComplete();
+      router.replace(done ? '/(tabs)' : '/onboarding');
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setLoading(false); }
   };
 
   const handleAppleSignIn = async () => {
     setLoading(true);
     try {
       await authService.signInWithApple();
-      const hasCompletedOnboarding = await checkOnboardingComplete();
-      router.replace(hasCompletedOnboarding ? '/(tabs)' : '/onboarding');
-    } catch (error: any) {
-      if (error.message !== 'Sign in cancelled') {
-        Alert.alert('Sign In Failed', error.message);
-      }
-    } finally {
-      setLoading(false);
-    }
+      const done = await checkOnboardingComplete();
+      router.replace(done ? '/(tabs)' : '/onboarding');
+    } catch (e: any) {
+      if (e.message !== 'Sign in cancelled') Alert.alert('Sign In Failed', e.message);
+    } finally { setLoading(false); }
   };
 
   const handleGoogleSignIn = async () => {
-    try {
-      await promptAsync();
-    } catch (error: any) {
-      Alert.alert('Sign In Failed', error.message);
-    }
+    try { await promptAsync(); }
+    catch (e: any) { Alert.alert('Sign In Failed', e.message); }
   };
 
   const handleEmailSignIn = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
-    }
+    if (!email || !password) { Alert.alert('Error', 'Please enter email and password'); return; }
     setLoading(true);
     try {
-      await authService.signInWithEmail(email, password);
-      const hasCompletedOnboarding = await checkOnboardingComplete();
-      router.replace(hasCompletedOnboarding ? '/(tabs)' : '/onboarding');
-    } catch (error: any) {
-      Alert.alert('Sign In Failed', error.message);
-    } finally {
-      setLoading(false);
-    }
+      await authService.signInWithEmail(email, password, isPartnerLogin);
+      const done = await checkOnboardingComplete();
+      router.replace(done ? '/(tabs)' : '/onboarding');
+    } catch (e: any) { Alert.alert('Sign In Failed', e.message); }
+    finally { setLoading(false); }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.backgroundCircles}>
+    <View style={styles.root}>
+
+      {/* Jet black base */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#050508' }]} />
+
+      {/* Single ambient glow — centered, top third */}
+      <Animated.View style={[styles.ambientGlow, { opacity: glowPulse }]}>
         <LinearGradient
-          colors={['#7c3aed', '#4c1d95']}
-          style={styles.circleTopRight}
+          colors={['#4c1d95', '#2e1065', 'transparent']}
+          locations={[0, 0.4, 1]}
+          style={StyleSheet.absoluteFill}
         />
-        <LinearGradient
-          colors={['#be185d', '#9d174d']}
-          style={styles.circleBottomLeft}
-        />
-        <LinearGradient
-          colors={['#7c3aed', '#5b21b6']}
-          style={styles.circleBottomRight}
-        />
+      </Animated.View>
+
+      {/* Shooting stars */}
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+        {STARS.map((s, i) => (
+          <ShootingStar key={i} delay={s.delay} startX={s.startX} startY={s.startY} angle={s.angle} />
+        ))}
       </View>
 
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <View style={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20 }]}>
-          <View style={styles.logoSection}>
-            <Text style={styles.logoText}>L U M I N A</Text>
-            <View style={styles.taglineRow}>
-              <Text style={styles.sparkle}>✦</Text>
-              <Text style={styles.tagline}>N I G H T L I F E   I N T E L L I G E N C E</Text>
-              <Text style={styles.sparkle}>✦</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 32 }]}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View style={{ opacity: fadeIn, transform: [{ translateY: slideUp }] }}>
+
+            {/* Brand */}
+            <View style={styles.brand}>
+              <Text style={styles.brandName}>VIBERYTE</Text>
+              <Text style={styles.brandSub}>NIGHTLIFE INTELLIGENCE</Text>
             </View>
-          </View>
 
-          <View style={styles.header}>
-            <Text style={styles.title}>Your night awaits</Text>
-            <Text style={styles.subtitle}>
-              Curated venues, events, and experiences{'\n'}tailored to your vibe
-            </Text>
-          </View>
+            {/* Hero */}
+            <View style={styles.hero}>
+              <Text style={styles.heroLight}>The night</Text>
+              <Text style={styles.heroBold}>starts here.</Text>
+              <Text style={styles.heroSub}>
+                Curated venues, flows & events{'\n'}built for how you move.
+              </Text>
+            </View>
 
-          <TouchableOpacity 
-            style={[styles.primaryButton, loading && styles.buttonDisabled]}
-            onPress={handleGuestContinue}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={['#8b5cf6', '#7c3aed']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.primaryButtonGradient}
+            {/* Primary CTA */}
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleGuestContinue}
+              disabled={loading}
+              activeOpacity={0.88}
             >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <View style={styles.buttonContent}>
-                  <Text style={styles.primaryButtonText}>Start Exploring</Text>
-                  <Ionicons name="arrow-forward" size={20} color="white" />
-                </View>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.microCopy}>No account needed · Personalize anytime</Text>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or sign in for full access</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity 
-            style={[styles.appleButton, loading && styles.buttonDisabled]}
-            onPress={handleAppleSignIn}
-            disabled={loading}
-          >
-            <Ionicons name="logo-apple" size={22} color="#000" />
-            <Text style={styles.appleButtonText}>Continue with Apple</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.googleButton, loading && styles.buttonDisabled]}
-            onPress={handleGoogleSignIn}
-            disabled={loading || !request}
-          >
-            <Ionicons name="logo-google" size={18} color="#a1a1aa" />
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-
-          {!showEmailLogin ? (
-            <TouchableOpacity 
-              style={styles.emailToggle}
-              onPress={() => setShowEmailLogin(true)}
-            >
-              <Ionicons name="mail-outline" size={16} color="#71717a" />
-              <Text style={styles.emailToggleText}>Sign in with email</Text>
+              <View style={styles.primaryBtnGrad}>
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Start Exploring</Text>
+                )}
+              </View>
             </TouchableOpacity>
-          ) : (
-            <View style={styles.emailForm}>
-              <View style={styles.inputContainer}>
+            <Text style={styles.noCta}>No account needed</Text>
+
+            {/* Divider */}
+            <View style={styles.divRow}>
+              <View style={styles.divLine} />
+              <Text style={styles.divText}>or sign in</Text>
+              <View style={styles.divLine} />
+            </View>
+
+            {/* Apple */}
+            <TouchableOpacity style={styles.appleBtn} onPress={handleAppleSignIn} disabled={loading} activeOpacity={0.88}>
+              <Ionicons name="logo-apple" size={20} color="#000" />
+              <Text style={styles.appleBtnText}>Continue with Apple</Text>
+            </TouchableOpacity>
+
+            {/* Google */}
+            <TouchableOpacity style={styles.ghostBtn} onPress={handleGoogleSignIn} disabled={loading || !request} activeOpacity={0.88}>
+              <Ionicons name="logo-google" size={16} color="rgba(255,255,255,0.4)" />
+              <Text style={styles.ghostBtnText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {/* Email */}
+            {!showEmailLogin ? (
+              <TouchableOpacity style={styles.textLink} onPress={() => setShowEmailLogin(true)}>
+                <Text style={styles.textLinkText}>Sign in with email</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.emailForm}>
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor="#52525b"
+                  placeholderTextColor="rgba(255,255,255,0.18)"
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
                   editable={!loading}
                 />
-              </View>
-              <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor="#52525b"
+                  placeholderTextColor="rgba(255,255,255,0.18)"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
                   editable={!loading}
                 />
+                <TouchableOpacity style={styles.partnerRow} onPress={() => setIsPartnerLogin(!isPartnerLogin)}>
+                  <View style={[styles.track, isPartnerLogin && styles.trackOn]}>
+                    <View style={[styles.thumb, isPartnerLogin && styles.thumbOn]} />
+                  </View>
+                  <Text style={[styles.partnerLabel, isPartnerLogin && styles.partnerLabelOn]}>Partner Login</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.emailSubmit} onPress={handleEmailSignIn} disabled={loading}>
+                  <Text style={styles.emailSubmitText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.textLink} onPress={() => setShowEmailLogin(false)}>
+                  <Text style={styles.textLinkText}>Hide</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity 
-                style={[styles.emailSignInButton, loading && styles.buttonDisabled]}
-                onPress={handleEmailSignIn}
-                disabled={loading}
-              >
-                <Text style={styles.emailSignInButtonText}>
-                  {loading ? 'Signing in...' : 'Sign In'}
+            )}
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.legal}>By continuing, you agree to our Terms & Privacy Policy</Text>
+              <TouchableOpacity onPress={() => router.push('/register')}>
+                <Text style={styles.signupRow}>
+                  New here? <Text style={styles.signupLink}>Create account</Text>
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.emailToggle}
-                onPress={() => setShowEmailLogin(false)}
-              >
-                <Text style={styles.emailToggleText}>Hide</Text>
-              </TouchableOpacity>
             </View>
-          )}
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              By continuing, you agree to our Terms & Privacy Policy
-            </Text>
-            <TouchableOpacity onPress={() => router.push('/register')}>
-              <Text style={styles.signUpText}>
-                Don't have an account? <Text style={styles.signUpLink}>Sign Up</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          </Animated.View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0f',
-  },
-  backgroundCircles: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
-  circleTopRight: {
+  root: { flex: 1, backgroundColor: '#050508' },
+  ambientGlow: {
     position: 'absolute',
-    top: -100,
-    right: -100,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
-    opacity: 0.6,
+    top: -height * 0.15,
+    left: -width * 0.25,
+    width: width * 1.5,
+    height: height * 0.65,
+    borderRadius: width,
   },
-  circleBottomLeft: {
-    position: 'absolute',
-    bottom: 50,
-    left: -150,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
-    opacity: 0.5,
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 28,
   },
-  circleBottomRight: {
-    position: 'absolute',
-    bottom: -50,
-    right: -50,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    opacity: 0.4,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    justifyContent: 'center',
-  },
-  logoSection: {
+  brand: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 52,
   },
-  logoText: {
-    fontSize: 42,
+  brandName: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#fff',
-    letterSpacing: 12,
-    marginBottom: 12,
+    letterSpacing: 7,
+    marginBottom: 7,
   },
-  taglineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sparkle: {
-    fontSize: 12,
-    color: '#71717a',
-  },
-  tagline: {
-    fontSize: 10,
+  brandSub: {
+    fontSize: 9,
     fontWeight: '500',
-    color: '#71717a',
-    letterSpacing: 3,
+    color: 'rgba(255,255,255,0.2)',
+    letterSpacing: 3.5,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
+  hero: {
+    marginBottom: 44,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '300',
+  heroLight: {
+    fontSize: 48,
+    fontWeight: '200',
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: -1.5,
+    lineHeight: 54,
+  },
+  heroBold: {
+    fontSize: 48,
+    fontWeight: '700',
     color: '#fff',
-    marginBottom: 12,
-    letterSpacing: -0.5,
+    letterSpacing: -1.5,
+    lineHeight: 54,
+    marginBottom: 18,
   },
-  subtitle: {
+  heroSub: {
     fontSize: 15,
-    color: '#a1a1aa',
-    textAlign: 'center',
-    lineHeight: 22,
+    color: 'rgba(255,255,255,0.32)',
+    lineHeight: 23,
+    fontWeight: '400',
   },
-  primaryButton: {
-    borderRadius: 16,
+  primaryBtn: {
+    borderRadius: 14,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  primaryButtonGradient: {
+  primaryBtnGrad: {
     paddingVertical: 18,
+    paddingHorizontal: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#7c3aed',
   },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  primaryButtonText: {
+  primaryBtnText: {
     fontSize: 17,
     fontWeight: '600',
     color: '#fff',
+    letterSpacing: -0.2,
+  },
+  arrowCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noCta: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.18)',
+    textAlign: 'center',
+    marginBottom: 32,
     letterSpacing: 0.3,
   },
-  microCopy: {
-    fontSize: 12,
-    color: '#71717a',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  divider: {
+  divRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    gap: 12,
+    gap: 14,
+    marginBottom: 20,
   },
-  dividerLine: {
+  divLine: {
     flex: 1,
-    height: 1,
-    backgroundColor: '#27272a',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  dividerText: {
-    fontSize: 12,
-    color: '#52525b',
+  divText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.18)',
+    letterSpacing: 0.5,
   },
-  appleButton: {
+  appleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     backgroundColor: '#fff',
-    borderRadius: 14,
+    borderRadius: 13,
     paddingVertical: 16,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  appleButtonText: {
+  appleBtnText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#000',
   },
-  googleButton: {
+  ghostBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 14,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 13,
+    paddingVertical: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 14,
   },
-  googleButtonText: {
+  ghostBtnText: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#a1a1aa',
+    color: 'rgba(255,255,255,0.35)',
   },
-  emailToggle: {
-    flexDirection: 'row',
+  textLink: {
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
     paddingVertical: 12,
   },
-  emailToggleText: {
-    fontSize: 14,
-    color: '#71717a',
+  textLinkText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.25)',
     fontWeight: '500',
   },
-  emailForm: {
-    gap: 12,
-  },
-  inputContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  emailForm: { gap: 10 },
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  input: {
+    paddingVertical: 14,
     fontSize: 15,
     color: '#fff',
-    paddingVertical: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  emailSignInButton: {
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    borderRadius: 12,
-    paddingVertical: 16,
+  partnerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
-    marginTop: 4,
+    gap: 10,
+    paddingVertical: 6,
   },
-  emailSignInButtonText: {
+  track: {
+    width: 38,
+    height: 21,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  trackOn: { backgroundColor: '#7c3aed' },
+  thumb: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: '#fff',
+    alignSelf: 'flex-start',
+  },
+  thumbOn: { alignSelf: 'flex-end' },
+  partnerLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.25)',
+    fontWeight: '500',
+  },
+  partnerLabelOn: { color: '#a78bfa' },
+  emailSubmit: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  emailSubmitText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#a78bfa',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
+    color: '#000',
+    letterSpacing: -0.2,
   },
   footer: {
-    marginTop: 'auto',
-    paddingTop: 24,
+    paddingTop: 28,
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
-  footerText: {
+  legal: {
     fontSize: 11,
-    color: '#52525b',
+    color: 'rgba(255,255,255,0.12)',
     textAlign: 'center',
+    lineHeight: 16,
   },
-  signUpText: {
+  signupRow: {
     fontSize: 14,
-    color: '#71717a',
+    color: 'rgba(255,255,255,0.25)',
   },
-  signUpLink: {
+  signupLink: {
     color: '#a78bfa',
     fontWeight: '600',
   },

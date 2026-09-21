@@ -14,9 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import PartnerTabBar from '../../components/partner/PartnerTabBar';
 
 const { width } = Dimensions.get('window');
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type Booking = {
   id: number;
@@ -150,6 +151,13 @@ export default function PartnerDashboard() {
                 <Ionicons name="apps-outline" size={18} color="#8B5CF6" />
                 <Text style={styles.backToAppText}>App</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/partner/profile-edit' as any)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' }}
+              >
+                <Ionicons name="storefront-outline" size={14} color="rgba(255,255,255,0.6)" />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.6)' }}>Edit Profile</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => router.push('/partner/settings')} style={styles.avatarButton}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -251,28 +259,7 @@ export default function PartnerDashboard() {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="grid" size={22} color="#fff" />
-            <Text style={[styles.navText, styles.navTextActive]}>Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/bookings')}>
-            <Ionicons name="calendar-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Bookings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/door')}>
-            <Ionicons name="scan-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Door</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/events')}>
-            <Ionicons name="sparkles-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Events</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/settings')}>
-            <Ionicons name="settings-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Settings</Text>
-          </TouchableOpacity>
-        </View>
+        <PartnerTabBar active="dashboard" />
       </SafeAreaView>
     </View>
   );

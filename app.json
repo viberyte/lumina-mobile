@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Lumina",
+    "name": "Viberyte",
     "slug": "lumina-mobile",
     "scheme": "lumina",
-    "version": "1.0.7",
+    "version": "1.2.1",
     "extra": {
       "eas": {
         "projectId": "1492b684-7c3d-4a06-a448-cd633001b45f"
@@ -11,9 +11,19 @@
     },
     "ios": {
       "bundleIdentifier": "com.viberyte.luminamobile",
-      "buildNumber": "10",
+      "buildNumber": "25",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.867706788282-mp3q4nr6sn1euirmglguoerm7lp16f2p"
+            ]
+          }
+        ]
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyDvMcJrFjAc_Wrb_FJzqVRWv_z00YB_j0k"
       }
     },
     "splash": {
@@ -23,15 +33,28 @@
     },
     "icon": "./assets/images/lumina-icon.png",
     "android": {
+      "package": "com.viberyte.lumina",
+      "versionCode": 24,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/lumina-icon.png",
         "backgroundColor": "#0a0a0f"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDvMcJrFjAc_Wrb_FJzqVRWv_z00YB_j0k"
+        }
       }
     },
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Viberyte uses your location to show venues near you."
+        }
+      ]
     ]
   }
 }

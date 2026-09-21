@@ -45,7 +45,7 @@ export default function ChatBubble({ role, content }: ChatBubbleProps) {
             colors={[colors.violet[500], colors.purple[600]]}
             style={styles.avatar}
           >
-            <Text style={styles.sparkle}>✨</Text>
+            <Text style={styles.sparkle}></Text>
           </LinearGradient>
         </View>
       )}

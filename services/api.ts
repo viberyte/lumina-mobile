@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Use your production URL
-const API_BASE_URL = 'https://lumina.viberyte.com';
+const API_BASE_URL = 'https://viberyte.com';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

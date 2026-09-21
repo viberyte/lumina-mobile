@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../../theme';
 
-const API_URL = 'https://lumina.viberyte.com';
+const API_URL = 'https://viberyte.com';
 
 export default function InstagramVerifyScreen() {
   const router = useRouter();

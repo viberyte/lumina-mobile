@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type Package = {
   id: string;
@@ -129,7 +129,7 @@ export default function EventDetail() {
   const copyLink = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const slug = event?.title?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || id;
-    const link = `https://lumina.viberyte.com/e/${slug}-${id}`;
+    const link = `https://viberyte.com/e/${slug}-${id}`;
     await Clipboard.setStringAsync(link);
     Alert.alert('Link Copied!', link);
   };
@@ -220,7 +220,7 @@ export default function EventDetail() {
                     <Text style={styles.settingLabel}>Post to Explore</Text>
                   </View>
                   <Text style={styles.settingDesc}>
-                    Show this event on Lumina's Explore page for everyone to discover
+                    Show this event on Viberyte's Explore page for everyone to discover
                   </Text>
                 </View>
                 <View style={styles.switchContainer}>

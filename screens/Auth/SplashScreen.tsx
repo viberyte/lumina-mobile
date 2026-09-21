@@ -27,7 +27,7 @@ export default function SplashScreen() {
       <Animated.View entering={FadeIn.duration(1000)} style={styles.content}>
         <View style={styles.logoContainer}>
           <View style={styles.logo}>
-            <Text style={styles.sparkle}>✨</Text>
+            <Text style={styles.sparkle}></Text>
           </View>
         </View>
         <Text style={styles.title}>Lumina</Text>

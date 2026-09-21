@@ -108,7 +108,7 @@ export default function VenueDetailScreen() {
   const fetchVenueDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`https://lumina.viberyte.com/api/venues/${id}`);
+      const response = await fetch(`https://viberyte.com/api/venues/${id}`);
       const data = await response.json();
       setVenue(data);
     } catch (error) {
@@ -157,7 +157,7 @@ export default function VenueDetailScreen() {
       'late_night': { icon: '🕒', label: 'Best after 11pm' },
       'same_music': { icon: '🎶', label: 'Similar vibe' },
       'nearby': { icon: '🚶', label: 'Walkable' },
-      'warm_up': { icon: '✨', label: 'Good after dinner' },
+      'warm_up': { icon: '', label: 'Good after dinner' },
       'turn_up': { icon: '⚡', label: 'Late-night energy' },
     };
 
@@ -199,8 +199,8 @@ export default function VenueDetailScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await Share.share({
-        message: `Check out ${venue?.name} on Lumina! https://lumina.viberyte.com/venue/${id}`,
-        url: `https://lumina.viberyte.com/venue/${id}`,
+        message: `Check out ${venue?.name} on Lumina! https://viberyte.com/venue/${id}`,
+        url: `https://viberyte.com/venue/${id}`,
       });
     } catch (error) {
       console.error('Share error:', error);

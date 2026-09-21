@@ -74,7 +74,7 @@ const getPhotoUrl = (venue: Venue): string | null => {
     if (photos && photos[0]) {
       return photos[0].startsWith('http') 
         ? photos[0] 
-        : "https://lumina.viberyte.com" + photos[0];
+        : "https://viberyte.com" + photos[0];
     }
   } catch {}
   
@@ -195,7 +195,7 @@ export default function PlanScreen() {
       day: 'numeric' 
     });
     
-    let message = `✨ ${planTitle} ✨\n`;
+    let message = ` ${planTitle} \n`;
     message += `${dateStr}\n\n`;
     
     timeline.forEach((slot, index) => {
@@ -218,7 +218,7 @@ export default function PlanScreen() {
       message += '\n';
     });
     
-    message += `Planned with Lumina 💜\nDownload: lumina.viberyte.com`;
+    message += `Planned with Viberyte 💜\nDownload: viberyte.com`;
     
     try {
       await Share.share({ message, title: planTitle });

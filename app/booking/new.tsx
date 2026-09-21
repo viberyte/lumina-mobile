@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '../../theme';
 import { useToast } from '../../contexts/ToastContext';
 
-const API_URL = 'https://lumina.viberyte.com';
+const API_URL = 'https://viberyte.com';
 
 interface Package {
   id: string;

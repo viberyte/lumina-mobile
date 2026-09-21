@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 export async function partnerFetch(endpoint: string, options: RequestInit = {}) {
   // Get token from partner session

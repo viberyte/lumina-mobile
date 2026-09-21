@@ -22,22 +22,36 @@ function RootLayoutNav() {
 
   const checkAuthStatus = async () => {
     try {
-      const user = await authService.getCurrentUser();
-      
-      if (user) {
+      const [authToken, userData, isGuest, persona, userId] = await Promise.all([
+        AsyncStorage.getItem('@lumina_auth_token'),
+        AsyncStorage.getItem('@lumina_user'),
+        AsyncStorage.getItem('@lumina_is_guest'),
+        AsyncStorage.getItem('@lumina_persona'),
+        AsyncStorage.getItem('@lumina_user_id'),
+      ]);
+
+      const hasAuth = !!(authToken && authToken !== '') || 
+                      !!(userData && userData !== '') || 
+                      isGuest === 'true' || 
+                      !!(persona && persona !== '') ||
+                      !!(userId && userId !== '');
+
+      if (hasAuth) {
+        if (userData) {
+          try { authService['user'] = JSON.parse(userData); } catch {}
+        }
         setIsLoggedIn(true);
       } else {
-        const authToken = await AsyncStorage.getItem('@lumina_auth_token');
-        const userData = await AsyncStorage.getItem('@lumina_user');
-        const isGuest = await AsyncStorage.getItem('@lumina_is_guest');
-        const persona = await AsyncStorage.getItem('@lumina_persona');
-
-        const loggedIn = !!(authToken || userData || isGuest === 'true' || persona);
-        setIsLoggedIn(loggedIn);
+        setIsLoggedIn(false);
       }
     } catch (error) {
       console.log('Error checking auth:', error);
-      setIsLoggedIn(false);
+      try {
+        const fallback = await AsyncStorage.getItem('@lumina_user');
+        setIsLoggedIn(!!fallback);
+      } catch {
+        setIsLoggedIn(false);
+      }
     } finally {
       setIsReady(true);
     }

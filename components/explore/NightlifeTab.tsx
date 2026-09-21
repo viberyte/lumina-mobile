@@ -1,683 +1,587 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Dimensions,
   Animated,
   Pressable,
+  FlatList,
+  ScrollView,
   ActivityIndicator,
-  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
+import InlineReel from '../InlineReel';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import FlowCard from '../FlowCard';
+import { cacheFlow } from '../../utils/flowCache';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import LoadingScreen from '../../components/LoadingScreen';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = 140;
-const CARD_HEIGHT = 180;
-const CHIP_HEIGHT = 36;
-const SOUND_CHIP_HEIGHT = 32;
+const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
+const CARD_HEIGHT = 120;
+const MOOD_CARD_WIDTH = 200;
+const MOOD_CARD_HEIGHT = 300;
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
-interface Venue {
+// How many mood rows get reels active on initial load (top of the list,
+// what's visible before any scroll). The rest activate after first scroll.
+const INITIAL_ACTIVE_ROWS = 2;
+
+// ============================================
+// WORLD CARD DEFINITIONS (like cuisine cards)
+// ============================================
+interface NightlifeWorld {
+  key: string;
+  title: string;
+  subtitle: string;
+  gradient: [string, string];
+  glowColor: string;
+}
+
+const NIGHTLIFE_WORLDS: NightlifeWorld[] = [
+  {
+    key: 'afro_rnb', title: 'Afro & R&B', subtitle: 'Clubs • Lounges • Hookah',
+    gradient: ['#2d1f0a', '#1a1008'], glowColor: '#F59E0B',
+  },
+  {
+    key: 'latin', title: 'Latin', subtitle: 'Salsa • Reggaeton • Bachata',
+    gradient: ['#2d0a0a', '#1a0808'], glowColor: '#EF4444',
+  },
+  {
+    key: 'house', title: 'House & Electronic', subtitle: 'Deep House • Techno',
+    gradient: ['#0a1a2d', '#081018'], glowColor: '#06B6D4',
+  },
+  {
+    key: 'mixy', title: 'Mixy', subtitle: 'Open format • Party energy',
+    gradient: ['#1a0a2d', '#100818'], glowColor: '#A855F7',
+  },
+  {
+    key: 'chill', title: 'Chill', subtitle: 'Jazz • Vinyl • Speakeasy',
+    gradient: ['#0a2d1a', '#081a10'], glowColor: '#22C55E',
+  },
+];
+
+// ============================================
+// MOOD DEFINITIONS (Netflix carousels)
+// ============================================
+interface MoodDef {
+  key: string;
+  title: string;
+  sections: string[]; // section keys from the 'all' world API
+}
+
+const MOODS: MoodDef[] = [
+  { key: 'trending', title: 'Trending Tonight', sections: ['trending'] },
+  { key: 'date', title: 'Date Night', sections: ['date_night'] },
+  { key: 'late_night', title: 'Late Night', sections: ['late_night'] },
+  { key: 'crew', title: 'Crew Vibes', sections: ['crew'] },
+  { key: 'upscale', title: 'Upscale Vibes', sections: ['upscale'] },
+  { key: 'chill', title: 'Chill Lounges', sections: ['chill_lounges'] },
+  { key: 'jazz', title: 'Jazz Bars', sections: ['jazz'] },
+  { key: 'hookah', title: 'Hookah Lounges', sections: ['hookah'] },
+  { key: 'clubs', title: 'Clubs', sections: ['clubs'] },
+];
+
+// ============================================
+// WORLD CARD COMPONENT
+// ============================================
+const WorldCard = ({
+  world,
+  onPress,
+}: {
+  world: NightlifeWorld;
+  onPress: () => void;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }),
+      Animated.timing(glowOpacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
+  };
+  const handlePressOut = () => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }),
+      Animated.timing(glowOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+    ]).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={[styles.worldCardWrapper, { transform: [{ scale }] }]}>
+        <Animated.View
+          style={[styles.worldCardGlow, { opacity: glowOpacity, shadowColor: world.glowColor }]}
+        />
+        <LinearGradient colors={world.gradient} style={styles.worldCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          <View style={styles.worldCardContent}>
+            <Text style={styles.worldCardTitle}>{world.title}</Text>
+            <Text style={styles.worldCardSubtitle}>{world.subtitle}</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// ============================================
+// MOOD VENUE CARD (horizontal scroll item)
+// ============================================
+interface MoodVenue {
   id: number;
   name: string;
   image_url: string | null;
+  reel_url?: string | null;
   neighborhood: string | null;
-  city: string;
   vibe_tags: string[];
-  rating: number | null;
-  energy_level: string | null;
 }
 
-interface Section {
-  key: string;
-  title: string;
-  emoji: string;
-  venue_count: number;
-  total_matching: number;
-  areas_included: string[];
-  was_expanded: boolean;
-  venues: Venue[];
-}
-
-interface Mood {
-  key: string;
-  label: string;
-}
-
-interface Sound {
-  key: string;
-  label: string;
-  emoji: string;
-}
-
-interface NightlifeData {
-  mode: string;
-  city: string;
-  mood: string;
-  sound: string;
-  moods: Mood[];
-  sounds: Sound[];
-  section_count: number;
-  total_venues: number;
-  sections: Section[];
-}
-
-// Mood Chip Component (Intent row)
-const MoodChip = ({ 
-  mood, 
-  isActive, 
-  onPress 
-}: { 
-  mood: Mood; 
-  isActive: boolean; 
+const MoodVenueCard = ({
+  venue,
+  onPress,
+  shouldPlay,
+}: {
+  venue: MoodVenue;
   onPress: () => void;
+  shouldPlay: boolean;
 }) => {
   const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View 
-        style={[styles.moodChip, isActive && styles.moodChipActive, { transform: [{ scale }] }]}
-      >
-        <Text style={[styles.moodChipText, isActive && styles.moodChipTextActive]}>
-          {mood.label}
-        </Text>
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-// Sound Chip Component (Culture row)
-const SoundChip = ({ 
-  sound, 
-  isActive, 
-  onPress 
-}: { 
-  sound: Sound; 
-  isActive: boolean; 
-  onPress: () => void;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View 
-        style={[styles.soundChip, isActive && styles.soundChipActive, { transform: [{ scale }] }]}
-      >
-        <Text style={[styles.soundChipEmoji]}>{sound.emoji}</Text>
-        <Text style={[styles.soundChipText, isActive && styles.soundChipTextActive]}>
-          {sound.label}
-        </Text>
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-// Venue Card Component
-const VenueCard = ({ 
-  venue, 
-  onPress 
-}: { 
-  venue: Venue; 
-  onPress: () => void;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
-  };
-
-  const imageUrl = venue.image_url?.startsWith('/') 
-    ? `${API_BASE}${venue.image_url}` 
+  const imageUrl = venue.image_url?.startsWith('/')
+    ? `${API_BASE}${venue.image_url}`
     : venue.image_url;
 
-  const displayTags = venue.vibe_tags?.slice(0, 2) || [];
-
   return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[styles.venueCard, { transform: [{ scale }] }]}>
-        <View style={styles.venueImageContainer}>
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+      }}
+      onPressOut={() => {
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+      }}
+    >
+      <Animated.View style={[styles.moodVenueCard, { transform: [{ scale }] }]}>
+        <View style={[styles.moodVenueImage, { backgroundColor: colors.zinc[800] }]}>
           {imageUrl ? (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={styles.venueImage} 
-              contentFit="cover" 
-              transition={200} 
-            />
-          ) : (
-            <LinearGradient
-              colors={['#1a1a1a', '#0d0d0d']}
-              style={styles.venueImagePlaceholder}
-            />
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.8)']}
-            style={styles.venueImageGradient}
-          />
-        </View>
-        
-        <View style={styles.venueInfo}>
-          <Text style={styles.venueName} numberOfLines={2}>{venue.name}</Text>
-          
-          {venue.neighborhood && (
-            <Text style={styles.venueNeighborhood} numberOfLines={1}>
-              {venue.neighborhood}{venue.city && venue.city !== 'Manhattan' ? `, ${venue.city}` : ''}
-            </Text>
-          )}
-          
-          {displayTags.length > 0 && (
-            <View style={styles.vibeTagsRow}>
-              {displayTags.map((tag, idx) => (
-                <View key={idx} style={styles.vibeTag}>
-                  <Text style={styles.vibeTagText}>{tag}</Text>
+            <>
+              <InlineReel
+                reelUrl={venue?.reel_url || null}
+                photoUrl={imageUrl}
+                style={{ width: '100%', height: '100%' }}
+                shouldPlay={shouldPlay}
+              />
+              {venue?.reel_url ? (
+                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="play-circle" size={12} color="#fff" />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
                 </View>
-              ))}
-            </View>
-          )}
+              ) : null}
+            </>
+          ) : null}
+        </View>
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.moodVenueGradient} />
+        <View style={styles.moodVenueInfo}>
+          <Text style={styles.moodVenueName} numberOfLines={1}>{venue.name}</Text>
+          <Text style={styles.moodVenueNeighborhood} numberOfLines={1}>
+            {venue.neighborhood}
+          </Text>
         </View>
       </Animated.View>
     </Pressable>
   );
 };
 
-// Section Row Component
-const SectionRow = ({ 
-  section, 
-  onVenuePress,
-  onSeeAll,
-  primaryCity,
-}: { 
-  section: Section; 
-  onVenuePress: (venue: Venue) => void;
-  onSeeAll: () => void;
-  primaryCity: string;
+// ============================================
+// MOOD CAROUSEL ROW
+// ============================================
+const MoodCarousel = ({
+  mood,
+  city,
+  router,
+  rowActive,
+}: {
+  mood: MoodDef;
+  city: string;
+  router: any;
+  rowActive: boolean;
 }) => {
-  const showExpansionHint = section.was_expanded && section.areas_included.length > 1;
-  const otherAreas = section.areas_included.filter(a => a !== primaryCity);
+  const [venues, setVenues] = useState<MoodVenue[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Which card indices are horizontally on screen right now
+  const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
 
-  return (
-    <View style={styles.sectionContainer}>
-      <Pressable onPress={onSeeAll} style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionEmoji}>{section.emoji}</Text>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          {showExpansionHint && otherAreas.length > 0 && (
-            <Text style={styles.expansionHint}>• {otherAreas[0]}</Text>
-          )}
-        </View>
-        <View style={styles.seeAllRow}>
-          <Text style={styles.seeAllText}>{section.total_matching}</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.zinc[500]} />
-        </View>
-      </Pressable>
-      
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.venueScrollContent}
-      >
-        {section.venues.map((venue) => (
-          <VenueCard 
-            key={venue.id} 
-            venue={venue} 
-            onPress={() => onVenuePress(venue)} 
-          />
-        ))}
-      </ScrollView>
-    </View>
-  );
-};
+  // viewability config + handler must be stable across renders
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const ids = new Set<number>();
+    for (const v of viewableItems) {
+      if (v?.item?.id != null) ids.add(v.item.id);
+    }
+    setVisibleIds(ids);
+  }).current;
+  const viewabilityPairs = useRef([{ viewabilityConfig, onViewableItemsChanged }]).current;
 
-// Empty state for sound filter
-const SoundEmptyState = ({ sound, city }: { sound: string; city: string }) => {
-  const labels: Record<string, string> = {
-    afro: 'Afro',
-    hiphop: 'Hip-Hop & R&B',
-    latin: 'Latin',
+  useEffect(() => {
+    setVenues([]);  // Clear immediately — kills video players
+    fetchMoodVenues();
+  }, [city]);
+
+  const fetchMoodVenues = async () => {
+    try {
+      setLoading(true);
+
+      if (mood.key === 'trending') {
+        const trendRes = await fetch(`${API_BASE}/api/trending?city=${encodeURIComponent(city)}`);
+        if (trendRes.ok) {
+          const trendData = await trendRes.json();
+          const trendVenues = (trendData.trending || []).map((v: any) => ({
+            id: v.id,
+            name: v.name,
+            neighborhood: v.neighborhood || v.city,
+            image_url: v.photo,
+            reel_url: v.reel_url,
+            category: v.category,
+            vibe_tags: v.vibe_tags,
+            music_genres: v.music_genres,
+            trending_reasons: v.trending_reasons,
+          })).filter((v: any) => v.image_url);
+          setVenues(trendVenues.slice(0, 15));
+        }
+      } else {
+        const url = `${API_BASE}/api/nightlife?city=${encodeURIComponent(city)}&world=all`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          const matchingSections = (data.sections || []).filter((s: any) =>
+            mood.sections.includes(s.key)
+          );
+          const allVenues = matchingSections.flatMap((s: any) => s.venues || []);
+          const seenIds = new Set<number>();
+          const unique = allVenues.filter((v: any) => {
+            if (seenIds.has(v.id)) return false;
+            seenIds.add(v.id);
+            return v.image_url;
+          });
+          setVenues(unique.slice(0, 15));
+        }
+      }
+    } catch (err) {
+      console.log(`[MoodCarousel] ${mood.key} error:`, err);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (!loading && venues.length === 0) return null;
+
   return (
-    <View style={styles.emptyState}>
-      <Text style={styles.emptyStateEmoji}>🎶</Text>
-      <Text style={styles.emptyStateTitle}>{labels[sound] || sound} in {city}</Text>
-      <Text style={styles.emptyStateSubtitle}>More spots coming soon</Text>
+    <View style={styles.moodCarouselContainer}>
+      <View style={styles.moodCarouselHeader}>
+        <Text style={styles.moodCarouselTitle}>{mood.title}</Text>
+      </View>
+      {loading ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodCarouselList}>
+          {[0,1,2].map(i => (
+            <View key={i} style={[styles.moodVenueCard, { backgroundColor: 'rgba(255,255,255,0.03)', overflow: 'hidden' }]}>
+              <View style={[styles.moodVenueImage, { backgroundColor: 'rgba(255,255,255,0.04)' }]} />
+              <View style={styles.moodVenueInfo}>
+                <View style={{ width: '70%', height: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 4, marginBottom: 6 }} />
+                <View style={{ width: '45%', height: 11, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 4 }} />
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={venues}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.moodCarouselList}
+          keyExtractor={(item) => `mood-${mood.key}-${item.id}`}
+          viewabilityConfigCallbackPairs={viewabilityPairs}
+          renderItem={({ item }) => (
+            <MoodVenueCard
+              venue={item}
+              shouldPlay={rowActive && visibleIds.has(item.id)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/venue/${item.id}`);
+              }}
+            />
+          )}
+        />
+      )}
     </View>
   );
 };
 
+// ============================================
+// FEATURED HERO (random venue from trending)
+// ============================================
+const FeaturedHero = ({
+  city,
+  router,
+}: {
+  city: string;
+  router: any;
+}) => {
+  const [venue, setVenue] = useState<MoodVenue | null>(null);
+  const scale = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0.2)).current;
+
+  useEffect(() => {
+    setVenue(null);  // Clear immediately — kills video player
+    fetchHero();
+  }, [city]);
+
+  const fetchHero = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/nightlife?city=${encodeURIComponent(city)}&world=all`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.hero) setVenue(data.hero);
+      }
+    } catch {}
+  };
+
+  if (!venue) return null;
+
+  const imageUrl = venue.image_url?.startsWith('/')
+    ? `${API_BASE}${venue.image_url}`
+    : venue.image_url;
+
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        router.push(`/venue/${venue.id}`);
+      }}
+      onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start()}
+    >
+      <Animated.View style={[styles.heroWrapper, { transform: [{ scale }] }]}>
+        <Animated.View style={[styles.heroGlow, { opacity: glowOpacity }]} />
+        <View style={styles.heroCard}>
+          <View style={[styles.heroImageBg, { backgroundColor: colors.zinc[800] }]}>
+            {imageUrl ? (
+              <InlineReel reelUrl={venue?.reel_url || null} photoUrl={imageUrl} style={{ width: '100%', height: '100%' }} />
+            ) : null}
+          </View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.95)']} locations={[0, 0.45, 1]} style={styles.heroGradient} />
+          <View style={styles.heroBadge}>
+            <View style={styles.heroBadgeDot} />
+          </View>
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle} numberOfLines={2}>{venue.name}</Text>
+            {venue.neighborhood && (
+              <View style={styles.heroMeta}>
+                <Ionicons name="location-outline" size={14} color={colors.zinc[400]} />
+                <Text style={styles.heroLocation}>{venue.neighborhood}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// ============================================
+// MAIN NIGHTLIFE TAB
+// ============================================
 interface NightlifeTabProps {
   filters?: {
     city?: string;
     searchQuery?: string;
   };
+  // Parent (explore.tsx) can pass its scroll-Y so we know which rows are near.
+  // Optional — without it we fall back to "activate all rows after first interaction".
+  scrollY?: number;
 }
 
 export default function NightlifeTab({ filters = {} }: NightlifeTabProps) {
+  const [exploreFlows, setExploreFlows] = React.useState<any[]>([]);
+  // Once the user has scrolled at all, activate reels in every row.
+  // Before that, only the top INITIAL_ACTIVE_ROWS get reels.
+  const [allRowsActive, setAllRowsActive] = useState(false);
+
+  React.useEffect(() => {
+    const loadFlows = async () => {
+      try {
+        const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+        const profile = await AsyncStorage.getItem('@lumina_profile');
+        const persona = profile ? JSON.parse(profile) : null;
+        const city = savedCity || 'Manhattan';
+        const music = persona?.music_preferences?.[0] || '';
+        const url = 'https://viberyte.com/api/flows?city=' + encodeURIComponent(city) + (music ? '&music=' + encodeURIComponent(music) : '');
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.ok && data.flows) {
+          setExploreFlows(data.flows);
+          data.flows.forEach((f: any) => cacheFlow(f.slug, f));
+        }
+      } catch (e) {}
+    };
+    loadFlows();
+  }, []);
+
+  // Activate all rows shortly after mount as a safety net, so rows below the
+  // fold still get reels even if the parent scroll signal never arrives.
+  React.useEffect(() => {
+    const t = setTimeout(() => setAllRowsActive(true), 2500);
+    return () => clearTimeout(t);
+  }, []);
+
   const router = useRouter();
   const city = filters.city || 'Manhattan';
   const resolvedCity = city === 'Near Me' ? 'Manhattan' : city;
-  
-  const [data, setData] = useState<NightlifeData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeMood, setActiveMood] = useState('all');
-  const [activeSound, setActiveSound] = useState('all');
 
-  const fetchNightlife = useCallback(async (mood: string = 'all', sound: string = 'all', isRefresh: boolean = false) => {
-    if (!isRefresh) setLoading(true);
-    
-    try {
-      const url = `${API_BASE}/api/nightlife?city=${encodeURIComponent(resolvedCity)}&mood=${mood}&sound=${sound}`;
-      console.log('[NightlifeTab] Fetching:', url);
-      
-      const response = await fetch(url);
-      if (response.ok) {
-        const result = await response.json();
-        console.log('[NightlifeTab] Got', result.section_count, 'sections,', result.total_venues, 'venues');
-        setData(result);
-      }
-    } catch (error) {
-      console.log('[NightlifeTab] Fetch error:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [resolvedCity]);
-
-  useEffect(() => {
-    fetchNightlife(activeMood, activeSound);
-  }, [resolvedCity, fetchNightlife]);
-
-  const handleMoodChange = (mood: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveMood(mood);
-    fetchNightlife(mood, activeSound);
-  };
-
-  const handleSoundChange = (sound: string) => {
+  const goToWorld = (world: NightlifeWorld) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActiveSound(sound);
-    fetchNightlife(activeMood, sound);
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchNightlife(activeMood, activeSound, true);
-  };
-
-  const goToVenue = (venue: Venue) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push(`/venue/${venue.id}`);
-  };
-
-  const goToSeeAll = (section: Section) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
-      pathname: '/nightlife-see-all',
-      params: { 
-        row: section.key, 
-        title: section.title,
-        emoji: section.emoji,
-        city: resolvedCity,
-        mood: activeMood,
-      },
+      pathname: '/nightlife-world',
+      params: { world: world.key, city: resolvedCity },
     });
   };
 
-  if (loading && !data) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.violet[500]} />
-      </View>
-    );
-  }
-
-  // Fallback sounds if API doesn't return them yet
-  const sounds: Sound[] = data?.sounds || [
-    { key: 'all', label: 'All Sounds', emoji: '🎵' },
-    { key: 'afro', label: 'Afro', emoji: '🌍' },
-    { key: 'hiphop', label: 'Hip-Hop & R&B', emoji: '🎤' },
-    { key: 'latin', label: 'Latin', emoji: '💃' },
-  ];
-
-  const showEmptySound = activeSound !== 'all' && (data?.total_venues || 0) === 0;
-
   return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.violet[500]}
-        />
-      }
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Tonight</Text>
-        <Text style={styles.headerSubtitle}>{data?.total_venues || 0} spots in {resolvedCity}</Text>
-      </View>
+    <View style={styles.container}>
+      {/* Featured Hero */}
+      <FeaturedHero city={resolvedCity} router={router} />
 
-      {/* Intent Row — What kind of night? */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.moodChipsContainer}
-      >
-        {data?.moods?.map((mood) => (
-          <MoodChip
-            key={mood.key}
-            mood={mood}
-            isActive={activeMood === mood.key}
-            onPress={() => handleMoodChange(mood.key)}
-          />
-        ))}
-      </ScrollView>
-
-      {/* Sound & Culture Row — What does it sound like? */}
-      <View style={styles.soundSection}>
-        <Text style={styles.soundLabel}>🎶  Sound & Culture</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.soundChipsContainer}
-        >
-          {sounds.map((sound) => (
-            <SoundChip
-              key={sound.key}
-              sound={sound}
-              isActive={activeSound === sound.key}
-              onPress={() => handleSoundChange(sound.key)}
-            />
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Empty state for sound filter */}
-      {showEmptySound ? (
-        <SoundEmptyState sound={activeSound} city={resolvedCity} />
-      ) : (
-        /* Section Rows */
-        data?.sections?.map((section) => (
-          <SectionRow
-            key={section.key}
-            section={section}
-            onVenuePress={goToVenue}
-            onSeeAll={() => goToSeeAll(section)}
-            primaryCity={resolvedCity}
-          />
-        ))
+      {/* Tonight's Flows */}
+      {exploreFlows.length > 0 && (
+        <View style={{ marginBottom: 8 }}>
+          <View style={{ paddingHorizontal: 20, marginBottom: 12, marginTop: 8 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', letterSpacing: -0.3 }}>Tonight's Flows</Text>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Your night, planned out</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 28 }}
+            decelerationRate="fast"
+          >
+            {exploreFlows.slice(0, 5).map((flow: any) => (
+              <FlowCard key={flow.slug} flow={flow} />
+            ))}
+          </ScrollView>
+        </View>
       )}
 
+      {/* Mood Carousels — hero section */}
+      <View style={styles.moodSection}>
+        <View style={styles.moodSectionHeader}>
+          <Text style={styles.moodSectionTitle}>Browse by Mood</Text>
+          <Text style={styles.moodSectionSubtitle}>Curated for every vibe</Text>
+        </View>
+        {MOODS.map((mood, index) => (
+          <MoodCarousel
+            key={mood.key}
+            mood={mood}
+            city={resolvedCity}
+            router={router}
+            rowActive={allRowsActive || index < INITIAL_ACTIVE_ROWS}
+          />
+        ))}
+      </View>
+
+      {/* World Cards — below the fold */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Explore Worlds</Text>
+        <Text style={styles.headerSubtitle}>Dive deeper into {resolvedCity}</Text>
+      </View>
+
+      <View style={styles.worldGrid}>
+        {NIGHTLIFE_WORLDS.map((world) => (
+          <WorldCard key={world.key} world={world} onPress={() => goToWorld(world)} />
+        ))}
+      </View>
+
       <View style={styles.bottomPadding} />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1 },
+
+  // Hero
+  heroWrapper: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg, marginTop: spacing.md },
+  heroGlow: {
+    position: 'absolute', top: 8, left: spacing.lg + 8, right: spacing.lg + 8, bottom: 8,
+    backgroundColor: '#8B5CF6', borderRadius: 22, shadowColor: '#8B5CF6',
+    shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
   },
-  scrollContent: {
-    paddingTop: spacing.md,
+  heroCard: { height: 200, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.zinc[900] },
+  heroImageBg: { width: '100%', height: '100%' },
+  heroGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%' },
+  heroBadge: {
+    position: 'absolute', top: 14, left: 14, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  heroBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
+  heroBadgeText: { fontSize: 10, fontWeight: '700', color: colors.white, letterSpacing: 1 },
+  heroContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.md },
+  heroTitle: { fontSize: 22, fontWeight: '700', color: colors.white, letterSpacing: -0.3, marginBottom: 6 },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heroLocation: { fontSize: 13, color: colors.zinc[400], fontWeight: '500' },
+
   // Header
-  header: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+  header: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: colors.white, letterSpacing: -0.3 },
+  headerSubtitle: { fontSize: 14, color: colors.zinc[500], marginTop: 4 },
+
+  // World Grid
+  worldGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.lg, gap: 12 },
+  worldCardWrapper: { width: CARD_WIDTH },
+  worldCardGlow: {
+    position: 'absolute', top: -4, left: -4, right: -4, bottom: -4, borderRadius: 20,
+    shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 8,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: -0.5,
+  worldCard: {
+    height: CARD_HEIGHT, borderRadius: 16, padding: spacing.md, justifyContent: 'flex-end',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.zinc[500],
-    marginTop: 2,
+  worldCardContent: { gap: 2 },
+  worldCardTitle: { fontSize: 18, fontWeight: '700', color: colors.white, letterSpacing: -0.2 },
+  worldCardSubtitle: { fontSize: 12, color: colors.zinc[400], lineHeight: 16 },
+  worldCardTapHint: { fontSize: 10, color: colors.zinc[600], fontWeight: '600', marginTop: 4, letterSpacing: 0.3 },
+
+  // Mood Section
+  moodSection: { marginTop: spacing.xl },
+  moodSectionHeader: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  moodSectionTitle: { fontSize: 20, fontWeight: '700', color: colors.white, letterSpacing: -0.3 },
+  moodSectionSubtitle: { fontSize: 13, color: colors.zinc[500], marginTop: 2 },
+
+  // Mood Carousel
+  moodCarouselContainer: { marginBottom: spacing.lg },
+  moodCarouselHeader: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  moodCarouselTitle: { fontSize: 16, fontWeight: '700', color: colors.white, letterSpacing: -0.2 },
+  moodCarouselList: { paddingHorizontal: spacing.lg, gap: 14 },
+  moodLoadingRow: { height: 200, justifyContent: 'center', alignItems: 'center' },
+
+  // Mood Venue Card
+  moodVenueCard: {
+    width: MOOD_CARD_WIDTH, height: MOOD_CARD_HEIGHT, borderRadius: 16,
+    overflow: 'hidden', backgroundColor: colors.zinc[900],
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
-  // Mood Chips (Intent)
-  moodChipsContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: 8,
-    flexDirection: 'row',
-  },
-  moodChip: {
-    height: CHIP_HEIGHT,
-    paddingHorizontal: 16,
-    borderRadius: CHIP_HEIGHT / 2,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  moodChipActive: {
-    backgroundColor: colors.violet[600],
-    borderColor: colors.violet[500],
-  },
-  moodChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.zinc[400],
-  },
-  moodChipTextActive: {
-    color: colors.white,
-  },
-  // Sound & Culture Row
-  soundSection: {
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.lg,
-  },
-  soundLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.zinc[500],
-    paddingHorizontal: spacing.lg,
-    marginBottom: 8,
-    letterSpacing: 0.3,
-  },
-  soundChipsContainer: {
-    paddingHorizontal: spacing.lg,
-    gap: 8,
-    flexDirection: 'row',
-  },
-  soundChip: {
-    height: SOUND_CHIP_HEIGHT,
-    paddingHorizontal: 14,
-    borderRadius: SOUND_CHIP_HEIGHT / 2,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginRight: 8,
-  },
-  soundChipActive: {
-    backgroundColor: 'rgba(251, 146, 60, 0.15)',
-    borderColor: 'rgba(251, 146, 60, 0.4)',
-  },
-  soundChipEmoji: {
-    fontSize: 14,
-  },
-  soundChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.zinc[500],
-  },
-  soundChipTextActive: {
-    color: '#fb923c',
-  },
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: spacing.xl,
-  },
-  emptyStateEmoji: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.white,
-    marginBottom: 6,
-  },
-  emptyStateSubtitle: {
-    fontSize: 14,
-    color: colors.zinc[500],
-  },
-  // Section
-  sectionContainer: {
-    marginBottom: spacing.xl,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  sectionEmoji: {
-    fontSize: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: -0.2,
-  },
-  expansionHint: {
-    fontSize: 13,
-    color: colors.zinc[500],
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  seeAllRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: colors.zinc[500],
-    fontWeight: '600',
-  },
-  venueScrollContent: {
-    paddingHorizontal: spacing.lg,
-    gap: 12,
-  },
-  // Venue Card
-  venueCard: {
-    width: CARD_WIDTH,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  venueImageContainer: {
-    width: CARD_WIDTH,
-    height: 100,
-    position: 'relative',
-  },
-  venueImage: {
-    width: '100%',
-    height: '100%',
-  },
-  venueImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-  },
-  venueImageGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 40,
-  },
-  venueInfo: {
-    padding: 10,
-    gap: 4,
-  },
-  venueName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.white,
-    lineHeight: 18,
-  },
-  venueNeighborhood: {
-    fontSize: 12,
-    color: colors.zinc[500],
-  },
-  vibeTagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 4,
-  },
-  vibeTag: {
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  vibeTagText: {
-    fontSize: 10,
-    color: colors.violet[400],
-    fontWeight: '600',
-  },
-  bottomPadding: {
-    height: 100,
-  },
+  moodVenueImage: { width: '100%', height: '100%' },
+  moodVenueGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' },
+  moodVenueInfo: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
+  moodVenueName: { fontSize: 15, fontWeight: '700', color: colors.white, letterSpacing: -0.2 },
+  moodVenueNeighborhood: { fontSize: 12, color: colors.zinc[400], marginTop: 3 },
+
+  bottomPadding: { height: 120 },
 });

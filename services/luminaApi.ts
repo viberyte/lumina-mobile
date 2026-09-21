@@ -1,6 +1,6 @@
 import { API_BASE } from '../config';
 
-const TIMEOUT = 15000;
+const TIMEOUT = 8000;
 
 const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   const controller = new AbortController();

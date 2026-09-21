@@ -88,7 +88,7 @@ export default function AnalyticsScreen() {
       const session = JSON.parse(sessionData);
 
       const response = await fetch(
-        `https://lumina.viberyte.com/api/promoters/${session.promoterId}/analytics?range=${timeRange}`
+        `https://viberyte.com/api/promoters/${session.promoterId}/analytics?range=${timeRange}`
       );
 
       if (response.ok) {

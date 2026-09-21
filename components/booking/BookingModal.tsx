@@ -45,7 +45,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       // TODO: Get actual user ID from auth context
       const userId = 1;
 
-      const response = await fetch('https://lumina.viberyte.com/api/booking/process', {
+      const response = await fetch('https://viberyte.com/api/booking/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

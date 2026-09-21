@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import LoadingScreen from '../../components/LoadingScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../theme';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 interface Venue {
   id: number;
@@ -543,32 +544,24 @@ export default function SearchScreen() {
           {!hasResults && searchQuery.length < 2 && (
             <>
               <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="sparkles" size={16} color={colors.violet[400]} />
-                  <Text style={styles.sectionTitle}>Try asking</Text>
-                </View>
-                <View style={styles.chipsContainer}>
-                  {timeSuggestions.map((suggestion, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.suggestionChip}
-                      onPress={() => handleQuickSearch(suggestion)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.suggestionText}>{suggestion}</Text>
-                      <Ionicons name="arrow-forward" size={14} color={colors.zinc[500]} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <Text style={styles.sectionTitle}>Suggestions</Text>
+                {timeSuggestions.map((suggestion, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.suggestionRow}
+                    onPress={() => handleQuickSearch(suggestion)}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.suggestionRowText}>{suggestion}</Text>
+                    <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />
+                  </TouchableOpacity>
+                ))}
               </View>
 
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="trending-up" size={16} color={colors.zinc[400]} />
-                  <Text style={styles.sectionTitle}>Popular searches</Text>
-                </View>
+              <View style={[styles.section, { marginTop: 8 }]}>
+                <Text style={styles.sectionTitle}>Popular</Text>
                 <View style={styles.trendingChips}>
-                  {['Afrobeats', 'Rooftop', 'Date night', 'Hip-Hop', 'Sushi', 'Latin', 'Lounge'].map((term, index) => (
+                  {['Afrobeats', 'Rooftop', 'Date night', 'Hip-Hop', 'Sushi', 'Latin', 'Lounge', 'Late night'].map((term, index) => (
                     <TouchableOpacity
                       key={index}
                       style={styles.trendingChip}
@@ -665,8 +658,21 @@ const styles = StyleSheet.create({
   resultsHeader: { marginBottom: spacing.xs },
   resultsSubtext: { fontSize: 13, color: colors.zinc[500], fontWeight: '500' },
   section: { marginBottom: spacing.lg },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, gap: spacing.sm },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.white, flex: 1 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  suggestionRowText: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '400',
+  },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.35)', flex: 1 },
   // Shimmer
   shimmerPlaceholder: {
     backgroundColor: colors.zinc[800],

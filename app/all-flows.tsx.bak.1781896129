@@ -1,0 +1,113 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import FlowCard from '../components/FlowCard';
+import { colors, spacing } from '../theme';
+
+const API_BASE = 'https://viberyte.com';
+
+export default function AllFlowsScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [flows, setFlows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadAllFlows();
+  }, []);
+
+  const loadAllFlows = async () => {
+    try {
+      setLoading(true);
+      const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+      const city = savedCity && savedCity !== 'Near Me' ? savedCity : 'Manhattan';
+      const res = await fetch(`${API_BASE}/api/flows?city=${encodeURIComponent(city)}&all=true`);
+      const data = await res.json();
+      if (data.ok && data.flows) {
+        setFlows(data.flows);
+      }
+    } catch (e) {
+      console.log('[AllFlows] error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+        <TouchableOpacity
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+          style={styles.backBtn}
+        >
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>All Flows</Text>
+          <Text style={styles.headerSubtitle}>Every kind of night, planned out</Text>
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#8B5CF6" size="large" />
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {flows.map((flow) => (
+            <View key={flow.slug} style={styles.cardWrapper}>
+              <FlowCard flow={flow} />
+            </View>
+          ))}
+          <View style={{ height: insets.bottom + 40 }} />
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  backBtn: {
+    width: 38, height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 2,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.5,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.45)',
+    marginTop: 2,
+  },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingHorizontal: spacing.lg, alignItems: 'center' },
+  cardWrapper: { marginBottom: 16 },
+});

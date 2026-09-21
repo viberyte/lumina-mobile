@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
 import { colors, spacing } from '../theme';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 export default function PartnerOnboardingScreen() {
   const router = useRouter();

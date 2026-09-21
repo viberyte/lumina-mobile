@@ -1,0 +1,552 @@
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions,
+  Animated,
+  Pressable,
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  TouchableWithoutFeedback,
+} from 'react-native';
+import { Image } from 'expo-image';
+import InlineReel from '../components/InlineReel';
+import FeaturedVenueCard from '../components/FeaturedVenueCard';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import LoadingScreen from '../components/LoadingScreen';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colors, spacing } from '../theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = 210;
+const CARD_HEIGHT = 260;
+const HERO_HEIGHT = 350;
+
+const API_BASE = 'https://viberyte.com';
+
+const CITIES = ['Manhattan', 'Brooklyn', 'Queens', 'North Jersey', 'South Jersey'];
+
+interface Venue {
+  id: number;
+  name: string;
+  image_url: string | null;
+  neighborhood: string | null;
+  city: string;
+  vibe_tags: string[];
+  rating: number | null;
+  energy_level: string | null;
+}
+
+interface Section {
+  key: string;
+  title: string;
+  type?: string;
+  venues?: Venue[];
+  events?: any[];
+  total: number;
+}
+
+interface WorldData {
+  world: string;
+  worldTitle: string;
+  worldSubtitle: string;
+  accentColor: string;
+  hero: Venue | null;
+  heroes: Venue[];
+  total_venues: number;
+  sections: Section[];
+}
+
+// ============================================
+// HERO CARD
+// ============================================
+const HeroCard = ({ venue, accentColor, onPress }: { venue: Venue; accentColor: string; onPress: () => void }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0.2)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowOpacity, { toValue: 0.4, duration: 2500, useNativeDriver: true }),
+        Animated.timing(glowOpacity, { toValue: 0.2, duration: 2500, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  const imageUrl = venue.image_url?.startsWith('/') ? `${API_BASE}${venue.image_url}` : venue.image_url;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start(); }}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start()}
+    >
+      <Animated.View style={[styles.heroWrapper, { transform: [{ scale }] }]}>
+        <Animated.View style={[styles.heroGlow, { opacity: glowOpacity, shadowColor: accentColor, backgroundColor: accentColor }]} />
+        <View style={styles.heroCard}>
+          <View style={[styles.heroImageBg, { backgroundColor: colors.zinc[800] }]}>
+            {imageUrl ? (
+              <InlineReel reelUrl={venue?.reel_url || null} photoUrl={imageUrl} style={{ width: '100%', height: '100%' }} />
+            ) : null}
+          </View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.95)']} locations={[0, 0.45, 1]} style={styles.heroGradient} />
+          <View style={styles.heroContent}>
+            {venue.vibe_tags && venue.vibe_tags.length > 0 && (
+              <View style={styles.heroTags}>
+                {venue.vibe_tags.slice(0, 3).map((tag) => (
+                  <View key={tag} style={[styles.heroTag, { backgroundColor: accentColor + '25' }]}>
+                    <Text style={[styles.heroTagText, { color: accentColor }]}>{tag.toUpperCase()}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text style={styles.heroTitle} numberOfLines={2}>{venue.name}</Text>
+            {venue.neighborhood && (
+              <View style={styles.heroMeta}>
+                <Ionicons name="location-outline" size={14} color={colors.zinc[400]} />
+                <Text style={styles.heroLocation}>{venue.neighborhood}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// ============================================
+// VENUE CARD — 210x260
+// ============================================
+const VenueCard = ({ venue, accentColor, onPress, shouldPlay }: { venue: Venue; accentColor: string; onPress: () => void; shouldPlay: boolean }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const imageUrl = venue.image_url?.startsWith('/') ? `${API_BASE}${venue.image_url}` : venue.image_url;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start(); }}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start()}
+    >
+      <Animated.View style={[styles.venueCard, { transform: [{ scale }] }]}>
+        <View style={styles.venueImageContainer}>
+          <View style={[styles.venueImageBg, { backgroundColor: colors.zinc[800] }]}>
+            {imageUrl ? (
+              <InlineReel reelUrl={venue?.reel_url || null} photoUrl={imageUrl} style={{ width: '100%', height: '100%' }} shouldPlay={shouldPlay} />
+            ) : null}
+          </View>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={styles.venueGradient} />
+        </View>
+        <View style={styles.venueInfo}>
+          <Text style={styles.venueName} numberOfLines={2}>{venue.name}</Text>
+          {venue.neighborhood && <Text style={styles.venueNeighborhood} numberOfLines={1}>{venue.neighborhood}</Text>}
+          {venue.vibe_tags && venue.vibe_tags.length > 0 && (
+            <View style={styles.venueTagsRow}>
+              {venue.vibe_tags.slice(0, 2).map((tag) => (
+                <View key={tag} style={[styles.venueTag, { backgroundColor: accentColor + '18' }]}>
+                  <Text style={[styles.venueTagText, { color: accentColor }]}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// ============================================
+// SECTION ROW
+// ============================================
+const SectionRow = ({ section, accentColor, onVenuePress, onSeeAll, onEventPress, rowActive }: {
+  section: Section; accentColor: string; onVenuePress: (v: Venue) => void; onSeeAll: () => void; onEventPress?: (e: any) => void; rowActive: boolean;
+}) => {
+  const [visibleIds, setVisibleIds] = useState<Set<number>>(new Set());
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const ids = new Set<number>();
+    for (const v of viewableItems) { if (v?.item?.id != null) ids.add(v.item.id); }
+    setVisibleIds(ids);
+  }).current;
+  const viewabilityPairs = useRef([{ viewabilityConfig, onViewableItemsChanged }]).current;
+  return (
+  <View style={styles.sectionContainer}>
+    <Pressable onPress={onSeeAll} style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <View style={styles.seeAllRow}>
+        <Text style={[styles.seeAllText, { color: accentColor }]}>See All</Text>
+        <Ionicons name="chevron-forward" size={16} color={accentColor} />
+      </View>
+    </Pressable>
+    {section.type === 'events' && section.events ? (
+      <FlatList
+        data={section.events}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.venueScrollContent}
+        keyExtractor={(item) => `event-${item.id}`}
+        renderItem={({ item }) => (
+          <Pressable
+            style={styles.eventCard}
+            onPress={() => onEventPress && onEventPress(item)}
+          >
+            <Image
+              source={{ uri: item.image_url || 'https://viberyte.com/og-default.png' }}
+              style={styles.eventCardImage}
+              contentFit="cover"
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.85)']}
+              style={StyleSheet.absoluteFill}
+            />
+            {item.genre && (
+              <View style={[styles.eventGenreBadge, { backgroundColor: accentColor + '33', borderColor: accentColor + '66' }]}>
+                <Text style={[styles.eventGenreText, { color: accentColor }]}>{item.genre}</Text>
+              </View>
+            )}
+            <View style={styles.eventCardInfo}>
+              <Text style={styles.eventCardTitle} numberOfLines={2}>{item.title}</Text>
+              <Text style={styles.eventCardVenue} numberOfLines={1}>{item.venue_name}</Text>
+            </View>
+          </Pressable>
+        )}
+      />
+    ) : (
+      <FlatList
+        data={section.venues}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.venueScrollContent}
+        keyExtractor={(item) => `${section.key}-${item.id}`}
+        viewabilityConfigCallbackPairs={viewabilityPairs}
+        renderItem={({ item }) => (
+          <VenueCard venue={item} accentColor={accentColor} onPress={() => onVenuePress(item)} shouldPlay={rowActive && visibleIds.has(item.id)} />
+        )}
+      />
+    )}
+  </View>
+  );
+};
+
+// ============================================
+// MAIN WORLD PAGE
+// ============================================
+export default function NightlifeWorldScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
+  const worldKey = (Array.isArray(params.world) ? params.world[0] : params.world) || 'all';
+  const initialCity = (Array.isArray(params.city) ? params.city[0] : params.city) || 'Manhattan';
+
+  const [city, setCity] = useState(initialCity);
+  const [showCityPicker, setShowCityPicker] = useState(false);
+  const [data, setData] = useState<WorldData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const accentColor = data?.accentColor || '#8B5CF6';
+  const [allRowsActive, setAllRowsActive] = useState(false);
+
+  // Section rows below the fold: activate their reels shortly after mount
+  // so they play once scrolled into view (still gated per-card horizontally).
+  useEffect(() => {
+    const t = setTimeout(() => setAllRowsActive(true), 2000);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    fetchWorld();
+  }, [worldKey, city]);
+
+  const fetchWorld = async () => {
+    setLoading(true);
+    try {
+      const url = `${API_BASE}/api/nightlife?city=${encodeURIComponent(city)}&world=${worldKey}`;
+      console.log('Fetching world URL:', url);
+      const res = await fetch(url);
+      if (res.ok) {
+        const result = await res.json();
+        setData(result);
+      }
+    } catch (err) {
+      console.log('[NightlifeWorld] error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchCity = async (newCity: string) => {
+    setCity(newCity);
+    setShowCityPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Update global city so Dining, Events, etc. all switch too
+    try {
+      await AsyncStorage.setItem('@lumina_selected_city', newCity);
+    } catch {}
+  };
+
+  const goToVenue = (venue: Venue) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/venue/${venue.id}`);
+  };
+
+  const goToSeeAll = (section: Section) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({
+      pathname: '/nightlife-see-all',
+      params: { row: section.key, title: section.title, city, world: worldKey },
+    });
+  };
+
+  if (loading) {
+    return (
+      <LoadingScreen />
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Back button */}
+      <View style={[styles.backRow, { paddingTop: insets.top + spacing.sm }]}>
+        <Pressable
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+          style={styles.backButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.white} />
+        </Pressable>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* World Header + City Pill */}
+        <View style={styles.worldHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Text style={[styles.worldTitle, { color: accentColor }]}>{data?.worldTitle}</Text>
+            <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCityPicker(true); }} style={styles.cityPill}>
+              <Text style={styles.cityPillText}>{city}</Text>
+              <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.4)" />
+            </Pressable>
+          </View>
+          <Text style={styles.worldSubtitle}>{data?.worldSubtitle}</Text>
+        </View>
+
+        {/* Hero Carousel */}
+        {data?.heroes && data.heroes.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            <FlatList
+              data={data.heroes}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id?.toString()}
+              renderItem={({ item }) => (
+                <View style={{ width: SCREEN_WIDTH, paddingHorizontal: 16 }}>
+                  <FeaturedVenueCard venue={item} />
+                </View>
+              )}
+            />
+          </View>
+        )}
+
+        {/* Venue count */}
+        <View style={styles.countRow}>
+          <View style={[styles.countDot, { backgroundColor: accentColor }]} />
+          <Text style={styles.countText}>{data?.total_venues || 0} venues in {city}</Text>
+        </View>
+
+        {/* Sections */}
+        {data?.sections?.map((section) => {
+          console.log('Rendering section:', section.key, 'type:', section.type, 'events:', section.events?.length);
+          return (
+          <SectionRow
+            key={section.key}
+            section={section}
+            accentColor={accentColor}
+            onVenuePress={goToVenue}
+            onSeeAll={() => goToSeeAll(section)}
+            onEventPress={(e) => router.push(`/event/${e.id}`)}
+            rowActive={allRowsActive}
+          />
+        );
+        })}
+
+        <View style={styles.bottomPadding} />
+      </ScrollView>
+
+      {/* City Picker Bottom Sheet */}
+      <Modal visible={showCityPicker} transparent animationType="fade" onRequestClose={() => setShowCityPicker(false)}>
+        <TouchableWithoutFeedback onPress={() => setShowCityPicker(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Select City</Text>
+                <Text style={styles.modalSubtitle}>Explore {data?.worldTitle || 'this world'} in a different city</Text>
+                {CITIES.map((c) => (
+                  <Pressable
+                    key={c}
+                    onPress={() => switchCity(c)}
+                    style={[styles.cityOption, city === c && { backgroundColor: accentColor + '20' }]}
+                  >
+                    <Text style={[styles.cityOptionText, city === c && { color: accentColor, fontWeight: '700' }]}>{c}</Text>
+                    {city === c && <Ionicons name="checkmark" size={18} color={accentColor} />}
+                  </Pressable>
+                ))}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.black },
+  loadingV: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: -2,
+  },
+  loadingLogo: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  loadingContainer: { flex: 1, backgroundColor: colors.black, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingBottom: 40 },
+
+  // Back
+  backRow: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, backgroundColor: colors.black },
+  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center' },
+
+  // World Header
+  worldHeader: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  worldTitle: { fontSize: 30, fontWeight: '700', letterSpacing: -0.5 },
+  worldSubtitle: { fontSize: 14, color: colors.zinc[500], marginTop: 4 },
+
+  // City Pill
+  cityPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)', paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  cityPillText: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
+
+  // City Picker Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#1a1a1f', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 16, paddingBottom: 50, paddingHorizontal: 20,
+  },
+  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 4 },
+  modalSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.35)', marginBottom: 16 },
+  cityOption: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, marginBottom: 2,
+  },
+  cityOptionText: { fontSize: 16, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
+
+  // Hero
+  heroWrapper: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  heroGlow: {
+    position: 'absolute', top: 8, left: spacing.lg + 8, right: spacing.lg + 8, bottom: 8,
+    borderRadius: 22, shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 6 }, elevation: 10,
+  },
+  heroCard: { height: HERO_HEIGHT, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.zinc[900] },
+  heroImageBg: { width: '100%', height: '100%' },
+  heroGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%' },
+  heroContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.lg },
+  heroTags: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  heroTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  heroTagText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  heroTitle: { fontSize: 26, fontWeight: '700', color: colors.white, letterSpacing: -0.3, marginBottom: 6 },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heroLocation: { fontSize: 14, color: colors.zinc[400], fontWeight: '500' },
+
+  // Count
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  countDot: { width: 6, height: 6, borderRadius: 3 },
+  countText: { fontSize: 13, color: colors.zinc[500], fontWeight: '500' },
+
+  // Section
+  eventCard: {
+    width: 200,
+    height: 240,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: '#111',
+  },
+  eventCardImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  eventGenreBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  eventGenreText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  eventCardInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 12,
+  },
+  eventCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 3,
+    lineHeight: 18,
+  },
+  eventCardVenue: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  sectionContainer: { marginBottom: spacing.xl + 4 },
+  sectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, marginBottom: spacing.md,
+  },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: colors.white, letterSpacing: -0.3 },
+  seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  seeAllText: { fontSize: 14, fontWeight: '600' },
+  venueScrollContent: { paddingHorizontal: spacing.lg, gap: 14 },
+
+  // Venue Card
+  venueCard: {
+    width: CARD_WIDTH, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16,
+    overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  venueImageContainer: { width: CARD_WIDTH, height: 170, position: 'relative' },
+  venueImageBg: { width: '100%', height: '100%' },
+  venueGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 50 },
+  venueInfo: { padding: 12, gap: 4 },
+  venueName: { fontSize: 15, fontWeight: '700', color: colors.white, lineHeight: 20 },
+  venueNeighborhood: { fontSize: 12, color: colors.zinc[500] },
+  venueTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  venueTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  venueTagText: { fontSize: 10, fontWeight: '600' },
+
+  bottomPadding: { height: 120 },
+});

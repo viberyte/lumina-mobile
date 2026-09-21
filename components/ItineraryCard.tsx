@@ -40,7 +40,7 @@ export default function ItineraryCard({ venues, flow, city }: ItineraryCardProps
       <View style={styles.header}>
         <View style={styles.logoRow}>
           <View style={styles.logo}>
-            <Text style={styles.logoSparkle}>✨</Text>
+            <Text style={styles.logoSparkle}></Text>
           </View>
           <Text style={styles.logoText}>Lumina</Text>
         </View>

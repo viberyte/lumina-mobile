@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { requireAuth } from '../../utils/authGate';
 import {
   View,
@@ -7,8 +7,6 @@ import {
   Animated,
   TouchableOpacity,
   Dimensions,
-  Modal,
-  FlatList,
   ActivityIndicator,
   Platform,
   StatusBar,
@@ -18,76 +16,33 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, trackBehavior } from '../../lib/api';
 import AddToPlanSheet from '../../components/AddToPlanSheet';
-import VibeMediaViewer from '../../components/VibeMediaViewer';
 import NextStopCard from '../../components/NextStopCard';
-import { getPhotoUrl, getAllPhotos, getAllMedia, getTikTokVideos, MediaItem } from '../../utils/photoHelper';
+import { getPhotoUrl, getAllPhotos } from '../../utils/photoHelper';
+import LoadingScreen from '../../components/LoadingScreen';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cacheFlow } from '../../utils/flowCache';
+import FlowCard from '../../components/FlowCard';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const HEADER_MAX_HEIGHT = 350;
-
-const colors = {
-  background: '#0A0A0F',
-  card: '#16161F',
-  cardBorder: '#2A2A3A',
-  accent: '#8B5CF6',
-  accentDim: 'rgba(139, 92, 246, 0.12)',
-  white: '#FFFFFF',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  restaurant: 'Restaurant',
-  lounge: 'Lounge',
-  bar: 'Bar',
-  cocktail_bar: 'Cocktails',
-  rooftop: 'Rooftop',
-  club: 'Club',
-  night_club: 'Club',
-  nightclub: 'Club',
-  diner: 'Late Night Eats',
-  cafe: 'Café',
-  wine_bar: 'Wine Bar',
-};
-
-const WEATHER_ICONS: Record<string, string> = {
-  'clear': 'sunny',
-  'clouds': 'cloudy',
-  'rain': 'rainy',
-  'snow': 'snow',
-  'thunderstorm': 'thunderstorm',
-  'drizzle': 'rainy',
-  'mist': 'cloudy',
-  'fog': 'cloudy',
-};
+const HERO_HEIGHT = SCREEN_HEIGHT * 0.52;
+const API_URL = 'https://viberyte.com';
 
 const safeParseArray = (data: any): any[] => {
   if (!data) return [];
   if (Array.isArray(data)) return data;
   if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    try { const p = JSON.parse(data); return Array.isArray(p) ? p : []; } catch { return []; }
   }
   return [];
 };
-
-interface MediaItem {
-  id: string;
-  type: 'image' | 'video';
-  url: string;
-  thumbnail?: string;
-}
 
 interface NextStop {
   id: string;
@@ -98,27 +53,116 @@ interface NextStop {
   image_url?: string;
   energy_level?: string;
   travel_time?: number;
-  transport_mode?: "walk" | "rideshare";
-  distance_meters?: number;
-  compatibility_score?: number;
-  transition_type?: string;
+  transport_mode?: 'walk' | 'rideshare';
   transition_message?: string;
-  venue_insight?: string;
-  insight_voice?: string;
-}
-interface WeatherData {
-  temp: number;
-  condition: string;
-  icon: string;
 }
 
-interface QuickAction {
-  id: string;
-  label: string;
-  icon: string;
-  onPress: () => void;
-  disabled?: boolean;
-  primary?: boolean;
+
+// ── VENUE FLOW CARD ──────────────────────────────────────
+const FLOW_ACCENTS: Record<string, string> = {
+  romantic: '#f9a8c9', girls_night: '#d8b4fe', guys_night: '#93c5fd',
+  late_night: '#a5b4fc', weekend: '#6ee7b7', pregame: '#fcd34d', group: '#7dd3fc',
+};
+const FLOW_BASES: Record<string, string> = {
+  romantic: '#1a0008', girls_night: '#07030f', guys_night: '#030810',
+  late_night: '#020208', weekend: '#011008', pregame: '#0f0800', group: '#010810',
+};
+
+function VenueFlowCard({ flow, router }: { flow: any; router: any }) {
+  const accent = FLOW_ACCENTS[flow.intent] || '#a5b4fc';
+  const base = FLOW_BASES[flow.intent] || '#020208';
+  const visibleStops = flow.stops.slice(0, 2);
+  const extraCount = flow.stops.length - 2;
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cacheFlow(flow.slug, flow);
+    router.push('/flow/' + flow.slug);
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.85}
+      style={{
+        width: 200,
+        backgroundColor: base,
+        borderRadius: 16,
+        padding: 14,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: accent + '30',
+      }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: -0.3, marginBottom: 12 }}>
+        {flow.title}
+      </Text>
+      {visibleStops.map((stop: any, i: number) => {
+        const name = stop.type === 'event' ? stop.event?.title : stop.venue?.name;
+        return (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            <View style={{ width: 16, alignItems: 'center', paddingTop: 5 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
+              {i < visibleStops.length - 1 && (
+                <View style={{ width: 1.5, height: 16, backgroundColor: accent + '35', marginTop: 3 }} />
+              )}
+            </View>
+            <View style={{ flex: 1, paddingLeft: 8, paddingBottom: 16 }}>
+              <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 1 }}>
+                {stop.roleLabel}
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.9)', letterSpacing: -0.2 }} numberOfLines={1}>
+                {name && name.length > 16 ? name.slice(0, 15) + '…' : name || stop.roleLabel}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' }}>
+        {extraCount > 0 ? (
+          <Text style={{ fontSize: 11, color: accent, fontWeight: '600' }}>+{extraCount} more stop{extraCount > 1 ? 's' : ''}</Text>
+        ) : <View />}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: accent }}>View</Text>
+          <Ionicons name="chevron-forward" size={11} color={accent} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+// ─────────────────────────────────────────────────────────
+
+
+function VenueReelPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+
+function GalleryReelPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
 }
 
 export default function VenueDetailScreen() {
@@ -126,738 +170,584 @@ export default function VenueDetailScreen() {
   const [venue, setVenue] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [addToPlanVisible, setAddToPlanVisible] = useState(false);
-  const [galleryVisible, setGalleryVisible] = useState(false);
-  const [galleryIndex, setGalleryIndex] = useState(0);
-  const [mediaToShow, setMediaToShow] = useState(9);
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [venueFlows, setVenueFlows] = useState<any[]>([]);
+  const [reelUrl, setReelUrl] = useState<string | null>(null);
+  const [venueReels, setVenueReels] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadFlows = async () => {
+      try {
+        const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+        const city = savedCity || 'Manhattan';
+        const res = await fetch('https://viberyte.com/api/venue-flows?venue_id=' + venue.id + '&city=' + encodeURIComponent(city));
+        const data = await res.json();
+        if (data.ok && data.flows) {
+          setVenueFlows(data.flows);
+          data.flows.forEach((f: any) => cacheFlow(f.slug, f));
+        }
+      } catch (e) {}
+    };
+    if (venue?.id) loadFlows();
+  }, [venue?.id]);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savingBusy, setSavingBusy] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    fetchVenueDetails();
-  }, [id]);
+  const heroOpacity = scrollY.interpolate({
+    inputRange: [0, HERO_HEIGHT * 0.5],
+    outputRange: [1, 0.4],
+    extrapolate: 'clamp',
+  });
+
+  const navOpacity = scrollY.interpolate({
+    inputRange: [HERO_HEIGHT * 0.4, HERO_HEIGHT * 0.7],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const heroScale = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: [1.08, 1],
+    extrapolate: 'clamp',
+  });
 
   useEffect(() => {
-    if (venue?.city) {
-      fetchWeather(venue.city);
-    }
-  }, [venue?.city]);
+    StatusBar.setBarStyle('light-content');
+    fetchVenueDetails();
+  }, [id]);
 
   const fetchVenueDetails = async () => {
     try {
       setLoading(true);
       const data = await api.getVenue(id as string);
-      setVenue(data);
-      // Track view behavior
-      if (data?.id) {
-        trackBehavior(Number(data.id), "view", "detail");
+      const venueData = data?.venue || data;
+      setVenue(venueData);
+      const media = venueData?.instagram_media || data?.instagram_media || [];
+      const allReels = media
+        .filter((m: any) => (m.type || '').toUpperCase() === 'VIDEO' && m.url && m.url.includes('/venue-videos/'))
+        .sort((a: any, b: any) => (b.likes || 0) - (a.likes || 0))
+        .map((m: any) => m.url.startsWith('/') ? 'https://viberyte.com' + m.url : m.url);
+      setVenueReels(allReels);
+      if (allReels.length > 0) {
+        setReelUrl(allReels[0]);
       }
+      if (data?.id) trackBehavior(Number(data.id), 'view', 'detail');
     } catch (error) {
-      console.error("Error fetching venue:", error);
+      console.error('Error fetching venue:', error);
     } finally {
       setLoading(false);
     }
   };
 
-
-
-
-
-
-
-
-
-
-
-
-  const fetchWeather = async (city: string) => {
-    try {
-      const geoResponse = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
-      );
-      const geoData = await geoResponse.json();
-      
-      if (geoData.results && geoData.results.length > 0) {
-        const { latitude, longitude } = geoData.results[0];
-        
-        const weatherResponse = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=fahrenheit`
-        );
-        const weatherData = await weatherResponse.json();
-        
-        if (weatherData.current) {
-          const weatherCode = weatherData.current.weather_code;
-          let condition = 'clear';
-          if (weatherCode >= 0 && weatherCode <= 3) condition = 'clear';
-          else if (weatherCode >= 45 && weatherCode <= 48) condition = 'fog';
-          else if (weatherCode >= 51 && weatherCode <= 67) condition = 'rain';
-          else if (weatherCode >= 71 && weatherCode <= 77) condition = 'snow';
-          else if (weatherCode >= 80 && weatherCode <= 82) condition = 'rain';
-          else if (weatherCode >= 95) condition = 'thunderstorm';
-          else condition = 'clouds';
-          
-          setWeather({
-            temp: Math.round(weatherData.current.temperature_2m),
-            condition: condition.charAt(0).toUpperCase() + condition.slice(1),
-            icon: WEATHER_ICONS[condition] || 'cloudy',
-          });
-        }
-      }
-    } catch (error) {
-      console.log('Weather fetch failed:', error);
-    }
-  };
+  useEffect(() => {
+    if (venue?.id) checkSaved(venue.id);
+  }, [venue?.id]);
 
   const handleShare = async () => {
+    if (!venue) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `Check out ${venue?.name} on Lumina!`,
-        url: `https://lumina.viberyte.com/venue/${id}`,
+        message: `Check out ${venue.name} on Viberyte!\nhttps://viberyte.com/venue/${id}`,
       });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    } catch {}
   };
 
-  const handleCall = () => {
-    if (venue?.phone) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Linking.openURL(`tel:${venue.phone}`);
+  const checkSaved = async (vid: number | string) => {
+    try { setSaved(await api.isVenueSaved(Number(vid))); } catch {}
+  };
+
+  const handleToggleSave = async () => {
+    if (!venue?.id || savingBusy) return;
+    const authed = await requireAuth();
+    if (!authed) return;
+    setSavingBusy(true);
+    const next = !saved;
+    setSaved(next); // optimistic
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const r = next ? await api.saveFavorite(Number(venue.id))
+                     : await api.removeFavorite(Number(venue.id));
+      if (r && r.error === 'not_logged_in') setSaved(!next); // revert
+    } catch {
+      setSaved(!next); // revert on failure
+    } finally {
+      setSavingBusy(false);
     }
   };
 
   const handleDirections = () => {
-    if (venue?.address) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
-      Linking.openURL(`https://maps.apple.com/?q=${query}`);
-    }
-  };
-
-  const handleWebsite = () => {
-    if (venue?.website) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Linking.openURL(venue.website);
-    }
+    if (!venue?.address) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const encoded = encodeURIComponent(venue.address);
+    const url = `https://maps.apple.com/?daddr=${encoded}`;
+    Linking.openURL(url);
   };
 
   const handleInstagram = () => {
-    if (venue?.instagram_handle) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
-    }
-  };
-
-  const handleUber = () => {
-    if (venue?.address) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const query = encodeURIComponent(`${venue.address}, ${venue.city}`);
-      Linking.openURL(`uber://?action=setPickup&pickup=my_location&dropoff[formatted_address]=${query}`);
-    }
-  };
-
-  const handleMenu = () => {
-    if (venue?.menu_url) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Linking.openURL(venue.menu_url);
-    }
-  };
-
-  const handleBudgetMeal = () => {
+    if (!venue?.instagram_handle) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ 
-      pathname: "/budget-meal", 
-      params: { venue_id: id, venue_name: venue?.name || "" } 
-    });
+    Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
   };
 
-  const openGallery = (index: number) => {
-    setGalleryIndex(index);
-    setGalleryVisible(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const handleCall = () => {
+    if (!venue?.phone) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(`tel:${venue.phone}`);
   };
 
-  if (loading || !venue) {
+  if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <LoadingScreen />
+    );
+  }
+
+  if (!venue) {
+    return (
+      <View style={styles.loader}>
+        <Text style={{ color: '#fff' }}>Venue not found</Text>
       </View>
     );
   }
 
-  // USE CENTRALIZED PHOTO HELPER - This is the key fix!
   const heroImage = getPhotoUrl(venue);
-  const allPhotos = getAllPhotos(venue);
-  
-  // USE CENTRALIZED MEDIA HELPER - includes photos + videos
-  const allMedia = getAllMedia(venue);
-  
-  // Debug logging for media health
-  console.log('[Media]', venue.name, {
-    photos: allMedia.filter(m => m.type === 'image').length,
-    videos: allMedia.filter(m => m.type === 'video').length,
-    heroImage: !!heroImage,
-  });
-
-  const displayedMedia = allMedia.slice(0, mediaToShow);
-  // Transform media for VibeMediaViewer
-  const viewerMedia = allMedia.map((item) => ({
-    id: item.id,
-    url: item.url,
-    thumbnailUrl: item.thumbnail || item.url,
-    isVideo: item.type === 'video',
-    type: item.type === 'video' ? 'instagram' : 'google',
-  }));
-
-
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, 250],
-    outputRange: [HEADER_MAX_HEIGHT, 100],
-    extrapolate: 'clamp',
-  });
-
-  const imageOpacity = scrollY.interpolate({
-    inputRange: [0, 125, 250],
-    outputRange: [1, 1, 0],
-    extrapolate: 'clamp',
-  });
-
-  const imageScale = scrollY.interpolate({
-    inputRange: [-100, 0],
-    outputRange: [1.5, 1],
-    extrapolate: 'clamp',
-  });
-
-  const renderMediaItem = ({ item, index }: { item: MediaItem; index: number }) => (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={() => openGallery(index)}
-      style={styles.mediaItem}
-    >
-      <Image
-        source={{ uri: item.thumbnail || item.url }}
-        style={styles.mediaThumbnail}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-      />
-      {item.type === 'video' && (
-        <View style={styles.videoIndicator}>
-          <Ionicons name="play-circle" size={40} color="white" />
-        </View>
-      )}
-      {item.source === 'tiktok' && (
-        <View style={styles.tiktokBadge}>
-          <Ionicons name="logo-tiktok" size={12} color="#fff" />
-        </View>
-      )}
-      {item.source === 'instagram' && item.type === 'video' && (
-        <View style={styles.instagramBadge}>
-          <Ionicons name="logo-instagram" size={12} color="#fff" />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  // renderGalleryItem removed - using VibeMediaViewer
-
-  // Use centralized photo helper for next stops too
-  const getNextStopImage = (stop: NextStop): string | null => {
-    return getPhotoUrl(stop);
-  };
-
-  const isRestaurant = ['restaurant', 'diner', 'cafe'].includes((venue.category || '').toLowerCase());
-  const hasFood = isRestaurant || ['bar', 'lounge', 'rooftop'].includes((venue.category || '').toLowerCase());
-  const currentHour = new Date().getHours();
-  const isEvening = currentHour >= 17;
-  const shouldTruncate = venue.description && venue.description.length > 120;
-  
-  const hoursArray = safeParseArray(venue.hours_json);
-  const todayIndex = new Date().getDay();
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const todayHours = hoursArray.find((h: any) => typeof h === 'string' && h.startsWith(dayNames[todayIndex]));
-
-  const displayDescription = venue.description || venue.bio || null;
-  const categoryLabel = CATEGORY_LABELS[venue.category?.toLowerCase()] || venue.category || 'Venue';
-  const nextStops = safeParseArray(venue.next_stops);
-
-  // Build quick actions array
-  const quickActions: QuickAction[] = [
-    {
-      id: 'directions',
-      label: 'Directions',
-      icon: 'navigate-outline',
-      onPress: handleDirections,
-      disabled: !venue.address,
-      primary: true,
-    },
-    {
-      id: 'call',
-      label: 'Call',
-      icon: 'call-outline',
-      onPress: handleCall,
-      disabled: !venue.phone,
-    },
-    {
-      id: 'instagram',
-      label: 'Instagram',
-      icon: 'logo-instagram',
-      onPress: handleInstagram,
-      disabled: !venue.instagram_handle,
-    },
-    ...(hasFood ? [{
-      id: 'menu',
-      label: 'Menu',
-      icon: 'restaurant-outline',
-      onPress: handleMenu,
-      disabled: !venue.menu_url,
-    }] : []),
-    ...(isRestaurant ? [{
-      id: 'budget',
-      label: 'Budget Meal',
-      icon: 'wallet-outline',
-      onPress: handleBudgetMeal,
-      disabled: false,
-    }] : []),
-    {
-      id: 'uber',
-      label: 'Ride',
-      icon: 'car-outline',
-      onPress: handleUber,
-      disabled: !venue.address,
-    },
-    {
-      id: 'website',
-      label: 'Website',
-      icon: 'globe-outline',
-      onPress: handleWebsite,
-      disabled: !venue.website,
-    },
-  ].filter(action => !action.disabled);
+  const allPhotos = getAllPhotos(venue).slice(0, 12);
+  const vibes = safeParseArray(venue.primary_vibes || venue.vibe_tags).slice(0, 3);
+  const genres = safeParseArray(venue.music_genres).slice(0, 2);
+  const nextStops: NextStop[] = safeParseArray(venue.next_stops).slice(0, 4);
+  const category = venue.standardized_category || venue.category || '';
+  const isOpen = venue.hours ? true : null;
+  const description = venue.description || venue.bio || null;
+  const descPreview = description ? description.slice(0, 180) : null;
+  const needsExpand = description && description.length > 180;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      
-      <View style={styles.topBar}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={async () => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
-        >
-          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
-            <Ionicons name="arrow-back" size={22} color="white" />
-          </BlurView>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <BlurView intensity={30} tint="dark" style={styles.blurButton}>
-            <Ionicons name="share-outline" size={22} color="white" />
-          </BlurView>
-        </TouchableOpacity>
-      </View>
+
+      {/* Floating nav */}
+      <Animated.View style={[styles.floatingNav, { opacity: navOpacity }]}>
+        <View style={{ height: 44 + (Platform.OS === 'ios' ? 44 : 24) }} />
+        <View style={styles.floatingNavInner}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.floatingNavBtn}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.floatingNavTitle} numberOfLines={1}>{venue.name}</Text>
+          <TouchableOpacity onPress={handleShare} style={styles.floatingNavBtn}>
+            <Ionicons name="share-outline" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
 
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
+          { useNativeDriver: true }
         )}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
-        <Animated.View style={[styles.heroContainer, { height: headerHeight }]}>
-          {heroImage ? (
-            <Animated.View style={{ opacity: imageOpacity, transform: [{ scale: imageScale }], flex: 1 }}>
+        {/* ── HERO ── */}
+        <View style={styles.heroContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: heroScale }] }]}>
+            {reelUrl ? (
+              <VenueReelPlayer uri={reelUrl} />
+            ) : heroImage ? (
               <Image
-                source={{ uri: heroImage.startsWith('/') ? `https://lumina.viberyte.com${heroImage}` : heroImage }}
-                style={styles.heroImage}
+                source={{ uri: heroImage.startsWith('/') ? `${API_URL}${heroImage}` : heroImage }}
+                style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 cachePolicy="memory-disk"
               />
-            </Animated.View>
-          ) : (
-            <View style={styles.heroPlaceholder}>
-              <Ionicons name="image-outline" size={48} color={colors.textMuted} />
-            </View>
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(10,10,15,0.8)', colors.background]}
-            style={styles.heroGradient}
-          />
-        </Animated.View>
-        
-        <View style={styles.content}>
-          {/* Venue Name */}
-          <Text style={styles.venueName}>{venue.name}</Text>
-          
-          {/* Meta Row */}
-          <View style={styles.metaRow}>
-            {venue.neighborhood && <Text style={styles.metaText}>{venue.neighborhood}</Text>}
-            {venue.city && (
-              <>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.metaText}>{venue.city}</Text>
-              </>
-            )}
-            {venue.rating && (
-              <>
-                <Text style={styles.metaDot}>•</Text>
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={12} color="#FCD34D" />
-                  <Text style={styles.ratingText}>{venue.rating.toFixed(1)}</Text>
-                </View>
-              </>
-            )}
-            {venue.price_tier && (
-              <>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.priceText}>{venue.price_tier}</Text>
-              </>
-            )}
-          </View>
-
-          {/* Weather + Tonight Badge Row */}
-          <View style={styles.badgeRow}>
-            {weather && (
-              <View style={styles.weatherBadge}>
-                <Ionicons name={weather.icon as any} size={14} color={colors.accent} />
-                <Text style={styles.weatherText}>{weather.temp}°</Text>
-              </View>
-            )}
-            {isEvening && (
-              <View style={styles.tonightBadge}>
-                <Ionicons name="sparkles" size={12} color={colors.accent} />
-                <Text style={styles.tonightText}>Good tonight</Text>
-              </View>
-            )}
-            {todayHours && (
-              <View style={styles.hoursBadge}>
-                <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-                <Text style={styles.hoursText} numberOfLines={1}>
-                  {todayHours.replace(dayNames[todayIndex] + ': ', '')}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Bio Section */}
-          <View style={styles.bioSection}>
-            {displayDescription ? (
-              <>
-                <Text 
-                  style={styles.bioText}
-                  numberOfLines={descriptionExpanded ? undefined : 2}
-                >
-                  {displayDescription}
-                </Text>
-                {shouldTruncate && (
-                  <TouchableOpacity onPress={() => setDescriptionExpanded(!descriptionExpanded)}>
-                    <Text style={styles.readMoreText}>
-                      {descriptionExpanded ? 'Show less' : 'Read more'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </>
             ) : (
-              <Text style={styles.bioTextMuted}>
-                {categoryLabel} in {venue.neighborhood || venue.city || 'the area'}
-              </Text>
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a2e' }]} />
             )}
+          </Animated.View>
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)', '#000']}
+            locations={[0, 0.4, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Back + Share */}
+          <View style={styles.heroTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.heroBtn} activeOpacity={0.8}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={handleToggleSave} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={19} color={saved ? '#a78bfa' : '#fff'} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name="share-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Vibe Tags */}
-          {(venue.vibe_tags || venue.primary_vibes) && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll}>
-              <View style={styles.tagsContainer}>
-                {safeParseArray(venue.vibe_tags || venue.primary_vibes).slice(0, 5).map((tag: string, index: number) => (
-                  <View key={index} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
+          {/* Hero content */}
+          <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
+            {vibes.length > 0 && (
+              <View style={styles.vibeRow}>
+                {vibes.map((v: string, i: number) => (
+                  <View key={i} style={styles.vibePill}>
+                    <Text style={styles.vibePillText}>{v}</Text>
                   </View>
                 ))}
               </View>
-            </ScrollView>
-          )}
+            )}
+            <Text style={styles.heroTitle}>{venue.name}</Text>
+            <Text style={styles.heroMeta}>
+              {venue.neighborhood || venue.city}
+              {category ? ` · ${category.charAt(0).toUpperCase() + category.slice(1)}` : ''}
+              {genres.length > 0 ? ` · ${genres.join(', ')}` : ''}
+            </Text>
+          </Animated.View>
+        </View>
 
-          {/* Music Genres */}
-          {venue.music_genres && safeParseArray(venue.music_genres).length > 0 && (
-            <View style={styles.musicRow}>
-              <Ionicons name="musical-notes" size={14} color={colors.accent} />
-              <Text style={styles.musicText}>
-                {safeParseArray(venue.music_genres).slice(0, 3).join(', ')}
-              </Text>
-            </View>
-          )}
+        {/* ── PRIMARY ACTION ── */}
+        {venue.address && (
+          <View style={styles.primaryActionRow}>
+            <TouchableOpacity style={styles.directionsBtn} onPress={handleDirections} activeOpacity={0.85}>
+              <Ionicons name="navigate" size={16} color="#fff" />
+              <Text style={styles.directionsBtnText}>Directions</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-          {/* Quick Actions - Horizontal Swipeable Row */}
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.actionsScroll}
-            contentContainerStyle={styles.actionsContainer}
-          >
-            {quickActions.map((action) => (
-              <TouchableOpacity
-                key={action.id}
-                style={[
-                  styles.actionPill,
-                  action.primary && styles.actionPillPrimary,
-                ]}
-                onPress={action.onPress}
-                activeOpacity={0.7}
-              >
-                <Ionicons 
-                  name={action.icon as any} 
-                  size={18} 
-                  color={action.primary ? colors.accent : colors.white} 
-                />
-                <Text style={[
-                  styles.actionPillText,
-                  action.primary && styles.actionPillTextPrimary,
-                ]}>
-                  {action.label}
-                </Text>
+        {/* ── SECONDARY ACTIONS — text links ── */}
+        <View style={styles.secondaryActionsRow}>
+          {venue.phone && (
+            <TouchableOpacity onPress={handleCall} activeOpacity={0.7} style={styles.secondaryAction}>
+              <Text style={styles.secondaryActionText}>Call</Text>
+            </TouchableOpacity>
+          )}
+          {venue.phone && venue.instagram_handle && <Text style={styles.secondaryDot}>·</Text>}
+          {venue.instagram_handle && (
+            <TouchableOpacity onPress={handleInstagram} activeOpacity={0.7} style={styles.secondaryAction}>
+              <Text style={styles.secondaryActionText}>Instagram</Text>
+            </TouchableOpacity>
+          )}
+          {venue.website && (
+            <>
+              <Text style={styles.secondaryDot}>·</Text>
+              <TouchableOpacity onPress={() => Linking.openURL(venue.website)} activeOpacity={0.7} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>Website</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Photos & Videos */}
-          {allMedia.length > 0 ? (
-            <View style={styles.section}>
-              <TouchableOpacity 
-                style={styles.sectionHeader}
-                onPress={() => openGallery(0)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.sectionTitle}>Photos & Videos</Text>
-                <View style={styles.mediaCountBadge}>
-                  <Text style={styles.sectionCount}>{allMedia.length}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
-                </View>
-              </TouchableOpacity>
-              
-              <FlatList
-                data={displayedMedia}
-                renderItem={renderMediaItem}
-                keyExtractor={(item, index) => `${item.id}-${index}`}
-                numColumns={3}
-                scrollEnabled={false}
-                contentContainerStyle={styles.mediaGrid}
-              />
-
-              {mediaToShow < allMedia.length && (
-                <TouchableOpacity
-                  style={styles.showMoreButton}
-                  onPress={() => setMediaToShow(prev => Math.min(prev + 9, allMedia.length))}
-                >
-                  <Text style={styles.showMoreText}>
-                    Show {Math.min(9, allMedia.length - mediaToShow)} More
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color={colors.accent} />
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Photos & Videos</Text>
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>Photos coming soon</Text>
-              </View>
-            </View>
+            </>
           )}
+        </View>
 
-          {/* Continue the Night */}
+        {/* ── ABOUT ── */}
+        {description && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Continue the Night</Text>
-            
-            {nextStops.length > 0 ? (
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.nextStopsScroll}
-              >
-                {nextStops.map((stop: NextStop) => (
-                  <NextStopCard
-                    key={stop.id}
-                    stop={stop}
-                    getImage={getNextStopImage}
-                  />
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.nextStopsEmpty}>
-                <Ionicons name="compass-outline" size={28} color={colors.textMuted} />
-                <Text style={styles.nextStopsEmptyText}>Suggestions coming soon</Text>
-              </View>
+            <Text style={styles.sectionLabel}>About</Text>
+            <Text style={styles.bodyText}>
+              {descExpanded ? description : descPreview}
+            </Text>
+            {needsExpand && (
+              <TouchableOpacity onPress={() => setDescExpanded(!descExpanded)} activeOpacity={0.7}>
+                <Text style={styles.readMore}>{descExpanded ? 'Show less' : 'Read more'}</Text>
+              </TouchableOpacity>
             )}
           </View>
+        )}
 
-          {/* View Full Profile */}
-          <TouchableOpacity
-            style={styles.viewProfileButton}
-            onPress={async () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(`/venue/${id}/profile`);
-            }}
-          >
-            <View style={styles.viewProfileContent}>
-              <Ionicons name="expand-outline" size={20} color={colors.accent} />
-              <View style={styles.viewProfileText}>
-                <Text style={styles.viewProfileTitle}>View Full Profile</Text>
-                <Text style={styles.viewProfileSubtitle}>Events · Reviews · More</Text>
-              </View>
+        {/* ── REELS & PHOTOS — reels first ── */}
+        {(venueReels.length > 0 || allPhotos.length > 0) && (
+          <View style={[styles.section, { paddingHorizontal: 0 }]}>
+            <Text style={[styles.sectionLabel, { paddingHorizontal: 20 }]}>{venueReels.length > 0 ? 'Reels & Photos' : 'Photos'}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              pagingEnabled={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
+              decelerationRate="fast"
+            >
+              {venueReels.map((rUrl: string, i: number) => (
+                <View key={'reel-'+i} style={[i === 0 ? styles.photoLarge : styles.photoSmall, { borderRadius: 12, overflow: 'hidden' }]}>
+                  <GalleryReelPlayer uri={rUrl} />
+                  <View style={{ position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
+                  </View>
+                </View>
+              ))}
+              {allPhotos.map((photo: string, i: number) => (
+                <TouchableOpacity key={'photo-'+i} activeOpacity={0.95} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+                  <Image
+                    source={{ uri: photo.startsWith('/') ? `${API_URL}${photo}` : photo }}
+                    style={venueReels.length === 0 && i === 0 ? styles.photoLarge : styles.photoSmall}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── LOCATION MAP ── */}
+        {venue.address && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Location</Text>
+            <View style={styles.mapCard}>
+              {venue.latitude && venue.longitude ? (
+                <MapView
+                  provider={PROVIDER_DEFAULT}
+                  style={styles.mapImage}
+                  scrollEnabled={true}
+                  zoomEnabled={true}
+                  pitchEnabled={true}
+                  rotateEnabled={true}
+                  camera={{
+                    center: { latitude: Number(venue.latitude), longitude: Number(venue.longitude) },
+                    pitch: 55,
+                    heading: 0,
+                    altitude: 350,
+                    zoom: 18,
+                  }}
+                >
+                  <Marker
+                    coordinate={{ latitude: Number(venue.latitude), longitude: Number(venue.longitude) }}
+                  >
+                    <View style={styles.markerOuter}>
+                      <View style={styles.markerInner} />
+                    </View>
+                  </Marker>
+                </MapView>
+              ) : (
+                <View style={styles.mapImageFallback} />
+              )}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.75)']}
+                style={styles.mapGradient}
+                pointerEvents="none"
+              />
+              <TouchableOpacity style={styles.mapOverlay} onPress={handleDirections} activeOpacity={0.85}>
+                <View style={styles.mapPin}>
+                  <Ionicons name="location" size={14} color="#8b5cf6" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mapVenueName}>{venue.name}</Text>
+                  <Text style={styles.mapAddress} numberOfLines={1}>{venue.address?.split(',').slice(0,2).join(',')}</Text>
+                </View>
+                <View style={styles.directionsChip}>
+                  <Text style={styles.directionsChipText}>Directions</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#a78bfa" />
+                </View>
+              </TouchableOpacity>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
+          </View>
+        )}
 
-          <View style={{ height: 120 }} />
-        </View>
+        {/* ── HOURS ── */}
+        {venue.hours_json && venue.hours_json !== '{}' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Hours</Text>
+            {safeParseArray(venue.hours_json).map((h: any, i: number) => (
+              <View key={i} style={styles.hoursRow}>
+                <Text style={styles.hoursDay}>{h.day || h}</Text>
+                <Text style={styles.hoursTime}>{h.hours || ''}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── CONTINUE THE NIGHT — FLOWS ── */}
+        {venueFlows.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Continue the Night</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 28 }} decelerationRate="fast">
+              {venueFlows.slice(0, 2).map((flow: any) => (
+                <FlowCard key={flow.slug} flow={flow} />
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </Animated.ScrollView>
 
-      {/* Sticky CTA */}
-      <View style={styles.stickyCtaContainer}>
-        <LinearGradient
-          colors={['transparent', colors.background]}
-          style={styles.ctaGradient}
-        />
+      {/* Bottom bar */}
+      <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.ctaButton}
-          onPress={async () => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            const isAuthed = await requireAuth('add this to your plans');
-            if (!isAuthed) return;
-            setAddToPlanVisible(true);
-          }}
+          style={styles.bottomBtn}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setAddToPlanVisible(true); }}
+          activeOpacity={0.9}
         >
-          <Ionicons name="add-circle" size={24} color="white" />
-          <Text style={styles.ctaButtonText}>
-            {isEvening ? 'Add to Tonight' : 'Add to Plans'}
-          </Text>
+          <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.bottomBtnText}>Add to Plans</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
-      {/* Gallery Modal - Using VibeMediaViewer */}
-      <VibeMediaViewer
-        visible={galleryVisible}
-        items={viewerMedia}
-        initialIndex={galleryIndex}
-        onClose={() => setGalleryVisible(false)}
-      />
-
-      {/* Add to Plan Sheet */}
-      <AddToPlanSheet
-        visible={addToPlanVisible}
-        onClose={() => setAddToPlanVisible(false)}
-        venue={venue}
-      />
+      {addToPlanVisible && venue && (
+        <AddToPlanSheet
+          venue={venue}
+          onClose={() => setAddToPlanVisible(false)}
+          onSuccess={() => { setAddToPlanVisible(false); }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  topBar: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, zIndex: 100 },
-  backButton: { borderRadius: 12, overflow: 'hidden' },
-  shareButton: { borderRadius: 12, overflow: 'hidden' },
-  blurButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12 },
-  heroContainer: { width: '100%', overflow: 'hidden' },
-  heroImage: { width: '100%', height: '100%' },
-  heroPlaceholder: { flex: 1, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center' },
-  heroGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 150 },
-  content: { paddingHorizontal: 20, paddingTop: 16 },
-  
-  // Header
-  venueName: { fontSize: 28, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 },
-  metaText: { fontSize: 14, color: colors.textSecondary },
-  metaDot: { fontSize: 14, color: colors.textMuted, marginHorizontal: 6 },
-  ratingBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  ratingText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
-  priceText: { fontSize: 14, color: colors.textSecondary },
-  
-  // Badge Row (Weather, Tonight, Hours)
-  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
-  weatherBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  weatherText: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
-  tonightBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.accentDim, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  tonightText: { fontSize: 13, color: colors.accent, fontWeight: '500' },
-  hoursBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, maxWidth: 180 },
-  hoursText: { fontSize: 12, color: colors.textSecondary },
-  
-  // Bio
-  bioSection: { marginBottom: 12 },
-  bioText: { fontSize: 15, lineHeight: 22, color: colors.textSecondary },
-  bioTextMuted: { fontSize: 15, lineHeight: 22, color: colors.textMuted, fontStyle: 'italic' },
-  readMoreText: { fontSize: 14, color: colors.accent, marginTop: 4, fontWeight: '500' },
-  
-  // Tags
-  tagsScroll: { marginBottom: 12 },
-  tagsContainer: { flexDirection: 'row', gap: 8 },
-  tag: { backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.cardBorder },
-  tagText: { fontSize: 13, color: colors.textPrimary },
-  
-  // Music
-  musicRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  musicText: { fontSize: 13, color: colors.textSecondary },
-  
-  // Quick Actions - Horizontal Swipeable
-  actionsScroll: { marginBottom: 24 },
-  actionsContainer: { flexDirection: 'row', gap: 10, paddingRight: 20 },
-  actionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, borderWidth: 1, borderColor: colors.cardBorder },
-  actionPillPrimary: { backgroundColor: colors.accentDim, borderColor: colors.accent },
-  actionPillText: { fontSize: 13, color: colors.white, fontWeight: '500' },
-  actionPillTextPrimary: { color: colors.accent },
-  
-  // Section
-  section: { marginBottom: 24 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
-  sectionCount: { fontSize: 14, color: colors.textSecondary, marginRight: 4 },
-  mediaCountBadge: { flexDirection: 'row', alignItems: 'center' },
-  
-  // Media Grid
-  mediaGrid: { gap: 6 },
-  mediaItem: { width: (SCREEN_WIDTH - 52) / 3, height: (SCREEN_WIDTH - 52) / 3, borderRadius: 8, overflow: 'hidden', backgroundColor: colors.card },
-  mediaThumbnail: { width: '100%', height: '100%' },
-  videoIndicator: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
-  tiktokBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#000', borderRadius: 4, padding: 4 },
-  instagramBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#E1306C', borderRadius: 4, padding: 4 },
-  showMoreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
-  showMoreText: { fontSize: 14, color: colors.accent, fontWeight: '500' },
-  emptyState: { alignItems: 'center', paddingVertical: 20 },
-  emptyStateText: { fontSize: 14, color: colors.textMuted },
-  
-  // Next Stops
-  nextStopsScroll: { paddingRight: 20 },
-  nextStopCard: { width: 140, marginRight: 12, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.card },
-  nextStopImageContainer: { width: '100%', height: 90, position: 'relative' },
-  nextStopImage: { width: '100%', height: '100%' },
-  nextStopImagePlaceholder: { width: '100%', height: '100%', backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center' },
-  nextStopGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 40 },
-  nextStopInfo: { padding: 10 },
-  nextStopName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 },
-  nextStopCategory: { fontSize: 11, color: colors.textSecondary },
-  nextStopsEmpty: { alignItems: 'center', paddingVertical: 24, backgroundColor: colors.card, borderRadius: 12 },
-  nextStopsEmptyText: { fontSize: 14, color: colors.textMuted, marginTop: 8 },
-  
-  // View Profile
-  viewProfileButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.cardBorder },
-  viewProfileContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  viewProfileText: { gap: 2 },
-  viewProfileTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
-  viewProfileSubtitle: { fontSize: 12, color: colors.textSecondary },
-  
-  // Sticky CTA
-  stickyCtaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: Platform.OS === 'ios' ? 34 : 20, paddingHorizontal: 20, paddingTop: 16, zIndex: 10 },
-  ctaGradient: { position: 'absolute', top: -30, left: 0, right: 0, height: 30 },
-  ctaButton: { backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, gap: 8 },
-  ctaButtonText: { fontSize: 16, fontWeight: '700', color: colors.white },
-  
-  // Gallery
-  galleryContainer: { flex: 1, backgroundColor: 'black' },
-  galleryHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 16, paddingBottom: 16 },
-  galleryCloseButton: { padding: 8 },
-  galleryCounter: { fontSize: 16, color: 'white', fontWeight: '600' },
-  gallerySlide: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, justifyContent: 'center', alignItems: 'center' },
-  galleryImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+  container: { flex: 1, backgroundColor: '#000' },
+  loader: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+
+  floatingNav: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 100,
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  floatingNavInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  floatingNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  floatingNavTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
+
+  heroContainer: { height: HERO_HEIGHT, overflow: 'hidden' },
+  heroTopRow: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 40, zIndex: 10,
+  },
+  heroBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroContent: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 20, paddingBottom: 24,
+  },
+  vibeRow: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  vibePill: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  vibePillText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+  heroTitle: { fontSize: 30, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 6, lineHeight: 34 },
+  heroMeta: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
+
+  primaryActionRow: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 0,
+  },
+  directionsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  directionsBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000',
+    letterSpacing: -0.2,
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  secondaryAction: { paddingVertical: 4, paddingHorizontal: 4 },
+  secondaryActionText: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '400',
+  },
+  secondaryDot: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.2)',
+  },
+
+  section: { paddingHorizontal: 20, paddingTop: 28 },
+  sectionLabel: {
+    fontSize: 11, fontWeight: '700', color: '#52525b',
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
+  },
+  bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.72)', lineHeight: 24 },
+  readMore: { fontSize: 14, color: '#a78bfa', marginTop: 8, fontWeight: '500' },
+
+  photoLarge: { width: SCREEN_WIDTH * 0.72, height: 220, borderRadius: 14 },
+  photoSmall: { width: SCREEN_WIDTH * 0.45, height: 220, borderRadius: 14 },
+
+  mapCard: {
+    borderRadius: 16,
+    backgroundColor: '#111',
+    overflow: 'hidden',
+  },
+  mapCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 16, gap: 12,
+  },
+  mapPin: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mapVenueName: { fontSize: 14, fontWeight: '600', color: '#fff', marginBottom: 2 },
+  mapAddress: { fontSize: 12, color: '#a1a1aa', lineHeight: 16 },
+  directionsChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(139,92,246,0.12)',
+    borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  directionsChipText: { fontSize: 11, color: '#a78bfa', fontWeight: '500' },
+
+  mapImage: { width: '100%', height: 180, borderRadius: 16 },
+  markerOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(139,92,246,0.35)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
+  mapView: { width: '100%', height: 180, borderRadius: 16 },
+  mapImageFallback: { width: '100%', height: 180, borderRadius: 16, backgroundColor: '#0d0d1a', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  mapGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  mapGridLine: { position: 'absolute', backgroundColor: 'rgba(139,92,246,0.08)' },
+  mapCenterPin: { alignItems: 'center' },
+  mapPinOuter: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.3)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  mapPinInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
+  mapPinStem: { width: 2, height: 10, backgroundColor: '#8b5cf6', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  mapGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
+  mapOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
+  hoursRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f1f1f',
+  },
+  hoursDay: { fontSize: 14, color: '#e4e4e7', fontWeight: '500' },
+  hoursTime: { fontSize: 14, color: '#71717a' },
+
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    paddingHorizontal: 20, paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  bottomBtn: { borderRadius: 14, overflow: 'hidden' },
+  bottomBtnGradient: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 16,
+  },
+  bottomBtnText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
 });

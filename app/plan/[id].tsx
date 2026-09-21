@@ -40,7 +40,7 @@ const colors = {
   danger: '#EF4444',
 };
 
-const EMOJI_OPTIONS = ['✨', '🌙', '🎉', '❤️', '🎂', '👔', '💄', '🍸', '🎵', '🔥', '🌴', '🎭', '🍕', '☕️', '🏖️'];
+const EMOJI_OPTIONS = ['', '🌙', '🎉', '❤️', '🎂', '👔', '💄', '🍸', '🎵', '🔥', '🌴', '🎭', '🍕', '☕️', '🏖️'];
 
 const DATE_OPTIONS = [
   { label: 'Tonight', value: 'tonight' },
@@ -59,7 +59,7 @@ export default function PlanDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editEmoji, setEditEmoji] = useState('✨');
+  const [editEmoji, setEditEmoji] = useState('');
   const [selectedDateOption, setSelectedDateOption] = useState('none');
   const [customDate, setCustomDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -70,7 +70,7 @@ export default function PlanDetailScreen() {
       const data = await getPlan(planId);
       setPlan(data);
       setEditName(data.name);
-      setEditEmoji(data.emoji || '✨');
+      setEditEmoji(data.emoji || '');
       
       // Determine date option
       if (data.is_tonight) {
@@ -155,7 +155,7 @@ export default function PlanDetailScreen() {
     try {
       const shareUrl = await sharePlan(plan.id);
       await Share.share({
-        message: `Check out my plan "${plan.name}" on Lumina!\n${shareUrl}`,
+        message: `Check out my plan "${plan.name}" on Viberyte!\n${shareUrl}`,
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -173,7 +173,7 @@ export default function PlanDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeVenueFromPlan(item.id);
+              await removeVenueFromPlan(plan.id, item.id);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               setPlan(prev => prev ? {
                 ...prev,
@@ -216,11 +216,9 @@ export default function PlanDetailScreen() {
       }}
       onLongPress={() => handleRemoveVenue(item)}
       delayLongPress={500}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
     >
-      <View style={styles.stopNumber}>
-        <Text style={styles.stopNumberText}>{index + 1}</Text>
-      </View>
+      <Text style={styles.stopIndex}>{index + 1}</Text>
 
       <View style={styles.venueImageContainer}>
         {item.venue_photo ? (
@@ -339,21 +337,15 @@ export default function PlanDetailScreen() {
       {/* Venues List */}
       {plan.items.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>📍</Text>
-          <Text style={styles.emptyTitle}>No venues yet</Text>
+          <Text style={styles.emptyTitle}>Your night starts here</Text>
           <Text style={styles.emptySubtitle}>
-            Browse venues and add them to this plan
+            Add restaurants, lounges, and events to build your itinerary.
           </Text>
           <TouchableOpacity
             style={styles.exploreButton}
             onPress={() => router.push('/explore')}
           >
-            <LinearGradient
-              colors={[colors.accent, '#7C3AED']}
-              style={styles.exploreButtonGradient}
-            >
-              <Text style={styles.exploreButtonText}>Find Venues</Text>
-            </LinearGradient>
+            <Text style={styles.exploreButtonText}>Find Venues</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -378,26 +370,22 @@ export default function PlanDetailScreen() {
       {/* Bottom CTA */}
       {plan.items.length > 0 && (
         <View style={styles.bottomActions}>
-          <LinearGradient
-            colors={['transparent', colors.background]}
-            style={styles.bottomGradient}
-          />
+
           <TouchableOpacity
             style={styles.startButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              if (plan.items[0]) {
-                router.push(`/venue/${plan.items[0].venue_id}`);
-              }
+              const stops = plan.items?.map((item: any) => item.venue_name).filter(Boolean).join(' → ');
+              const shareUrl = `https://viberyte.com/plan/${plan.share_code || plan.id}`;
+              const message = stops 
+                ? `Tonight: ${stops}\n${shareUrl}`
+                : shareUrl;
+              Share.share({ message, url: shareUrl, title: plan.name });
             }}
+            activeOpacity={0.88}
           >
-            <LinearGradient
-              colors={[colors.accent, '#7C3AED']}
-              style={styles.startButtonGradient}
-            >
-              <Ionicons name="navigate" size={20} color="white" />
-              <Text style={styles.startButtonText}>Start Night</Text>
-            </LinearGradient>
+            <Ionicons name="share-outline" size={18} color="white" />
+            <Text style={styles.startButtonText}>Share My Night</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -423,30 +411,34 @@ export default function PlanDetailScreen() {
             
             <Text style={styles.modalTitle}>Edit Plan</Text>
 
-            {/* Emoji Picker */}
-            <Text style={styles.modalLabel}>Icon</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.emojiPicker}
-              contentContainerStyle={styles.emojiPickerContent}
-            >
-              {EMOJI_OPTIONS.map((emoji) => (
+            {/* Plan Type */}
+            <Text style={styles.modalLabel}>Type</Text>
+            <View style={styles.planTypeGrid}>
+              {[
+                { value: 'date_night', label: 'Date Night' },
+                { value: 'friends', label: 'Friends' },
+                { value: 'solo', label: 'Solo' },
+                { value: 'celebration', label: 'Celebration' },
+                { value: 'business', label: 'Business' },
+              ].map((type) => (
                 <TouchableOpacity
-                  key={emoji}
+                  key={type.value}
                   style={[
-                    styles.emojiOption,
-                    editEmoji === emoji && styles.emojiOptionSelected,
+                    styles.planTypeOption,
+                    editEmoji === type.value && styles.planTypeOptionSelected,
                   ]}
                   onPress={() => {
                     Haptics.selectionAsync();
-                    setEditEmoji(emoji);
+                    setEditEmoji(type.value);
                   }}
                 >
-                  <Text style={styles.emojiText}>{emoji}</Text>
+                  <Text style={[
+                    styles.planTypeText,
+                    editEmoji === type.value && styles.planTypeTextSelected,
+                  ]}>{type.label}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
 
             {/* Name Input */}
             <Text style={styles.modalLabel}>Name</Text>
@@ -603,12 +595,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    marginBottom: 8,
   },
   dateChip: {
     flexDirection: 'row',
@@ -641,30 +631,24 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 120,
   },
+  stopIndex: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.2)',
+    width: 18,
+    textAlign: 'center',
+  },
   venueCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    gap: 14,
   },
-  stopNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  stopNumberText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  
+  
   venueImageContainer: {
     width: 56,
     height: 56,
@@ -719,12 +703,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderStyle: 'dashed',
     gap: 8,
+    paddingVertical: 18,
+    marginHorizontal: 20,
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderStyle: 'dashed',
   },
   addMoreText: {
     color: colors.accent,
@@ -739,10 +725,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
+  
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
@@ -756,17 +739,18 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   exploreButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
+    backgroundColor: '#7c3aed',
+    borderRadius: 13,
+    paddingVertical: 15,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    marginTop: 20,
   },
-  exploreButtonGradient: {
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-  },
+  
   exploreButtonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    color: '#fff',
   },
 
   // Bottom Actions
@@ -787,20 +771,20 @@ const styles = StyleSheet.create({
     height: 40,
   },
   startButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  startButtonGradient: {
+    backgroundColor: '#7c3aed',
+    borderRadius: 14,
+    paddingVertical: 17,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
-    gap: 10,
+    gap: 8,
   },
+  
   startButtonText: {
-    color: 'white',
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: -0.2,
   },
 
   // Modal
@@ -839,6 +823,32 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  planTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+  },
+  planTypeOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  planTypeOptionSelected: {
+    borderColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  planTypeText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '500',
+  },
+  planTypeTextSelected: {
+    color: '#fff',
   },
   emojiPicker: {
     marginBottom: 20,

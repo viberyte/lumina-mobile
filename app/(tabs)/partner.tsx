@@ -24,7 +24,7 @@ import { colors } from '../../theme';
 
 const { width } = Dimensions.get('window');
 const CARD_SIZE = (width - 52) / 2;
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 const TIERS = {
   claimed: { display: 'Verified', color: colors.zinc[400], bgColor: 'rgba(113, 113, 122, 0.15)', icon: 'checkmark-circle' },
@@ -170,16 +170,16 @@ export default function PartnerCommandCenter() {
 
         <View style={styles.cardGrid}>
           <View style={styles.cardRow}>
-            <CommandCard icon="qr-code-outline" title="Door" subtitle="Check-In" gradient={['#1C1C24', '#12121A']} glowColor="rgba(139, 92, 246, 0.08)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/door') : handleLockedFeature('Door Management', 'Lumina Elite')} />
-            <CommandCard icon="flash" title="Boost" subtitle="Promote Now" gradient={['#1A142A', '#0C0C1A']} glowColor="rgba(139, 92, 246, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push("/partner/boost") : handleLockedFeature("Boost", "Lumina Elite")} />
+            <CommandCard icon="qr-code-outline" title="Door" subtitle="Check-In" gradient={['#1C1C24', '#12121A']} glowColor="rgba(139, 92, 246, 0.08)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/door') : handleLockedFeature('Door Management', 'Viberyte Elite')} />
+            <CommandCard icon="flash" title="Boost" subtitle="Promote Now" gradient={['#1A142A', '#0C0C1A']} glowColor="rgba(139, 92, 246, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push("/partner/boost") : handleLockedFeature("Boost", "Viberyte Elite")} />
           </View>
           <View style={styles.cardRow}>
-            <CommandCard icon="mail-unread" title="Requests" subtitle={pendingRequests > 0 ? `${pendingRequests} pending` : 'Inbox'} gradient={['#14202A', '#0C1620']} glowColor="rgba(59, 130, 246, 0.1)" badge={isElite ? pendingRequests : undefined} locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/requests') : handleLockedFeature('Booking Requests', 'Lumina Elite')} />
-            <CommandCard icon="calendar" title="Bookings" subtitle="Tonight" gradient={['#142A20', '#0C1A14']} glowColor="rgba(34, 197, 94, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/bookings') : handleLockedFeature('Bookings', 'Lumina Elite')} />
+            <CommandCard icon="mail-unread" title="Requests" subtitle={pendingRequests > 0 ? `${pendingRequests} pending` : 'Inbox'} gradient={['#14202A', '#0C1620']} glowColor="rgba(59, 130, 246, 0.1)" badge={isElite ? pendingRequests : undefined} locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/requests') : handleLockedFeature('Booking Requests', 'Viberyte Elite')} />
+            <CommandCard icon="calendar" title="Bookings" subtitle="Tonight" gradient={['#142A20', '#0C1A14']} glowColor="rgba(34, 197, 94, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/bookings') : handleLockedFeature('Bookings', 'Viberyte Elite')} />
           </View>
           <View style={styles.cardRow}>
             <CommandCard icon="sparkles" title="Events" subtitle="Manage" gradient={['#2A1428', '#1A0C1A']} glowColor="rgba(168, 85, 247, 0.1)" onPress={() => router.push('/partner/events')} />
-            <CommandCard icon="stats-chart" title="Stats" subtitle="Analytics" gradient={['#2A2414', '#1A180C']} glowColor="rgba(234, 179, 8, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/analytics') : handleLockedFeature('Analytics', 'Lumina Elite')} />
+            <CommandCard icon="stats-chart" title="Stats" subtitle="Analytics" gradient={['#2A2414', '#1A180C']} glowColor="rgba(234, 179, 8, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/analytics') : handleLockedFeature('Analytics', 'Viberyte Elite')} />
           </View>
         </View>
 

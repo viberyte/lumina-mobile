@@ -21,7 +21,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 const PACKAGE_TEMPLATES = [
   { name: 'Standard Table', description: 'Great energy, prime seating', bottles: 2 },
@@ -67,8 +67,6 @@ export default function EditPackages() {
 
   const getAuthToken = async (): Promise<string | null> => {
     try {
-      const t = await AsyncStorage.getItem('partner_token');
-      if (t) return t;
       const session = await AsyncStorage.getItem('lumina_partner_session');
       if (!session) return null;
       return JSON.parse(session).token;

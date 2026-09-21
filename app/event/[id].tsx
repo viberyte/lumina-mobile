@@ -9,44 +9,52 @@ import {
   StyleSheet,
   Dimensions,
   Share,
-  Image,
   Animated,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import LoadingScreen from '../../components/LoadingScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import luminaApi from '../../services/lumina';
 import { colors } from '../../theme';
-import { getVibeGradient } from '../../theme/vibeGradients';
-import EventCarousel from '../../components/EventCarousel';
 import AddEventToPlanSheet from '../../components/AddEventToPlanSheet';
 import { useToast } from '../../contexts/ToastContext';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HEADER_HEIGHT = 400;
-const API_URL = 'https://lumina.viberyte.com';
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HERO_HEIGHT = SCREEN_HEIGHT * 0.55;
+const API_URL = 'https://viberyte.com';
 
-// Timezone-safe date parser
 const parseEventDate = (dateString: string): Date => {
   if (!dateString) return new Date();
-  if (dateString.includes("T")) return new Date(dateString);
-  const parts = dateString.split("-").map(p => parseInt(p));
+  if (dateString.includes('T')) return new Date(dateString);
+  const parts = dateString.split('-').map(p => parseInt(p));
   if (parts.length === 3) return new Date(parts[0], parts[1] - 1, parts[2]);
   return new Date(dateString);
 };
 
-// Format date for display
 const formatEventDate = (dateString: string): string => {
+  if (!dateString) return '';
   const date = parseEventDate(dateString);
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  const day = date.getDate();
-  return `${month} ${day}`;
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 };
 
+const formatEventTime = (timeString: string): string => {
+  if (!timeString) return '';
+  if (timeString.includes('AM') || timeString.includes('PM')) return timeString;
+  const parts = timeString.split(':');
+  let hours = parseInt(parts[0]);
+  const minutes = parts[1] || '00';
+  if (isNaN(hours)) return timeString;
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return minutes === '00' ? `${hours} ${ampm}` : `${hours}:${minutes} ${ampm}`;
+};
 
 interface Package {
   id: string;
@@ -108,30 +116,47 @@ export default function EventDetailScreen() {
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const { showToast } = useToast();
-  
+
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [relatedEvents, setRelatedEvents] = useState<RelatedEvent[]>([]);
-  const [vibeGradient, setVibeGradient] = useState<{ colors: string[] } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [showAddToPlan, setShowAddToPlan] = useState(false);
-  const [showFullLineup, setShowFullLineup] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
 
-  // Memoize safe packages
   const safePackages = useMemo(() => {
     return (event?.packages || []).filter(
       (p): p is Package => !!p?.name && typeof p.price === 'number'
     );
   }, [event?.packages]);
 
-  const hasBookingOptions = safePackages.length > 0 || (event?.sections || []).length > 0;
+  // Trust the server's gate: only paying NightLink venues get booking options.
+  // Free + scraped events come back hasBookingOptions=false (flyer only).
+  const hasBookingOptions = event?.hasBookingOptions === true;
+
+  // Parallax hero
+  const heroTranslate = scrollY.interpolate({
+    inputRange: [-HERO_HEIGHT, 0, HERO_HEIGHT],
+    outputRange: [HERO_HEIGHT * 0.4, 0, -HERO_HEIGHT * 0.3],
+    extrapolate: 'clamp',
+  });
+
+  const heroOpacity = scrollY.interpolate({
+    inputRange: [0, HERO_HEIGHT * 0.5],
+    outputRange: [1, 0.3],
+    extrapolate: 'clamp',
+  });
+
+  const navOpacity = scrollY.interpolate({
+    inputRange: [HERO_HEIGHT * 0.4, HERO_HEIGHT * 0.7],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   useEffect(() => {
-    if (id) {
-      loadUserIdThenFetch();
-    }
+    StatusBar.setBarStyle('light-content');
+    if (id) loadUserIdThenFetch();
   }, [id]);
 
   const loadUserIdThenFetch = async () => {
@@ -148,99 +173,61 @@ export default function EventDetailScreen() {
         setUserId(uid);
         return uid;
       }
-    } catch (error) {
-      console.log('Could not load user ID');
-    }
+    } catch {}
     setUserId('guest');
     return 'guest';
   };
 
-  // Check Instagram verification from local profile
   const checkInstagramVerified = async (): Promise<boolean> => {
     try {
       const profile = await AsyncStorage.getItem('@lumina_profile');
       const user = profile ? JSON.parse(profile) : null;
       return !!user?.instagram_verified_at;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   };
 
   const checkIfSaved = async (uid: string) => {
     if (!uid || uid === 'guest') return;
     try {
-      const response = await fetch(
-        `${API_URL}/api/favorites?userId=${uid}&type=event`
-      );
+      const response = await fetch(`${API_URL}/api/favorites?userId=${uid}&type=event`);
       const data = await response.json();
       const saved = data.items?.some((item: { item_id: number }) => item.item_id === Number(id));
       setIsSaved(saved || false);
-    } catch (error) {
-      console.log('Could not check saved status');
-    }
+    } catch {}
   };
 
   const handleSaveEvent = async () => {
     if (!userId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (isSaved) {
-        await fetch(
-          `${API_URL}/api/favorites?userId=${userId}&itemType=event&itemId=${id}`,
-          { method: 'DELETE' }
-        );
+        await fetch(`${API_URL}/api/favorites?userId=${userId}&itemType=event&itemId=${id}`, { method: 'DELETE' });
         setIsSaved(false);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showToast('Removed from saved', 'info');
       } else {
         await fetch(`${API_URL}/api/favorites`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            itemType: 'event',
-            itemId: Number(id),
-          }),
+          body: JSON.stringify({ userId, itemType: 'event', itemId: Number(id) }),
         });
         setIsSaved(true);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showToast('Event saved!', 'success');
+        showToast('Saved', 'success');
       }
-    } catch (error) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showToast('Could not save event', 'error');
+    } catch {
+      showToast('Could not save', 'error');
     }
   };
 
-  const handleAddToPlan = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAddToPlan(true);
-  };
-
-  const handleAddToPlanSuccess = () => {
-    setShowAddToPlan(false);
-    showToast('Added to your plan!', 'success');
-  };
-
-  // Book Table with IG verification gate
   const handleBookTable = async () => {
-    if (bookingLoading) return;
+    if (bookingLoading || !event) return;
     setBookingLoading(true);
-    
-    if (!event) { 
-      setBookingLoading(false); 
-      return; 
-    }
-
     const isVerified = await checkInstagramVerified();
-    
     if (!isVerified) {
       showToast('Verify Instagram to book tables', 'info');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       router.push('/verify/instagram');
       setBookingLoading(false);
       return;
     }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push({
       pathname: '/booking/new',
@@ -256,44 +243,26 @@ export default function EventDetailScreen() {
     setBookingLoading(false);
   };
 
-  // Message Promoter with IG verification gate
   const handleMessagePromoter = async () => {
-    if (!event?.partner?.id) {
-      showToast('Promoter not available', 'error');
-      return;
-    }
-
+    if (!event?.partner?.id) return;
     const isVerified = await checkInstagramVerified();
-    
     if (!isVerified) {
-      showToast('Verify Instagram to message promoters', 'info');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       router.push('/verify/instagram');
       return;
     }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
       pathname: '/booking/chat',
-      params: {
-        partner_id: String(event.partner.id),
-        event_id: String(event.id),
-        venue_name: event.venue_name || '',
-      },
+      params: { partner_id: String(event.partner.id), event_id: String(event.id), venue_name: event.venue_name || '' },
     });
   };
 
   const fetchEvent = async (uid: string) => {
     try {
       setLoading(true);
-      
       const response = await fetch(`${API_URL}/api/events/${id}`);
       const result = await response.json();
-      
-      if (!result.success || !result.event) {
-        throw new Error('Event not found');
-      }
-      
+      if (!result.success || !result.event) throw new Error('Event not found');
       const eventData: EventDetail = {
         id: result.event.id,
         title: result.event.title,
@@ -317,565 +286,562 @@ export default function EventDetailScreen() {
         bookingMode: result.event.bookingMode || 'request',
         partner: result.event.partner || null,
       };
-      
       setEvent(eventData);
       await checkIfSaved(uid);
-      
-      const genre = eventData.genre?.toLowerCase() || '';
-      let gradientKey = 'high-energy';
-      if (genre.includes('afrobeat')) gradientKey = 'afrobeats';
-      else if (genre.includes('hip-hop') || genre.includes('rap')) gradientKey = 'hip-hop';
-      else if (genre.includes('edm') || genre.includes('house')) gradientKey = 'edm';
-      else if (genre.includes('latin')) gradientKey = 'afrobeats';
-      else if (genre.includes('r&b') || genre.includes('rnb')) gradientKey = 'chill';
-      
-      const gradient = getVibeGradient([], [gradientKey], 'nightlife');
-      setVibeGradient(gradient);
-      
       if (eventData.genre) {
         try {
           const related = await luminaApi.getEventsByGenre(eventData.city, eventData.genre);
-          setRelatedEvents(related.filter((e: RelatedEvent) => e.id !== Number(id)).slice(0, 6));
-        } catch (e) {
-          console.log('Could not fetch related events');
-        }
+          setRelatedEvents((related || []).filter((e: RelatedEvent) => e.id !== eventData.id).slice(0, 6));
+        } catch {}
       }
     } catch (error) {
-      console.error('Error fetching event:', error);
+      showToast('Could not load event', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const generateNightLink = (evt: EventDetail) => {
-    const slug = evt.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    return `https://lumina.viberyte.com/e/${slug}-${evt.id}`;
+  const openDirections = () => {
+    if (!event?.venue_address) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const encoded = encodeURIComponent(event.venue_address);
+    const url = `https://maps.apple.com/?daddr=${encoded}`;
+    Linking.openURL(url);
   };
 
   const handleShare = async () => {
     if (!event) return;
-    const nightLink = generateNightLink(event);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await Share.share({
-        message: `${event.title} — ${nightLink}`,
-        url: nightLink,
+        message: `${event.title} at ${event.venue_name || event.city}\n${formatEventDate(event.date)}\n\nhttps://viberyte.com/e/${event.id}`,
       });
-    } catch (error) {
-      console.error('Share error:', error);
-    }
+    } catch {}
   };
 
-  const handleGetTickets = () => {
-    if (event?.ticket_url) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Linking.openURL(event.ticket_url);
-    }
+  const getLineupArray = (): string[] => {
+    if (!event?.lineup) return [];
+    if (Array.isArray(event.lineup)) return event.lineup;
+    try { return JSON.parse(event.lineup); } catch {}
+    return event.lineup.split(',').map(s => s.trim()).filter(Boolean);
   };
-
-  const handleVenuePress = () => {
-    if (event?.venue_id) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push(`/venue/${event.venue_id}`);
-    }
-  };
-
-  const handleDirections = () => {
-    if (event?.venue_address) {
-      const url = Platform.select({
-        ios: `maps:?q=${encodeURIComponent(event.venue_address)}`,
-        android: `geo:0,0?q=${encodeURIComponent(event.venue_address)}`,
-      });
-      if (url) Linking.openURL(url);
-    } else if (event?.venue_name) {
-      const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.venue_name)}`;
-      Linking.openURL(url);
-    }
-  };
-
-  const partnerName = event?.partner?.name || 'Promoter';
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.violet[500]} />
-        <Text style={styles.loadingText}>Loading event...</Text>
-      </View>
+      <LoadingScreen />
     );
   }
 
   if (!event) {
     return (
       <View style={styles.loadingContainer}>
-        <Ionicons name="calendar-outline" size={48} color={colors.zinc[600]} />
         <Text style={styles.errorText}>Event not found</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Go Back</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={{ color: '#8b5cf6' }}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const lineupArray = Array.isArray(event.lineup) 
-    ? event.lineup 
-    : typeof event.lineup === 'string' 
-      ? event.lineup.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
-  
-  const displayedLineup = showFullLineup ? lineupArray : lineupArray.slice(0, 5);
-  const hasMoreLineup = lineupArray.length > 5;
+  const lineup = getLineupArray();
+  const timeDisplay = event.time ? formatEventTime(event.time) : null;
+  const dateDisplay = event.date ? formatEventDate(event.date) : null;
+  const primaryCTA = event.ticket_url ? 'tickets' : hasBookingOptions ? 'book' : null;
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      {/* Floating nav bar — appears on scroll */}
+      <Animated.View style={[styles.floatingNav, { opacity: navOpacity, paddingTop: insets.top }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.floatingNavBtn}>
+          <Ionicons name="chevron-back" size={20} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.floatingNavTitle} numberOfLines={1}>{event.title}</Text>
+        <TouchableOpacity onPress={handleShare} style={styles.floatingNavBtn}>
+          <Ionicons name="share-outline" size={20} color="#fff" />
+        </TouchableOpacity>
+      </Animated.View>
+
       <Animated.ScrollView
-        style={styles.scrollView}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
-        {/* Header Image */}
-        <View style={styles.header}>
-          {event.image_url ? (
-            <Image source={{ uri: event.image_url }} style={styles.headerImage} resizeMode="cover" />
-          ) : (
-            <LinearGradient
-              colors={vibeGradient?.colors || [colors.violet[600], colors.violet[900]]}
-              style={styles.headerImage}
+        {/* ── HERO ── */}
+        <View style={styles.heroContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: heroTranslate }] }]}>
+            <ExpoImage
+              source={{ uri: event.image_url || '' }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={300}
             />
-          )}
+          </Animated.View>
+
+          {/* Deep gradient overlay */}
           <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.8)', colors.zinc[900]]}
-            style={styles.headerGradient}
+            colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.85)', '#000']}
+            locations={[0, 0.4, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
           />
-        </View>
 
-        {/* Back Button */}
-        <TouchableOpacity 
-          style={[styles.backButton, { top: insets.top + 10 }]} 
-          onPress={() => router.back()}
-        >
-          <View style={styles.iconButton}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </View>
-        </TouchableOpacity>
-
-        {/* Save Button */}
-        <TouchableOpacity 
-          style={[styles.saveButton, { top: insets.top + 10 }]} 
-          onPress={handleSaveEvent}
-        >
-          <View style={styles.iconButton}>
-            <Ionicons name={isSaved ? "heart" : "heart-outline"} size={22} color={isSaved ? colors.pink[500] : "#fff"} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Share Button */}
-        <TouchableOpacity 
-          style={[styles.shareButton, { top: insets.top + 10 }]} 
-          onPress={handleShare}
-        >
-          <View style={styles.iconButton}>
-            <Ionicons name="share-outline" size={22} color="#fff" />
-          </View>
-        </TouchableOpacity>
-
-        {/* Content */}
-        <View style={styles.content}>
-          <Text style={styles.eventTitle}>{event.title}</Text>
-
-          <View style={styles.dateTimeRow}>
-            <View style={styles.dateTimeBadge}>
-              <Ionicons name="calendar" size={16} color={colors.violet[400]} />
-              <Text style={styles.dateTimeText}>{formatEventDate(event.date)}</Text>
+          {/* Back + Share — always visible */}
+          <View style={[styles.heroTopRow, { paddingTop: insets.top + 12 }]}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.heroBtn} activeOpacity={0.8}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.heroTopRight}>
+              <TouchableOpacity onPress={handleSaveEvent} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={20} color={isSaved ? '#a78bfa' : '#fff'} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
+                <Ionicons name="share-outline" size={20} color="#fff" />
+              </TouchableOpacity>
             </View>
-            {event.time && (
-              <View style={styles.dateTimeBadge}>
-                <Ionicons name="time" size={16} color={colors.violet[400]} />
-                <Text style={styles.dateTimeText}>{event.time}</Text>
+          </View>
+
+          {/* Hero content */}
+          <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
+            {event.genre && (
+              <View style={styles.genrePill}>
+                <Ionicons name="musical-note" size={11} color="#a78bfa" />
+                <Text style={styles.genrePillText}>{event.genre}</Text>
               </View>
             )}
-          </View>
+            <Text style={styles.heroTitle}>{event.title}</Text>
+            <Text style={styles.heroMeta}>
+              {event.venue_name}{dateDisplay ? ` · ${dateDisplay}` : ''}{timeDisplay ? ` · ${timeDisplay}` : ''}
+            </Text>
+          </Animated.View>
+        </View>
 
-          {event.genre && (
-            <TouchableOpacity 
-              style={styles.genreBadge}
-              onPress={() => router.push(`/(tabs)/explore?genre=${encodeURIComponent(event.genre || '')}`)}
+        {/* ── PRIMARY CTA ── */}
+        <View style={styles.ctaSection}>
+          {primaryCTA === 'tickets' && (
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
+              activeOpacity={0.9}
             >
-              <Ionicons name="musical-notes" size={14} color={colors.violet[300]} />
-              <Text style={styles.genreText}>{event.genre}</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.violet[400]} />
+              <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Ionicons name="ticket-outline" size={18} color="#fff" />
+                <Text style={styles.primaryButtonText}>Get Tickets</Text>
+              </LinearGradient>
             </TouchableOpacity>
           )}
+          {primaryCTA === 'book' && (
+            <TouchableOpacity style={styles.primaryButton} onPress={handleBookTable} activeOpacity={0.9} disabled={bookingLoading}>
+              <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Ionicons name="wine-outline" size={18} color="#fff" />
+                <Text style={styles.primaryButtonText}>{bookingLoading ? 'Loading...' : 'Reserve a Table'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={18} color="#a78bfa" />
+            <Text style={styles.secondaryButtonText}>Add to Plan</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Packages / Bottle Service */}
-          {safePackages.length > 0 && (
-            <View style={styles.packagesSection}>
-              <Text style={styles.sectionTitle}>🍾 Bottle Service</Text>
-              <View style={styles.packagesContainer}>
-                {safePackages.map((pkg, index) => (
-                  <View key={pkg.id || index} style={styles.packageCard}>
-                    <View style={styles.packageHeader}>
-                      <Text style={styles.packageName}>{pkg.name}</Text>
-                      <Text style={styles.packagePrice}>${pkg.price}</Text>
-                    </View>
-                    {pkg.description && (
-                      <Text style={styles.packageDescription}>{pkg.description}</Text>
-                    )}
-                    <View style={styles.packageDetails}>
-                      {pkg.bottleCount && (
-                        <View style={styles.packageDetail}>
-                          <Ionicons name="wine" size={14} color={colors.violet[400]} />
-                          <Text style={styles.packageDetailText}>{pkg.bottleCount} bottles</Text>
-                        </View>
-                      )}
-                      {pkg.maxGuests && (
-                        <View style={styles.packageDetail}>
-                          <Ionicons name="people" size={14} color={colors.violet[400]} />
-                          <Text style={styles.packageDetailText}>Up to {pkg.maxGuests} guests</Text>
-                        </View>
-                      )}
-                    </View>
+        {/* ── ABOUT ── */}
+        {event.description && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>About</Text>
+            <Text style={styles.bodyText}>{event.description}</Text>
+          </View>
+        )}
+
+        {/* ── LINEUP ── */}
+        {lineup.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Lineup</Text>
+            <View style={styles.lineupList}>
+              {lineup.map((artist, i) => (
+                <View key={i} style={styles.lineupItem}>
+                  <View style={styles.lineupDot} />
+                  <Text style={styles.lineupName}>{artist}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ── YOUR NIGHT TIMELINE ── */}
+        {event.venue_name && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Your Night</Text>
+            <View style={styles.timeline}>
+              {timeDisplay && (
+                <View style={styles.timelineRow}>
+                  <Text style={styles.timelineTime}>{timeDisplay}</Text>
+                  <View style={styles.timelineLine} />
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineTitle}>Arrive at {event.venue_name}</Text>
+                    <Text style={styles.timelineSub}>{event.venue_address?.split(',').slice(0, 2).join(',') || event.city}</Text>
                   </View>
-                ))}
-              </View>
-              <TouchableOpacity style={styles.bookNowBtn} onPress={handleBookTable}>
-                <LinearGradient
-                  colors={[colors.violet[600], colors.violet[700]]}
-                  style={styles.bookNowGradient}
-                >
-                  <Ionicons name="wine" size={20} color="#fff" />
-                  <Text style={styles.bookNowText}>Book a Table</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-              {event.bookingMode === 'request' && (
-                <Text style={styles.bookingModeHint}>
-                  Request-based booking • Chat with {partnerName} to confirm
-                </Text>
+                </View>
+              )}
+              {event.peak_hours && (
+                <View style={styles.timelineRow}>
+                  <Text style={styles.timelineTime}>{event.peak_hours}</Text>
+                  <View style={styles.timelineLine} />
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineTitle}>Peak energy</Text>
+                    <Text style={styles.timelineSub}>Best time to be on the floor</Text>
+                  </View>
+                </View>
+              )}
+              {!timeDisplay && !event.peak_hours && (
+                <View style={styles.timelineRow}>
+                  <Text style={styles.timelineTime}>Tonight</Text>
+                  <View style={styles.timelineLine} />
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineTitle}>{event.venue_name}</Text>
+                    <Text style={styles.timelineSub}>{event.city}</Text>
+                  </View>
+                </View>
               )}
             </View>
-          )}
+          </View>
+        )}
 
-          {/* Why Recommended */}
-          {event.why_recommended && (
-            <View style={styles.whyCard}>
-              <LinearGradient 
-                colors={[colors.violet[600] + '30', colors.violet[700] + '20']} 
-                style={styles.whyGradient}
-              >
-                <Ionicons name="sparkles" size={20} color={colors.violet[400]} />
-                <View style={styles.whyContent}>
-                  <Text style={styles.whyTitle}>WHY THIS EVENT IS WORTH GOING</Text>
-                  <Text style={styles.whyText}>{event.why_recommended}</Text>
-                </View>
-              </LinearGradient>
-            </View>
-          )}
-
-          {event.crowd_type && (
-            <View style={styles.infoCard}>
-              <Ionicons name="people" size={20} color={colors.pink[400]} />
-              <Text style={styles.infoLabel}>Expected Crowd:</Text>
-              <Text style={styles.infoValue}>{event.crowd_type}</Text>
-            </View>
-          )}
-
-          {event.peak_hours && (
-            <View style={styles.peakCard}>
-              <LinearGradient colors={[colors.orange[600] + '40', colors.red[600] + '30']} style={styles.peakGradient}>
-                <View style={styles.peakHeader}>
-                  <Ionicons name="flame" size={22} color={colors.orange[400]} />
-                  <Text style={styles.peakTitle}>Peak Hours</Text>
-                </View>
-                <Text style={styles.peakText}>{event.peak_hours}</Text>
-              </LinearGradient>
-            </View>
-          )}
-
-          {event.description && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>About</Text>
-              <Text style={styles.descriptionText}>{event.description}</Text>
-            </View>
-          )}
-
-          {lineupArray.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Lineup</Text>
-              <View style={styles.lineupContainer}>
-                {displayedLineup.map((artist, index) => (
-                  <View key={index} style={styles.lineupItem}>
-                    <View style={styles.lineupAvatar}>
-                      <Ionicons name="person" size={18} color={colors.violet[400]} />
-                    </View>
-                    <Text style={styles.lineupName}>{artist}</Text>
-                    {index === 0 && (
-                      <View style={styles.headlinerBadge}>
-                        <Text style={styles.headlinerText}>HEADLINER</Text>
-                      </View>
-                    )}
+        {/* ── LOCATION MAP CARD ── */}
+        {event.venue_address && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Location</Text>
+            <TouchableOpacity style={styles.mapCard} onPress={openDirections} activeOpacity={0.85}>
+              {/* Static map via Google Static Maps API */}
+              <ExpoImage
+                source={{ uri: `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(event.venue_address)}&zoom=15&size=600x200&scale=2&style=feature:all|element:labels.text.fill|color:0xffffff&style=feature:all|element:geometry|color:0x1a1a2e&style=feature:road|element:geometry|color:0x4a4a6a&style=feature:poi|visibility:off&markers=color:0x8b5cf6|${encodeURIComponent(event.venue_address)}&key=AIzaSyDemo` }}
+                style={styles.mapImage}
+                contentFit="cover"
+              />
+              {/* Fallback dark map placeholder */}
+              <View style={styles.mapOverlay}>
+                <View style={styles.mapInfo}>
+                  <View style={styles.mapPin}>
+                    <Ionicons name="location" size={16} color="#8b5cf6" />
                   </View>
-                ))}
-                {hasMoreLineup && (
-                  <TouchableOpacity 
-                    style={styles.seeMoreBtn}
-                    onPress={() => setShowFullLineup(!showFullLineup)}
-                  >
-                    <Text style={styles.seeMoreText}>
-                      {showFullLineup ? 'Show Less' : `See ${lineupArray.length - 5} More`}
-                    </Text>
-                    <Ionicons 
-                      name={showFullLineup ? "chevron-up" : "chevron-down"} 
-                      size={16} 
-                      color={colors.violet[400]} 
-                    />
-                  </TouchableOpacity>
-                )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.mapVenueName}>{event.venue_name}</Text>
+                    <Text style={styles.mapAddress} numberOfLines={1}>{event.venue_address}</Text>
+                  </View>
+                  <View style={styles.directionsChip}>
+                    <Text style={styles.directionsChipText}>Directions</Text>
+                    <Ionicons name="arrow-forward" size={12} color="#a78bfa" />
+                  </View>
+                </View>
               </View>
-            </View>
-          )}
+            </TouchableOpacity>
+          </View>
+        )}
 
-          {event.venue_name && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Location</Text>
-              <TouchableOpacity style={styles.venueCard} onPress={handleVenuePress} activeOpacity={0.8}>
-                <View style={styles.venueIcon}>
-                  <Ionicons name="location" size={24} color={colors.violet[500]} />
-                </View>
-                <View style={styles.venueInfo}>
-                  <Text style={styles.venueName}>{event.venue_name}</Text>
-                  {event.venue_address && (
-                    <Text style={styles.venueAddress}>{event.venue_address}</Text>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.zinc[500]} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.directionsBtn} onPress={handleDirections}>
-                <Ionicons name="navigate" size={18} color={colors.violet[400]} />
-                <Text style={styles.directionsBtnText}>Get Directions</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+        {/* ── PROMOTER MESSAGE ── */}
+        {event.partner?.id && (
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.promoterRow} onPress={handleMessagePromoter} activeOpacity={0.8}>
+              <View style={styles.promoterIcon}>
+                <Ionicons name="chatbubble-outline" size={18} color="#a78bfa" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.promoterTitle}>Message the Promoter</Text>
+                <Text style={styles.promoterSub}>Ask about the night, packages, or guest list</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#52525b" />
+            </TouchableOpacity>
+          </View>
+        )}
 
-          {relatedEvents.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>More {event.genre} Events</Text>
-              <EventCarousel events={relatedEvents} />
-            </View>
-          )}
-
-          <View style={{ height: 120 }} />
-        </View>
+        {/* ── SIMILAR EVENTS — bottom, minimal ── */}
+        {relatedEvents.length > 0 && (
+          <View style={[styles.section, { marginTop: 32 }]}>
+            <Text style={styles.sectionLabel}>More {event.genre} Events</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.relatedScroll} contentContainerStyle={{ gap: 12 }}>
+              {relatedEvents.map(rel => (
+                <TouchableOpacity
+                  key={rel.id}
+                  style={styles.relatedCard}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/event/${rel.id}`); }}
+                  activeOpacity={0.85}
+                >
+                  <ExpoImage source={{ uri: rel.image_url || '' }} style={styles.relatedImage} contentFit="cover" />
+                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={StyleSheet.absoluteFill} />
+                  <View style={styles.relatedContent}>
+                    <Text style={styles.relatedTitle} numberOfLines={2}>{rel.title}</Text>
+                    <Text style={styles.relatedVenue} numberOfLines={1}>{rel.venue_name}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </Animated.ScrollView>
 
-      {/* Bottom Action Bar */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-        <LinearGradient
-          colors={[colors.zinc[900] + 'F0', colors.zinc[900]]}
-          style={styles.bottomGradient}
-        >
-          <TouchableOpacity style={styles.addToPlanCompact} onPress={handleAddToPlan} activeOpacity={0.8}>
-            <Ionicons name="add-circle" size={22} color="#fff" />
-            <Text style={styles.addToPlanCompactText}>Plan</Text>
+      {/* ── BOTTOM BAR ── */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+        {primaryCTA === 'tickets' ? (
+          <TouchableOpacity
+            style={styles.bottomPrimary}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
+            activeOpacity={0.9}
+          >
+            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={styles.bottomPrimaryText}>Get Tickets</Text>
+            </LinearGradient>
           </TouchableOpacity>
-
-          <View style={styles.actionDivider} />
-
-          {hasBookingOptions ? (
-            <TouchableOpacity style={styles.bookTableBtn} onPress={handleBookTable} activeOpacity={0.8}>
-              <Ionicons name="wine" size={18} color="#fff" />
-              <Text style={styles.bookTableBtnText}>Book Table</Text>
-            </TouchableOpacity>
-          ) : event.ticket_url ? (
-            <TouchableOpacity style={styles.ticketBtn} onPress={handleGetTickets} activeOpacity={0.8}>
-              <Ionicons name="ticket" size={18} color={colors.violet[600]} />
-              <Text style={styles.ticketBtnText}>Get Tickets</Text>
-            </TouchableOpacity>
-          ) : event.partner?.id ? (
-            <TouchableOpacity style={styles.messageBtn} onPress={handleMessagePromoter} activeOpacity={0.8}>
-              <Ionicons name="chatbubble" size={18} color={colors.violet[400]} />
-              <Text style={styles.messageBtnText}>Message {partnerName}</Text>
-            </TouchableOpacity>
-          ) : null}
-        </LinearGradient>
+        ) : primaryCTA === 'book' ? (
+          <TouchableOpacity style={styles.bottomPrimary} onPress={handleBookTable} activeOpacity={0.9}>
+            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={styles.bottomPrimaryText}>Reserve a Table</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.bottomPrimary}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
+            activeOpacity={0.9}
+          >
+            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={styles.bottomPrimaryText}>Add to Plan</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <AddEventToPlanSheet
-        visible={showAddToPlan}
-        onClose={() => setShowAddToPlan(false)}
-        event={{
-          id: event.id,
-          title: event.title,
-          image_url: event.image_url || undefined,
-          genre: event.genre || undefined,
-          venue_name: event.venue_name || undefined,
-          date: event.date,
-        }}
-        onSuccess={handleAddToPlanSuccess}
-      />
+      {showAddToPlan && event && (
+        <AddEventToPlanSheet
+          event={{ id: event.id, title: event.title, date: event.date, venue_name: event.venue_name || '', image_url: event.image_url || '' }}
+          onClose={() => setShowAddToPlan(false)}
+          onSuccess={() => { setShowAddToPlan(false); showToast('Added to your plan!', 'success'); }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.zinc[900] },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.zinc[900], gap: 12 },
-  loadingText: { fontSize: 16, color: colors.zinc[400] },
-  errorText: { fontSize: 18, color: colors.zinc[400], marginTop: 12 },
-  backBtn: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.violet[600], borderRadius: 12 },
-  backBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  scrollView: { flex: 1 },
-  header: { height: HEADER_HEIGHT, position: 'relative' },
-  headerImage: { width: '100%', height: '100%' },
-  headerGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '80%' },
-  backButton: { position: 'absolute', left: 16, zIndex: 10 },
-  saveButton: { position: 'absolute', right: 64, zIndex: 10 },
-  shareButton: { position: 'absolute', right: 16, zIndex: 10 },
-  iconButton: { 
-    width: 40, height: 40, borderRadius: 20, 
-    backgroundColor: 'rgba(0,0,0,0.4)', 
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  container: { flex: 1, backgroundColor: '#000' },
+  loadingContainer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  errorText: { color: '#fff', fontSize: 16, marginBottom: 16 },
+  backBtn: { padding: 12 },
+
+  // Floating nav
+  floatingNav: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
-  content: { 
-    backgroundColor: colors.zinc[900], 
-    borderTopLeftRadius: 24, borderTopRightRadius: 24, 
-    marginTop: -24, 
-    paddingTop: 24, paddingHorizontal: 20,
-  },
-  eventTitle: { fontSize: 26, fontWeight: '700', color: '#fff', marginBottom: 12 },
-  dateTimeRow: { flexDirection: 'row', gap: 12, marginBottom: 12, flexWrap: 'wrap' },
-  dateTimeBadge: { 
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.zinc[800], paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-  },
-  dateTimeText: { fontSize: 14, color: colors.zinc[300], fontWeight: '500' },
-  genreBadge: { 
-    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-    backgroundColor: colors.violet[600] + '30', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    marginBottom: 20,
-  },
-  genreText: { fontSize: 14, color: colors.violet[300], fontWeight: '600' },
-  packagesSection: { marginBottom: 24 },
-  packagesContainer: { gap: 12, marginBottom: 16 },
-  packageCard: {
-    backgroundColor: colors.zinc[800],
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.violet[600] + '30',
-  },
-  packageHeader: {
+  floatingNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  floatingNavTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
+
+  // Hero
+  heroContainer: { height: HERO_HEIGHT, overflow: 'hidden' },
+  heroTopRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  heroTopRight: { flexDirection: 'row', gap: 8 },
+  heroBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+  },
+  genrePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(139,92,246,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.4)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  genrePillText: { fontSize: 11, fontWeight: '600', color: '#a78bfa', letterSpacing: 0.5 },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: -0.5,
+    lineHeight: 36,
     marginBottom: 8,
   },
-  packageName: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  packagePrice: { fontSize: 20, fontWeight: '700', color: colors.violet[400] },
-  packageDescription: { fontSize: 14, color: colors.zinc[400], marginBottom: 12 },
-  packageDetails: { flexDirection: 'row', gap: 16 },
-  packageDetail: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  packageDetailText: { fontSize: 13, color: colors.zinc[300] },
-  bookNowBtn: { borderRadius: 14, overflow: 'hidden' },
-  bookNowGradient: {
+  heroMeta: { fontSize: 14, color: 'rgba(255,255,255,0.65)', fontWeight: '400', letterSpacing: 0.1 },
+
+  // CTA section
+  ctaSection: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 8,
+    gap: 10,
+  },
+  primaryButton: { borderRadius: 14, overflow: 'hidden' },
+  primaryButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 16,
   },
-  bookNowText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  bookingModeHint: {
-    fontSize: 12,
-    color: colors.zinc[500],
-    textAlign: 'center',
-    marginTop: 8,
+  primaryButtonText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.3)',
   },
-  whyCard: { marginBottom: 16, borderRadius: 16, overflow: 'hidden' },
-  whyGradient: { flexDirection: 'row', padding: 16, gap: 12, alignItems: 'flex-start' },
-  whyContent: { flex: 1 },
-  whyTitle: { fontSize: 12, color: colors.violet[300], fontWeight: '700', marginBottom: 6, letterSpacing: 0.5 },
-  whyText: { fontSize: 15, color: '#fff', lineHeight: 22, fontStyle: 'italic' },
-  infoCard: { 
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: colors.zinc[800], padding: 14, borderRadius: 14, marginBottom: 12,
+  secondaryButtonText: { fontSize: 15, fontWeight: '500', color: '#a78bfa' },
+
+  // Sections
+  section: { paddingHorizontal: 20, paddingTop: 28 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#52525b',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 12,
   },
-  infoLabel: { fontSize: 14, color: colors.zinc[400], fontWeight: '500' },
-  infoValue: { flex: 1, fontSize: 14, color: '#fff', fontWeight: '600' },
-  peakCard: { marginBottom: 20, borderRadius: 16, overflow: 'hidden' },
-  peakGradient: { padding: 16 },
-  peakHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  peakTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  peakText: { fontSize: 15, color: '#fff', lineHeight: 22 },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 12 },
-  descriptionText: { fontSize: 15, color: colors.zinc[300], lineHeight: 24 },
-  lineupContainer: { gap: 10 },
-  lineupItem: { 
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: colors.zinc[800], padding: 12, borderRadius: 12,
+  bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.75)', lineHeight: 24, fontWeight: '400' },
+
+  // Lineup
+  lineupList: { gap: 10 },
+  lineupItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  lineupDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#7c3aed' },
+  lineupName: { fontSize: 16, color: '#e4e4e7', fontWeight: '500' },
+
+  // Timeline
+  timeline: { gap: 0 },
+  timelineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingBottom: 20 },
+  timelineTime: { width: 60, fontSize: 13, color: '#71717a', fontWeight: '500', paddingTop: 2 },
+  timelineLine: { width: 1, backgroundColor: '#27272a', alignSelf: 'stretch', marginHorizontal: 0, marginTop: 6 },
+  timelineContent: { flex: 1, paddingLeft: 14 },
+  timelineTitle: { fontSize: 16, color: '#e4e4e7', fontWeight: '600', marginBottom: 3 },
+  timelineSub: { fontSize: 13, color: '#71717a' },
+
+  // Map card
+  mapCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    height: 160,
   },
-  lineupAvatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.violet[600] + '30',
-    justifyContent: 'center', alignItems: 'center',
+  mapImage: { ...StyleSheet.absoluteFillObject },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 14,
   },
-  lineupName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#fff' },
-  headlinerBadge: {
-    backgroundColor: colors.orange[600] + '40', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
+  mapInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mapPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(139,92,246,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headlinerText: { fontSize: 10, fontWeight: '700', color: colors.orange[400], letterSpacing: 0.5 },
-  seeMoreBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12,
+  mapVenueName: { fontSize: 14, fontWeight: '600', color: '#fff', marginBottom: 2 },
+  mapAddress: { fontSize: 12, color: '#a1a1aa' },
+  directionsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.3)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  seeMoreText: { fontSize: 14, color: colors.violet[400], fontWeight: '600' },
-  venueCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: colors.zinc[800], padding: 16, borderRadius: 14,
+  directionsChipText: { fontSize: 12, color: '#a78bfa', fontWeight: '500' },
+
+  // Promoter
+  promoterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#1f1f1f',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f1f1f',
   },
-  venueIcon: {
-    width: 48, height: 48, borderRadius: 12, backgroundColor: colors.violet[600] + '20',
-    justifyContent: 'center', alignItems: 'center',
+  promoterIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(139,92,246,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  venueInfo: { flex: 1 },
-  venueName: { fontSize: 16, fontWeight: '600', color: '#fff', marginBottom: 2 },
-  venueAddress: { fontSize: 13, color: colors.zinc[400] },
-  directionsBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginTop: 12, paddingVertical: 12, backgroundColor: colors.zinc[800], borderRadius: 12,
-  },
-  directionsBtnText: { fontSize: 14, fontWeight: '600', color: colors.violet[400] },
+  promoterTitle: { fontSize: 15, fontWeight: '600', color: '#e4e4e7', marginBottom: 2 },
+  promoterSub: { fontSize: 13, color: '#71717a' },
+
+  // Related
+  relatedScroll: { marginHorizontal: -20, paddingHorizontal: 20 },
+  relatedCard: { width: 160, height: 200, borderRadius: 14, overflow: 'hidden', backgroundColor: '#111' },
+  relatedImage: { ...StyleSheet.absoluteFillObject },
+  relatedContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
+  relatedTitle: { fontSize: 13, fontWeight: '600', color: '#fff', lineHeight: 17, marginBottom: 3 },
+  relatedVenue: { fontSize: 11, color: 'rgba(255,255,255,0.55)' },
+
+  // Bottom bar
   bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
-  bottomGradient: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingTop: 16, paddingHorizontal: 20, gap: 12,
-  },
-  addToPlanCompact: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.zinc[800], paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14,
-  },
-  addToPlanCompactText: { fontSize: 14, fontWeight: '600', color: '#fff' },
-  actionDivider: { width: 1, height: 30, backgroundColor: colors.zinc[700] },
-  bookTableBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.violet[600], paddingVertical: 14, borderRadius: 14,
-  },
-  bookTableBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-  ticketBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.violet[600] + '20', paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.violet[600],
-  },
-  ticketBtnText: { fontSize: 15, fontWeight: '600', color: colors.violet[400] },
-  messageBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: colors.zinc[800], paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.violet[600] + '50',
-  },
-  messageBtnText: { fontSize: 15, fontWeight: '600', color: colors.violet[400] },
+  bottomPrimary: { borderRadius: 14, overflow: 'hidden' },
+  bottomPrimaryGradient: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  bottomPrimaryText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
 });

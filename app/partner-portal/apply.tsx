@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing } from '../../theme';
 import { glassStyles } from '../../theme/vibeGradients';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 export default function PartnerApplyScreen() {
   const router = useRouter();
@@ -100,7 +100,7 @@ export default function PartnerApplyScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.hero}>
-              <Text style={styles.heroTitle}>Join as a Lumina Partner</Text>
+              <Text style={styles.heroTitle}>Join as a Viberyte Partner</Text>
               <Text style={styles.heroSubtitle}>
                 For DJs, promoters, venues, and event organizers. Reach your audience where they are.
               </Text>

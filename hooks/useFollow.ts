@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { requireAuth } from '../utils/authGate';
 import { getUserId } from '../utils/user';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
 
 type FollowType = 'venue' | 'promoter';
 

@@ -11,14 +11,31 @@ import {
   Modal,
   TextInput,
   Linking,
+  Image,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
+import PartnerTabBar from '../../components/partner/PartnerTabBar';
 
-const API_BASE = 'https://lumina.viberyte.com';
+const API_BASE = 'https://viberyte.com';
+
+const THEME_OPTIONS = [
+  { key: 'midnight', name: 'Midnight', colors: ['#000000', '#7c3aed', '#a78bfa'], tier: 'free' },
+  { key: 'obsidian', name: 'Obsidian', colors: ['#0a0a0a', '#ffffff', '#888888'], tier: 'free' },
+  { key: 'violet', name: 'Violet', colors: ['#0c0015', '#7c3aed', '#c084fc'], tier: 'spotlight' },
+  { key: 'rose', name: 'Rosé', colors: ['#0f0a0a', '#e11d48', '#f9a8d4'], tier: 'spotlight' },
+  { key: 'emerald', name: 'Emerald', colors: ['#040f0a', '#059669', '#6ee7b7'], tier: 'spotlight' },
+  { key: 'amber', name: 'Amber', colors: ['#0f0b04', '#d97706', '#fcd34d'], tier: 'spotlight' },
+  { key: 'frost', name: 'Frost', colors: ['#f8f9fa', '#1a1a1a', '#6366f1'], tier: 'spotlight' },
+  { key: 'neon', name: 'Neon', colors: ['#05020e', '#0ea5e9', '#ec4899'], tier: 'elite' },
+];
+
+const MENU_CATEGORIES = ['appetizers', 'entrees', 'cocktails', 'wine', 'beer', 'bottles', 'desserts', 'sides', 'hookah'];
 
 export default function PartnerSettings() {
   const router = useRouter();
@@ -29,6 +46,10 @@ export default function PartnerSettings() {
   const [venueName, setVenueName] = useState('');
   const [subscriptionStatus, setSubscriptionStatus] = useState('trial');
   const [tier, setTier] = useState('claimed');
+  const [partnerId, setPartnerId] = useState<number | null>(null);
+  const [vanitySlug, setVanitySlug] = useState('');
+  const [venueId, setVenueId] = useState<number | null>(null);
+  const [instagramHandle, setInstagramHandle] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   
   // Payment settings
@@ -36,15 +57,35 @@ export default function PartnerSettings() {
   const [zelle, setZelle] = useState('');
   const [cashapp, setCashapp] = useState('');
   
-  // Modal state
   // Instagram state
   const [instagramConnected, setInstagramConnected] = useState(false);
   const [instagramUsername, setInstagramUsername] = useState('');
   const [instagramSyncedAt, setInstagramSyncedAt] = useState('');
   const [syncing, setSyncing] = useState(false);
 
+  // Theme state
+  const [selectedTheme, setSelectedTheme] = useState('midnight');
+  const [savingTheme, setSavingTheme] = useState(false);
+
+  // Menu state
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [uploadingMenu, setUploadingMenu] = useState(false);
+  const [menuExpanded, setMenuExpanded] = useState(false);
+  const [addMenuModal, setAddMenuModal] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('cocktails');
+  const [savingMenuItem, setSavingMenuItem] = useState(false);
+
   const [editModal, setEditModal] = useState<'venmo' | 'zelle' | 'cashapp' | null>(null);
   const [editValue, setEditValue] = useState('');
+
+  const getToken = async () => {
+    const session = await AsyncStorage.getItem('lumina_partner_session');
+    if (!session) return null;
+    return JSON.parse(session).token;
+  };
 
   useEffect(() => {
     fetchSettings();
@@ -52,13 +93,8 @@ export default function PartnerSettings() {
 
   const fetchSettings = async () => {
     try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) {
-        router.replace('/partner');
-        return;
-      }
-
-      const { token } = JSON.parse(session);
+      const token = await getToken();
+      if (!token) { router.replace('/partner'); return; }
 
       // Fetch partner info
       const meRes = await fetch(`${API_BASE}/api/partner/auth/me`, {
@@ -70,18 +106,21 @@ export default function PartnerSettings() {
         setPartnerName(data.partner?.name || data.partner?.business_name || '');
         setPartnerEmail(data.partner?.email || '');
         setTier(data.partner?.tier || 'claimed');
+        setPartnerId(data.partner?.id ?? null);
+        setVanitySlug(data.partner?.vanity_slug || '');
+        setInstagramHandle(data.partner?.instagram_username || data.partner?.instagram_handle || '');
         setSubscriptionStatus(data.partner?.subscription_status || 'none');
+        setSelectedTheme(data.partner?.theme || 'midnight');
         if (data.venues?.length > 0) {
           setVenueName(data.venues[0].name || '');
+          setVenueId(data.venues[0].id ?? null);
         }
       }
 
       // Fetch payment settings
       const settingsRes = await fetch(`${API_BASE}/api/partner/settings`, {
         headers: { Authorization: `Bearer ${token}` },
-        credentials: 'include',
-      });
-
+              });
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json();
         if (settingsData.settings?.payments) {
@@ -91,6 +130,7 @@ export default function PartnerSettings() {
         }
       }
 
+      // Fetch Instagram status
       try {
         const igRes = await fetch(`${API_BASE}/api/partner/instagram/status`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -101,107 +141,76 @@ export default function PartnerSettings() {
           setInstagramUsername(igData.username || '');
           setInstagramSyncedAt(igData.synced_at || '');
         }
-      } catch (igErr) {}
+      } catch {}
 
-      setLoading(false);
+      // Fetch menu items
+      loadMenuItems(token);
+
     } catch (error) {
-      console.error('Fetch error:', error);
+      console.error('Settings load error:', error);
+    } finally {
       setLoading(false);
     }
   };
 
+  const loadMenuItems = async (tokenOverride?: string) => {
+    setMenuLoading(true);
+    try {
+      const token = tokenOverride || await getToken();
+      const res = await fetch(`${API_BASE}/api/partner/save-menu`, {
+        headers: { Authorization: `Bearer ${token}` },
+              });
+      if (res.ok) {
+        const data = await res.json();
+        setMenuItems(data.items || []);
+      }
+    } catch {}
+    setMenuLoading(false);
+  };
+
   const handleSavePayment = async () => {
     if (!editModal) return;
-    
     setSaving(true);
     try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) return;
-
-      const { token } = JSON.parse(session);
+      const token = await getToken();
+      if (!token) return;
 
       const payments: any = {};
       payments[editModal] = editValue.trim();
 
       const res = await fetch(`${API_BASE}/api/partner/settings`, {
         method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify({ payments }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ payments }),
       });
 
       if (res.ok) {
-        // Update local state
         if (editModal === 'venmo') setVenmo(editValue.trim());
         if (editModal === 'zelle') setZelle(editValue.trim());
         if (editModal === 'cashapp') setCashapp(editValue.trim());
-        
-        setEditModal(null);
         Alert.alert('Success', 'Payment method saved');
-      } else {
-        const data = await res.json();
-        Alert.alert('Error', data.error || 'Failed to save');
+        setEditModal(null);
       }
     } catch (error) {
-      Alert.alert('Error', 'Something went wrong');
+      Alert.alert('Error', 'Failed to save');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleManagePlan = async () => {
-    try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) return;
-
-      const { token } = JSON.parse(session);
-
-      if (tier === 'claimed' || subscriptionStatus === 'none') {
-        // No subscription - go to upgrade page
-        Linking.openURL(`${API_BASE}/partner/settings?showUpgrade=true`);
-        return;
-      }
-
-      // Has subscription - open billing portal
-      const res = await fetch(`${API_BASE}/api/partner/billing-portal`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.url) {
-          Linking.openURL(data.url);
-        }
-      } else {
-        // Fallback to web settings
-        Linking.openURL(`${API_BASE}/partner/settings`);
-      }
-    } catch (error) {
-      console.error('Manage plan error:', error);
-      Linking.openURL(`${API_BASE}/partner/settings`);
-    }
+  const openEditModal = (type: 'venmo' | 'zelle' | 'cashapp') => {
+    setEditValue(type === 'venmo' ? venmo : type === 'zelle' ? zelle : cashapp);
+    setEditModal(type);
   };
 
-  const openEditModal = (type: 'venmo' | 'zelle' | 'cashapp') => {
-    setEditModal(type);
-    if (type === 'venmo') setEditValue(venmo);
-    if (type === 'zelle') setEditValue(zelle);
-    if (type === 'cashapp') setEditValue(cashapp);
+  const handleManagePlan = () => {
+    Linking.openURL('https://viberyte.com/partner/settings#payments');
   };
 
   const handleConnectInstagram = async () => {
     try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) return;
-      const { token } = JSON.parse(session);
+      const token = await getToken();
+      if (!token) return;
       const res = await fetch(`${API_BASE}/api/partner/instagram/auth`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -217,9 +226,8 @@ export default function PartnerSettings() {
   const handleSyncInstagram = async () => {
     setSyncing(true);
     try {
-      const session = await AsyncStorage.getItem('lumina_partner_session');
-      if (!session) return;
-      const { token } = JSON.parse(session);
+      const token = await getToken();
+      if (!token) return;
       const res = await fetch(`${API_BASE}/api/partner/instagram/sync`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -236,6 +244,217 @@ export default function PartnerSettings() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  // Theme handlers
+  const handleSelectTheme = async (themeKey: string) => {
+    const theme = THEME_OPTIONS.find(t => t.key === themeKey);
+    if (!theme) return;
+    
+    const isLocked = (theme.tier === 'spotlight' && tier === 'claimed') || (theme.tier === 'elite' && tier !== 'elite');
+    if (isLocked) {
+      Alert.alert('Upgrade Required', `The ${theme.name} theme requires ${theme.tier === 'elite' ? 'Elite' : 'Spotlight'} plan.`, [
+        { text: 'View Plans', onPress: handleManagePlan },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+
+    setSavingTheme(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/partner/settings/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ theme: themeKey }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedTheme(themeKey);
+      } else if (data.upgrade_to) {
+        Alert.alert('Upgrade Required', `Upgrade to ${data.upgrade_to} to unlock this theme.`);
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to save theme');
+    }
+    setSavingTheme(false);
+  };
+
+  // Menu handlers
+  const handleMenuPhotoUpload = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (lib.status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera or photo library access is required');
+        return;
+      }
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      base64: true,
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.base64) return;
+
+    setUploadingMenu(true);
+    try {
+      const token = await getToken();
+      if (!token) { Alert.alert('Error', 'Not logged in'); setUploadingMenu(false); return; }
+      const extractRes = await fetch(`${API_BASE}/api/partner/extract-menu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ image_base64: result.assets[0].base64, venue_name: venueName }),
+      });
+      if (!extractRes.ok) {
+        const errText = await extractRes.text();
+        console.error('Extract failed:', extractRes.status, errText.slice(0, 200));
+        Alert.alert('Error', 'Menu scan failed (status ' + extractRes.status + ')');
+        setUploadingMenu(false);
+        return;
+      }
+      const data = await extractRes.json();
+
+      if (data.items && data.items.length > 0) {
+        const saveRes = await fetch(`${API_BASE}/api/partner/save-menu`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ items: data.items }),
+        });
+        if (!saveRes.ok) {
+          const errText = await saveRes.text();
+          console.error('Save failed:', saveRes.status, errText.slice(0, 200));
+          Alert.alert('Partial Success', data.items.length + ' items found but failed to save');
+          setUploadingMenu(false);
+          return;
+        }
+        const saveData = await saveRes.json();
+        if (saveData.success) {
+          Alert.alert('Menu Scanned', data.items.length + ' items extracted from your menu');
+          loadMenuItems(token);
+        } else {
+          Alert.alert('Partial Success', data.items.length + ' items found but save error: ' + (saveData.error || 'unknown'));
+        }
+      } else {
+        Alert.alert('No Items Found', 'Try a clearer photo of your menu');
+      }
+
+    } catch (err: any) {
+      console.error('Menu upload error:', err);
+      Alert.alert('Error', 'Menu upload failed: ' + (err?.message || String(err)));
+    }
+    setUploadingMenu(false);
+  };
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera access is required');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      base64: true,
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.base64) return;
+
+    setUploadingMenu(true);
+    try {
+      const token = await getToken();
+      if (!token) { Alert.alert('Error', 'Not logged in'); setUploadingMenu(false); return; }
+      const extractRes = await fetch(`${API_BASE}/api/partner/extract-menu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ image_base64: result.assets[0].base64, venue_name: venueName }),
+      });
+      if (!extractRes.ok) {
+        const errText = await extractRes.text();
+        console.error('Extract failed:', extractRes.status, errText.slice(0, 200));
+        Alert.alert('Error', 'Menu scan failed (status ' + extractRes.status + ')');
+        setUploadingMenu(false);
+        return;
+      }
+      const data = await extractRes.json();
+
+      if (data.items && data.items.length > 0) {
+        const saveRes = await fetch(`${API_BASE}/api/partner/save-menu`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ items: data.items }),
+        });
+        if (!saveRes.ok) {
+          const errText = await saveRes.text();
+          console.error('Save failed:', saveRes.status, errText.slice(0, 200));
+          Alert.alert('Partial Success', data.items.length + ' items found but failed to save');
+          setUploadingMenu(false);
+          return;
+        }
+        const saveData = await saveRes.json();
+        if (saveData.success) {
+          Alert.alert('Menu Scanned', data.items.length + ' items extracted');
+          loadMenuItems(token);
+        } else {
+          Alert.alert('Partial Success', data.items.length + ' items found but save error: ' + (saveData.error || 'unknown'));
+        }
+      } else {
+        Alert.alert('No Items Found', 'Try a clearer photo');
+      }
+
+    } catch (err: any) {
+      console.error('Camera upload error:', err);
+      Alert.alert('Error', 'Camera failed: ' + (err?.message || String(err)));
+    }
+    setUploadingMenu(false);
+  };
+
+  const handleAddMenuItem = async () => {
+    if (!newItemName.trim()) return;
+    setSavingMenuItem(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/api/partner/save-menu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ items: [{ item_name: newItemName.trim(), price: parseFloat(newItemPrice) || 0, category: newItemCategory }] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAddMenuModal(false);
+        setNewItemName('');
+        setNewItemPrice('');
+        setNewItemCategory('cocktails');
+        loadMenuItems(token);
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to add item');
+    }
+    setSavingMenuItem(false);
+  };
+
+  const handleDeleteMenuItem = (item: any) => {
+    Alert.alert('Remove Item', `Remove "${item.item_name}" from your menu?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await getToken();
+            await fetch(`${API_BASE}/api/partner/save-menu`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ item_id: item.id }),
+            });
+            setMenuItems(prev => prev.filter(i => i.id !== item.id));
+          } catch {
+            Alert.alert('Error', 'Failed to remove item');
+          }
+        },
+      },
+    ]);
   };
 
   const handleLogout = async () => {
@@ -279,6 +498,7 @@ export default function PartnerSettings() {
         </View>
 
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* ACCOUNT */}
           <Animated.View entering={FadeInDown.delay(50).duration(300)}>
             <Text style={styles.sectionLabel}>ACCOUNT</Text>
             <View style={styles.card}>
@@ -296,19 +516,22 @@ export default function PartnerSettings() {
             </View>
           </Animated.View>
 
+          {/* YOUR PROFILE */}
           <Animated.View entering={FadeInDown.delay(75).duration(300)}>
             <Text style={styles.sectionLabel}>YOUR PROFILE</Text>
             <View style={styles.card}>
-              <TouchableOpacity style={styles.settingRow} onPress={() => router.push("/edit-profile")}>
+              <TouchableOpacity style={styles.settingRow} onPress={() => {
+                if (instagramHandle) router.push(`/venue/promoter/profile?handle=${instagramHandle}` as any);
+              }}>
                 <View style={styles.settingLeft}>
                   <View style={styles.settingIcon}>
-                    <Ionicons name="person-circle-outline" size={17} color="#8b5cf6" />
+                    <Ionicons name="eye-outline" size={17} color="#8b5cf6" />
                   </View>
-                  <Text style={styles.settingTitle}>Edit Public Profile</Text>
+                  <Text style={styles.settingTitle}>View Public Profile</Text>
                 </View>
                 <View style={styles.settingRight}>
                   <Text style={styles.settingValueAccent}>Live</Text>
-                  <Ionicons name="chevron-forward" size={17} color="#3f3f46" />
+                  <Ionicons name="open-outline" size={16} color="#3f3f46" />
                 </View>
               </TouchableOpacity>
 
@@ -326,6 +549,7 @@ export default function PartnerSettings() {
             </View>
           </Animated.View>
 
+          {/* VENUE */}
           <Animated.View entering={FadeInDown.delay(100).duration(300)}>
             <Text style={styles.sectionLabel}>VENUE</Text>
             <View style={styles.card}>
@@ -341,12 +565,12 @@ export default function PartnerSettings() {
 
               <View style={styles.divider} />
 
-              <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/partner/venues')}>
+              <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/partner/profile-edit' as any)}>
                 <View style={styles.settingLeft}>
                   <View style={styles.settingIcon}>
-                    <Ionicons name="grid-outline" size={17} color="#a1a1aa" />
+                    <Ionicons name="storefront-outline" size={17} color="#a1a1aa" />
                   </View>
-                  <Text style={styles.settingTitle}>Venues</Text>
+                  <Text style={styles.settingTitle}>Manage Storefront</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={17} color="#3f3f46" />
               </TouchableOpacity>
@@ -367,9 +591,173 @@ export default function PartnerSettings() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity style={styles.settingRow} onPress={() => router.push("/partner/claim-venue")}>
+                <View style={styles.settingLeft}>
+                  <View style={[styles.settingIcon, { backgroundColor: "rgba(139,92,246,0.15)" }]}>
+                    <Ionicons name="flag-outline" size={17} color="#8b5cf6" />
+                  </View>
+                  <View>
+                    <Text style={styles.settingTitle}>Claim a Venue Page</Text>
+                    <Text style={{ fontSize: 11, color: "#71717a", marginTop: 1 }}>Search and verify with Instagram</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color="#3f3f46" />
+              </TouchableOpacity>
             </View>
           </Animated.View>
 
+          {/* THEME */}
+          <Animated.View entering={FadeInDown.delay(112).duration(300)}>
+            <Text style={styles.sectionLabel}>THEME</Text>
+            <View style={styles.card}>
+              <View style={{ padding: 14, paddingBottom: 6 }}>
+                <Text style={{ fontSize: 13, color: '#71717a', marginBottom: 12 }}>Choose your page style</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  {THEME_OPTIONS.map((theme) => {
+                    const isActive = selectedTheme === theme.key;
+                    const isLocked = (theme.tier === 'spotlight' && tier === 'claimed') || (theme.tier === 'elite' && tier !== 'elite');
+                    return (
+                      <TouchableOpacity
+                        key={theme.key}
+                        onPress={() => handleSelectTheme(theme.key)}
+                        disabled={savingTheme}
+                        style={{
+                          width: '47%',
+                          padding: 12,
+                          borderRadius: 12,
+                          backgroundColor: isActive ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)',
+                          borderWidth: isActive ? 1.5 : 1,
+                          borderColor: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.04)',
+                          opacity: isLocked ? 0.4 : 1,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                          {theme.colors.map((color, i) => (
+                            <View key={i} style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: color, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} />
+                          ))}
+                        </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>{theme.name}</Text>
+                          {isLocked && <Ionicons name="lock-closed" size={12} color="#52525b" />}
+                          {isActive && <Ionicons name="checkmark-circle" size={16} color="#fff" />}
+                        </View>
+                        {theme.tier !== 'free' && (
+                          <Text style={{ fontSize: 10, color: '#52525b', marginTop: 2, textTransform: 'capitalize' }}>{theme.tier}</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+              {savingTheme && (
+                <View style={{ padding: 10, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color="#8b5cf6" />
+                </View>
+              )}
+            </View>
+          </Animated.View>
+
+          {/* MENU */}
+          <Animated.View entering={FadeInDown.delay(120).duration(300)}>
+            <Text style={styles.sectionLabel}>MENU</Text>
+            <View style={styles.card}>
+              {/* Scan / Upload */}
+              <View style={{ padding: 14, paddingBottom: 8 }}>
+                <Text style={{ fontSize: 13, color: '#71717a', marginBottom: 12 }}>Add items by scanning your menu or manually</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={handleTakePhoto}
+                    disabled={uploadingMenu}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, backgroundColor: 'rgba(139,92,246,0.1)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(139,92,246,0.2)' }}
+                  >
+                    {uploadingMenu ? (
+                      <ActivityIndicator size="small" color="#8b5cf6" />
+                    ) : (
+                      <>
+                        <Ionicons name="camera" size={18} color="#8b5cf6" />
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#8b5cf6' }}>Camera</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleMenuPhotoUpload}
+                    disabled={uploadingMenu}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+                  >
+                    <Ionicons name="image-outline" size={18} color="#a1a1aa" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#a1a1aa' }}>Gallery</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Add manually */}
+              <TouchableOpacity style={styles.settingRow} onPress={() => setAddMenuModal(true)}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIcon}>
+                    <Ionicons name="add-circle-outline" size={17} color="#a1a1aa" />
+                  </View>
+                  <Text style={styles.settingTitle}>Add Item Manually</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color="#3f3f46" />
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              {/* Item count + expand */}
+              <TouchableOpacity style={styles.settingRow} onPress={() => setMenuExpanded(!menuExpanded)}>
+                <View style={styles.settingLeft}>
+                  <View style={styles.settingIcon}>
+                    <Ionicons name="restaurant-outline" size={17} color="#a1a1aa" />
+                  </View>
+                  <Text style={styles.settingTitle}>Menu Items</Text>
+                </View>
+                <View style={styles.settingRight}>
+                  <Text style={styles.settingValueMuted}>{menuLoading ? '...' : menuItems.length}</Text>
+                  <Ionicons name={menuExpanded ? "chevron-up" : "chevron-down"} size={17} color="#3f3f46" />
+                </View>
+              </TouchableOpacity>
+
+              {/* Expanded item list */}
+              {menuExpanded && (
+                <View style={{ paddingHorizontal: 14, paddingBottom: 12 }}>
+                  {menuLoading ? (
+                    <ActivityIndicator size="small" color="#52525b" style={{ padding: 20 }} />
+                  ) : menuItems.length === 0 ? (
+                    <Text style={{ fontSize: 13, color: '#52525b', textAlign: 'center', paddingVertical: 20 }}>No menu items yet</Text>
+                  ) : (
+                    menuItems.slice(0, 20).map((item, i) => (
+                      <TouchableOpacity
+                        key={item.id || i}
+                        onLongPress={() => handleDeleteMenuItem(item)}
+                        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: i < Math.min(menuItems.length, 20) - 1 ? 0.5 : 0, borderBottomColor: 'rgba(255,255,255,0.04)' }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, color: '#fff' }}>{item.item_name}</Text>
+                          <Text style={{ fontSize: 11, color: '#52525b', textTransform: 'capitalize', marginTop: 1 }}>{item.category}</Text>
+                        </View>
+                        {item.price > 0 && (
+                          <Text style={{ fontSize: 14, color: '#71717a', fontWeight: '500' }}>${item.price}</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                  {menuItems.length > 20 && (
+                    <Text style={{ fontSize: 12, color: '#52525b', textAlign: 'center', marginTop: 8 }}>+{menuItems.length - 20} more items</Text>
+                  )}
+                  {menuItems.length > 0 && (
+                    <Text style={{ fontSize: 11, color: '#3f3f46', textAlign: 'center', marginTop: 8 }}>Long press to remove an item</Text>
+                  )}
+                </View>
+              )}
+            </View>
+          </Animated.View>
+
+          {/* INSTAGRAM */}
           <Animated.View entering={FadeInDown.delay(125).duration(300)}>
             <Text style={styles.sectionLabel}>INSTAGRAM</Text>
             <View style={styles.card}>
@@ -409,7 +797,7 @@ export default function PartnerSettings() {
                     )}
                   </TouchableOpacity>
                   <View style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
-                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>Your best photos and reels auto-populate your Lumina page. We never post on your behalf.</Text>
+                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>Your best photos and reels auto-populate your Viberyte page. We never post on your behalf.</Text>
                   </View>
                 </>
               ) : (
@@ -427,13 +815,14 @@ export default function PartnerSettings() {
                     <Text style={styles.addText}>Connect</Text>
                   </TouchableOpacity>
                   <View style={{ paddingHorizontal: 14, paddingBottom: 12 }}>
-                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>We'll automatically use your best photos and reels to keep your Lumina page fresh. We never post on your behalf.</Text>
+                    <Text style={{ fontSize: 12, color: '#52525b', lineHeight: 16 }}>We'll automatically use your best photos and reels to keep your Viberyte page fresh. We never post on your behalf.</Text>
                   </View>
                 </>
               )}
             </View>
           </Animated.View>
 
+          {/* PAYMENTS */}
           <Animated.View entering={FadeInDown.delay(150).duration(300)}>
             <Text style={styles.sectionLabel}>PAYMENTS</Text>
             <View style={styles.card}>
@@ -485,6 +874,7 @@ export default function PartnerSettings() {
             </View>
           </Animated.View>
 
+          {/* NOTIFICATIONS */}
           <Animated.View entering={FadeInDown.delay(200).duration(300)}>
             <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
             <View style={styles.card}>
@@ -506,10 +896,11 @@ export default function PartnerSettings() {
             </View>
           </Animated.View>
 
+          {/* SUPPORT */}
           <Animated.View entering={FadeInDown.delay(250).duration(300)}>
             <Text style={styles.sectionLabel}>SUPPORT</Text>
             <View style={styles.card}>
-              <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://lumina.viberyte.com/help')}>
+              <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://viberyte.com/help')}>
                 <View style={styles.settingLeft}>
                   <View style={styles.settingIcon}>
                     <Ionicons name="help-circle-outline" size={17} color="#a1a1aa" />
@@ -542,24 +933,7 @@ export default function PartnerSettings() {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/dashboard')}>
-            <Ionicons name="grid-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/bookings')}>
-            <Ionicons name="calendar-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Bookings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/partner/events')}>
-            <Ionicons name="sparkles-outline" size={22} color="#52525b" />
-            <Text style={styles.navText}>Events</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="settings" size={22} color="#fff" />
-            <Text style={[styles.navText, styles.navTextActive]}>Settings</Text>
-          </TouchableOpacity>
-        </View>
+        <PartnerTabBar active="settings" />
       </SafeAreaView>
 
       {/* Edit Payment Modal */}
@@ -616,6 +990,77 @@ export default function PartnerSettings() {
                  editModal === 'zelle' ? 'Customers can pay you via Zelle' : 
                  'Customers can pay you via Cash App'}
               </Text>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {/* Add Menu Item Modal */}
+      <Modal
+        visible={addMenuModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAddMenuModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <SafeAreaView style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setAddMenuModal(false)}>
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Add Item</Text>
+              <TouchableOpacity onPress={handleAddMenuItem} disabled={savingMenuItem || !newItemName.trim()}>
+                {savingMenuItem ? (
+                  <ActivityIndicator size="small" color="#3b82f6" />
+                ) : (
+                  <Text style={[styles.modalSave, { opacity: newItemName.trim() ? 1 : 0.3 }]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalContent}>
+              <Text style={styles.modalLabel}>Item Name</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newItemName}
+                  onChangeText={setNewItemName}
+                  placeholder="e.g. Spicy Margarita"
+                  placeholderTextColor="#52525b"
+                  autoFocus
+                />
+              </View>
+
+              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Price</Text>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputPrefix}>$</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={newItemPrice}
+                  onChangeText={setNewItemPrice}
+                  placeholder="0.00"
+                  placeholderTextColor="#52525b"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
+              <Text style={[styles.modalLabel, { marginTop: 20 }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                {MENU_CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    onPress={() => setNewItemCategory(cat)}
+                    style={{
+                      paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8,
+                      backgroundColor: newItemCategory === cat ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.06)',
+                      borderWidth: 1,
+                      borderColor: newItemCategory === cat ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, color: newItemCategory === cat ? '#a78bfa' : '#71717a', textTransform: 'capitalize', fontWeight: newItemCategory === cat ? '600' : '400' }}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           </SafeAreaView>
         </View>

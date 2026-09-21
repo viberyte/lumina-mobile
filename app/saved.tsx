@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import LoadingScreen from '../../components/LoadingScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,7 +23,7 @@ import EventCard from '../components/EventCard';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type TabType = 'venues' | 'events';
+type TabType = 'venues' | 'events' | 'flows';
 
 export default function SavedScreen() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function SavedScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('venues');
   const [savedVenues, setSavedVenues] = useState<any[]>([]);
   const [savedEvents, setSavedEvents] = useState<any[]>([]);
+  const [savedFlows, setSavedFlows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -41,16 +43,10 @@ export default function SavedScreen() {
 
   const loadUserIdAndFetch = async () => {
     try {
-      const profile = await AsyncStorage.getItem('@lumina_profile');
-      if (profile) {
-        const data = JSON.parse(profile);
-        const uid = data.id || 'guest';
-        setUserId(uid);
-        await fetchSavedItems(uid);
-      } else {
-        setUserId('guest');
-        await fetchSavedItems('guest');
-      }
+      const raw = await AsyncStorage.getItem('@lumina_user_id');
+      const uid = raw ? String(parseInt(String(raw), 10)) : 'guest';
+      setUserId(uid);
+      await fetchSavedItems(uid);
     } catch (error) {
       console.error('Error loading user:', error);
       setUserId('guest');
@@ -63,16 +59,21 @@ export default function SavedScreen() {
       setLoading(true);
 
       const venuesResponse = await fetch(
-        `https://lumina.viberyte.com/api/favorites?userId=${uid}&type=venue`
+        `https://viberyte.com/api/favorites?userId=${uid}&type=venue`
       );
       const venuesData = await venuesResponse.json();
-      setSavedVenues(venuesData.items || []);
+      setSavedVenues(venuesData.saved || []);
 
       const eventsResponse = await fetch(
-        `https://lumina.viberyte.com/api/favorites?userId=${uid}&type=event`
+        `https://viberyte.com/api/favorites?userId=${uid}&type=event`
       );
       const eventsData = await eventsResponse.json();
-      setSavedEvents(eventsData.items || []);
+      setSavedEvents(eventsData.saved || []);
+      // Load saved flows from AsyncStorage
+      try {
+        const flowsRaw = await AsyncStorage.getItem('@lumina_saved_flows');
+        setSavedFlows(flowsRaw ? JSON.parse(flowsRaw) : []);
+      } catch {}
     } catch (error) {
       console.error('Error fetching saved items:', error);
     } finally {
@@ -93,7 +94,7 @@ export default function SavedScreen() {
 
     try {
       await fetch(
-        `https://lumina.viberyte.com/api/favorites?userId=${userId}&itemType=${itemType}&itemId=${itemId}`,
+        `https://viberyte.com/api/favorites?userId=${userId}&itemType=${itemType}&itemId=${itemId}`,
         { method: 'DELETE' }
       );
 
@@ -140,6 +141,45 @@ export default function SavedScreen() {
     );
   };
 
+  const renderFlows = () => {
+    if (savedFlows.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="git-branch-outline" size={48} color="rgba(255,255,255,0.15)" />
+          <Text style={styles.emptyTitle}>No saved flows</Text>
+          <Text style={styles.emptySubtitle}>Save a flow and it will appear here</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={{ padding: 20, gap: 10 }}>
+        {savedFlows.map((flow: any, i: number) => (
+          <TouchableOpacity
+            key={flow.slug + i}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 16,
+              borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)',
+            }}
+            onPress={() => router.push(`/flow/${flow.slug}` as any)}
+            activeOpacity={0.85}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="git-branch-outline" size={20} color="#a78bfa" />
+              <View>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 2 }}>{flow.title}</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
+                  {flow.savedAt ? new Date(flow.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Saved'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   const renderVenues = () => {
     if (savedVenues.length === 0) return renderEmptyState();
 
@@ -147,7 +187,7 @@ export default function SavedScreen() {
       <View style={styles.grid}>
         {savedVenues.map((venue) => (
           <View key={venue.id} style={styles.cardWrapper}>
-            <VenueCard venue={venue} />
+            <VenueCard venue={venue.details || venue} />
             <TouchableOpacity
               style={styles.removeButton}
               onPress={() => handleUnsave('venue', venue.id)}
@@ -186,7 +226,7 @@ export default function SavedScreen() {
     );
   };
 
-  const currentCount = activeTab === 'venues' ? savedVenues.length : savedEvents.length;
+  const currentCount = activeTab === 'venues' ? savedVenues.length : activeTab === 'events' ? savedEvents.length : savedFlows.length;
 
   return (
     <View style={styles.container}>
@@ -273,6 +313,27 @@ export default function SavedScreen() {
               </Text>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'flows' && styles.tabActive]}
+            onPress={() => handleTabChange('flows')}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.tabText,
+              activeTab === 'flows' && styles.tabTextActive
+            ]}>
+              Flows
+            </Text>
+            {savedFlows.length > 0 && (
+              <Text style={[
+                styles.tabCount,
+                activeTab === 'flows' && styles.tabCountActive
+              ]}>
+                {savedFlows.length}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Content */}
@@ -282,7 +343,7 @@ export default function SavedScreen() {
           </View>
         ) : (
           <>
-            {activeTab === 'venues' ? renderVenues() : renderEvents()}
+            {activeTab === 'venues' ? renderVenues() : activeTab === 'events' ? renderEvents() : renderFlows()}
           </>
         )}
 
@@ -425,5 +486,34 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     zIndex: 10,
+  },
+  flowsList: {
+    padding: 20,
+    gap: 10,
+  },
+  flowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  flowRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  flowRowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  flowRowMeta: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.3)',
   },
 });

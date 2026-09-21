@@ -1,0 +1,674 @@
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions,
+  Animated,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { colors, spacing } from '../../theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = 140;
+const CARD_HEIGHT = 180;
+const CHIP_HEIGHT = 36;
+const SOUND_CHIP_HEIGHT = 32;
+
+const API_BASE = 'https://lumina.viberyte.com';
+
+interface Venue {
+  id: number;
+  name: string;
+  image_url: string | null;
+  neighborhood: string | null;
+  city: string;
+  vibe_tags: string[];
+  rating: number | null;
+  energy_level: string | null;
+}
+
+interface Section {
+  key: string;
+  title: string;
+  emoji: string;
+  venue_count: number;
+  total_matching: number;
+  areas_included: string[];
+  was_expanded: boolean;
+  venues: Venue[];
+}
+
+interface Mood {
+  key: string;
+  label: string;
+}
+
+interface Sound {
+  key: string;
+  label: string;
+  emoji: string;
+}
+
+interface NightlifeData {
+  mode: string;
+  city: string;
+  mood: string;
+  sound: string;
+  moods: Mood[];
+  sounds: Sound[];
+  section_count: number;
+  total_venues: number;
+  sections: Section[];
+}
+
+// Mood Chip Component (Intent row)
+const MoodChip = ({ 
+  mood, 
+  isActive, 
+  onPress 
+}: { 
+  mood: Mood; 
+  isActive: boolean; 
+  onPress: () => void;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View 
+        style={[styles.moodChip, isActive && styles.moodChipActive, { transform: [{ scale }] }]}
+      >
+        <Text style={[styles.moodChipText, isActive && styles.moodChipTextActive]}>
+          {mood.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Sound Chip Component (Culture row)
+const SoundChip = ({ 
+  sound, 
+  isActive, 
+  onPress 
+}: { 
+  sound: Sound; 
+  isActive: boolean; 
+  onPress: () => void;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View 
+        style={[styles.soundChip, isActive && styles.soundChipActive, { transform: [{ scale }] }]}
+      >
+        <Text style={[styles.soundChipEmoji]}>{sound.emoji}</Text>
+        <Text style={[styles.soundChipText, isActive && styles.soundChipTextActive]}>
+          {sound.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Venue Card Component
+const VenueCard = ({ 
+  venue, 
+  onPress 
+}: { 
+  venue: Venue; 
+  onPress: () => void;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+  };
+
+  const imageUrl = venue.image_url?.startsWith('/') 
+    ? `${API_BASE}${venue.image_url}` 
+    : venue.image_url;
+
+  const displayTags = venue.vibe_tags?.slice(0, 2) || [];
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={[styles.venueCard, { transform: [{ scale }] }]}>
+        <View style={styles.venueImageContainer}>
+          {imageUrl ? (
+            <Image 
+              source={{ uri: imageUrl }} 
+              style={styles.venueImage} 
+              contentFit="cover" 
+              transition={200} 
+            />
+          ) : (
+            <LinearGradient
+              colors={['#1a1a1a', '#0d0d0d']}
+              style={styles.venueImagePlaceholder}
+            />
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.venueImageGradient}
+          />
+        </View>
+        
+        <View style={styles.venueInfo}>
+          <Text style={styles.venueName} numberOfLines={2}>{venue.name}</Text>
+          
+          {venue.neighborhood && (
+            <Text style={styles.venueNeighborhood} numberOfLines={1}>
+              {venue.neighborhood}{venue.city && venue.city !== 'Manhattan' ? `, ${venue.city}` : ''}
+            </Text>
+          )}
+          
+          {/* Tags removed for cleaner cards */}
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// Section Row Component
+const SectionRow = ({ 
+  section, 
+  onVenuePress,
+  onSeeAll,
+  primaryCity,
+}: { 
+  section: Section; 
+  onVenuePress: (venue: Venue) => void;
+  onSeeAll: () => void;
+  primaryCity: string;
+}) => {
+  const showExpansionHint = section.was_expanded && section.areas_included.length > 1;
+  const otherAreas = section.areas_included.filter(a => a !== primaryCity);
+
+  return (
+    <View style={styles.sectionContainer}>
+      <Pressable onPress={onSeeAll} style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          {showExpansionHint && otherAreas.length > 0 && (
+            <Text style={styles.expansionHint}>• {otherAreas[0]}</Text>
+          )}
+        </View>
+        <View style={styles.seeAllRow}>
+          <Text style={styles.seeAllText}>See All</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.zinc[500]} />
+        </View>
+      </Pressable>
+      
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.venueScrollContent}
+      >
+        {section.venues.map((venue) => (
+          <VenueCard 
+            key={venue.id} 
+            venue={venue} 
+            onPress={() => onVenuePress(venue)} 
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+
+// Empty state for sound filter
+const SoundEmptyState = ({ sound, city }: { sound: string; city: string }) => {
+  const labels: Record<string, string> = {
+    afro: 'Afro',
+    hiphop: 'Hip-Hop & R&B',
+    latin: 'Latin',
+  };
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyStateEmoji}>🎶</Text>
+      <Text style={styles.emptyStateTitle}>{labels[sound] || sound} in {city}</Text>
+      <Text style={styles.emptyStateSubtitle}>More spots coming soon</Text>
+    </View>
+  );
+};
+
+interface NightlifeTabProps {
+  filters?: {
+    city?: string;
+    searchQuery?: string;
+  };
+}
+
+export default function NightlifeTab({ filters = {} }: NightlifeTabProps) {
+  const router = useRouter();
+  const city = filters.city || 'Manhattan';
+  const resolvedCity = city === 'Near Me' ? 'Manhattan' : city;
+  
+  const [data, setData] = useState<NightlifeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeMood, setActiveMood] = useState('all');
+  const [activeSound, setActiveSound] = useState('all');
+
+  const fetchNightlife = useCallback(async (mood: string = 'all', sound: string = 'all', isRefresh: boolean = false) => {
+    if (!isRefresh) setLoading(true);
+    
+    try {
+      const url = `${API_BASE}/api/nightlife?city=${encodeURIComponent(resolvedCity)}&mood=${mood}&sound=${sound}`;
+      console.log('[NightlifeTab] Fetching:', url);
+      
+      const response = await fetch(url);
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[NightlifeTab] Got', result.section_count, 'sections,', result.total_venues, 'venues');
+        setData(result);
+      }
+    } catch (error) {
+      console.log('[NightlifeTab] Fetch error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [resolvedCity]);
+
+  useEffect(() => {
+    fetchNightlife(activeMood, activeSound);
+  }, [resolvedCity, fetchNightlife]);
+
+  const handleMoodChange = (mood: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveMood(mood);
+    fetchNightlife(mood, activeSound);
+  };
+
+  const handleSoundChange = (sound: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveSound(sound);
+    fetchNightlife(activeMood, sound);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchNightlife(activeMood, activeSound, true);
+  };
+
+  const goToVenue = (venue: Venue) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/venue/${venue.id}`);
+  };
+
+  const goToSeeAll = (section: Section) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({
+      pathname: '/nightlife-see-all',
+      params: { 
+        row: section.key, 
+        title: section.title,
+        emoji: section.emoji,
+        city: resolvedCity,
+        mood: activeMood,
+      },
+    });
+  };
+
+  if (loading && !data) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.violet[500]} />
+      </View>
+    );
+  }
+
+  // Fallback sounds if API doesn't return them yet
+  const sounds: Sound[] = data?.sounds || [
+    { key: 'all', label: 'All Sounds', emoji: '🎵' },
+    { key: 'afro', label: 'Afro', emoji: '🌍' },
+    { key: 'hiphop', label: 'Hip-Hop & R&B', emoji: '🎤' },
+    { key: 'latin', label: 'Latin', emoji: '💃' },
+  ];
+
+  const showEmptySound = activeSound !== 'all' && (data?.total_venues || 0) === 0;
+
+  return (
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.violet[500]}
+        />
+      }
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Tonight</Text>
+        <Text style={styles.headerSubtitle}>Curated for {resolvedCity}</Text>
+      </View>
+
+      {/* Intent Row — What kind of night? */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.moodChipsContainer}
+      >
+        {data?.moods?.map((mood) => (
+          <MoodChip
+            key={mood.key}
+            mood={mood}
+            isActive={activeMood === mood.key}
+            onPress={() => handleMoodChange(mood.key)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* Sound & Culture Row — What does it sound like? */}
+      <View style={styles.soundSection}>
+        <Text style={styles.soundLabel}>Sound & Culture</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.soundChipsContainer}
+        >
+          {sounds.map((sound) => (
+            <SoundChip
+              key={sound.key}
+              sound={sound}
+              isActive={activeSound === sound.key}
+              onPress={() => handleSoundChange(sound.key)}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Empty state for sound filter */}
+      {showEmptySound ? (
+        <SoundEmptyState sound={activeSound} city={resolvedCity} />
+      ) : (
+        /* Section Rows */
+        data?.sections?.map((section) => (
+          <SectionRow
+            key={section.key}
+            section={section}
+            onVenuePress={goToVenue}
+            onSeeAll={() => goToSeeAll(section)}
+            primaryCity={resolvedCity}
+          />
+        ))
+      )}
+
+      <View style={styles.bottomPadding} />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: spacing.md,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Header
+  header: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: colors.zinc[500],
+    marginTop: 2,
+  },
+  // Mood Chips (Intent)
+  moodChipsContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  moodChip: {
+    height: CHIP_HEIGHT,
+    paddingHorizontal: 16,
+    borderRadius: CHIP_HEIGHT / 2,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  moodChipActive: {
+    backgroundColor: colors.violet[600],
+    borderColor: colors.violet[500],
+  },
+  moodChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.zinc[400],
+  },
+  moodChipTextActive: {
+    color: colors.white,
+  },
+  // Sound & Culture Row
+  soundSection: {
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.lg,
+  },
+  soundLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.zinc[500],
+    paddingHorizontal: spacing.lg,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  soundChipsContainer: {
+    paddingHorizontal: spacing.lg,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  soundChip: {
+    height: SOUND_CHIP_HEIGHT,
+    paddingHorizontal: 14,
+    borderRadius: SOUND_CHIP_HEIGHT / 2,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginRight: 8,
+  },
+  soundChipActive: {
+    backgroundColor: 'rgba(251, 146, 60, 0.15)',
+    borderColor: 'rgba(251, 146, 60, 0.4)',
+  },
+  soundChipEmoji: {
+    fontSize: 14,
+  },
+  soundChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.zinc[500],
+  },
+  soundChipTextActive: {
+    color: '#fb923c',
+  },
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyStateEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: 6,
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: colors.zinc[500],
+  },
+  // Section
+  sectionContainer: {
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  sectionEmoji: {
+    fontSize: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.2,
+  },
+  expansionHint: {
+    fontSize: 13,
+    color: colors.zinc[500],
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  seeAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  seeAllText: {
+    fontSize: 14,
+    color: colors.zinc[500],
+    fontWeight: '600',
+  },
+  venueScrollContent: {
+    paddingHorizontal: spacing.lg,
+    gap: 12,
+  },
+  // Venue Card
+  venueCard: {
+    width: CARD_WIDTH,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  venueImageContainer: {
+    width: CARD_WIDTH,
+    height: 100,
+    position: 'relative',
+  },
+  venueImage: {
+    width: '100%',
+    height: '100%',
+  },
+  venueImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+  },
+  venueImageGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 40,
+  },
+  venueInfo: {
+    padding: 10,
+    gap: 4,
+  },
+  venueName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.white,
+    lineHeight: 18,
+  },
+  venueNeighborhood: {
+    fontSize: 12,
+    color: colors.zinc[500],
+  },
+  vibeTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  vibeTag: {
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  vibeTagText: {
+    fontSize: 10,
+    color: colors.violet[400],
+    fontWeight: '600',
+  },
+  bottomPadding: {
+    height: 100,
+  },
+});
