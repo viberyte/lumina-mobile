@@ -140,7 +140,7 @@ const Hero = ({ event, onPress }: { event: Event; onPress: ()=>void }) => {
         <View style={styles.heroTop}>
           <BlurView intensity={28} tint="dark" style={styles.heroTopPill}>
             <View style={[styles.heroTopDot,{backgroundColor: upscale ? '#D4AF6A' : '#A78BFA'}]}/>
-            <Text style={styles.heroTopText}>{upscale ? 'UPSCALE PICK' : 'TONIGHT'}</Text>
+            <Text style={styles.heroTopText}>{upscale ? 'UPSCALE PICK' : isTonightFn(event) ? 'TONIGHT' : 'COMING UP'}</Text>
           </BlurView>
         </View>
 
@@ -273,7 +273,13 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
     if (filters.searchQuery || vibe !== 'all') return null;
     const candidates = all.filter(e => (e.image_url||e.cover_image_url) && isTonightFn(e));
     if (candidates.length) return candidates.sort((a,b)=>(isUpscaleEvent(b)?1:0)-(isUpscaleEvent(a)?1:0))[0];
-    return all.find(e => e.image_url||e.cover_image_url) || null;
+    // No event tonight: the soonest upcoming event with an image, never a past one (VIBERYTE_TRUST_V1)
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const upcoming = all
+      .map(e => ({ e, d: getDate(e) }))
+      .filter(x => (x.e.image_url || x.e.cover_image_url) && x.d && x.d.getTime() >= startOfToday.getTime())
+      .sort((a, b) => (a.d as Date).getTime() - (b.d as Date).getTime());
+    return upcoming.length ? upcoming[0].e : null;
   }, [all, filters.searchQuery, vibe]);
 
   const sections = useMemo(() => {

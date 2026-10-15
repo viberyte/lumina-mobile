@@ -812,7 +812,7 @@ export default function HomeScreen() {
         );
 
       case 'nearYou':
-        if (nearYouVenues.length === 0) return null;
+        if (nearYouVenues.length === 0 || locationMode === false) return null; // Around you only in Near Me mode (VIBERYTE_TRUST_V1)
         return (
           <View key="near-you" style={s.section}>
             <SectionHeader title="Around You" subtitle={distanceRange(nearYouVenues)} onSeeAll={openNear} />
