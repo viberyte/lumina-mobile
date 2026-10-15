@@ -30,11 +30,12 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheFlow } from '../../utils/flowCache';
 import FlowCard from '../../components/FlowCard';
-
+import tasteTracker from '../../services/tasteTracker';
+ 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = SCREEN_HEIGHT * 0.52;
 const API_URL = 'https://viberyte.com';
-
+ 
 const safeParseArray = (data: any): any[] => {
   if (!data) return [];
   if (Array.isArray(data)) return data;
@@ -43,7 +44,7 @@ const safeParseArray = (data: any): any[] => {
   }
   return [];
 };
-
+ 
 interface NextStop {
   id: string;
   name: string;
@@ -56,8 +57,8 @@ interface NextStop {
   transport_mode?: 'walk' | 'rideshare';
   transition_message?: string;
 }
-
-
+ 
+ 
 // ── VENUE FLOW CARD ──────────────────────────────────────
 const FLOW_ACCENTS: Record<string, string> = {
   romantic: '#f9a8c9', girls_night: '#d8b4fe', guys_night: '#93c5fd',
@@ -67,19 +68,19 @@ const FLOW_BASES: Record<string, string> = {
   romantic: '#1a0008', girls_night: '#07030f', guys_night: '#030810',
   late_night: '#020208', weekend: '#011008', pregame: '#0f0800', group: '#010810',
 };
-
+ 
 function VenueFlowCard({ flow, router }: { flow: any; router: any }) {
   const accent = FLOW_ACCENTS[flow.intent] || '#a5b4fc';
   const base = FLOW_BASES[flow.intent] || '#020208';
   const visibleStops = flow.stops.slice(0, 2);
   const extraCount = flow.stops.length - 2;
-
+ 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cacheFlow(flow.slug, flow);
     router.push('/flow/' + flow.slug);
   };
-
+ 
   return (
     <TouchableOpacity
       onPress={handlePress}
@@ -130,8 +131,8 @@ function VenueFlowCard({ flow, router }: { flow: any; router: any }) {
   );
 }
 // ─────────────────────────────────────────────────────────
-
-
+ 
+ 
 function VenueReelPlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, p => {
     p.loop = true;
@@ -147,8 +148,8 @@ function VenueReelPlayer({ uri }: { uri: string }) {
     />
   );
 }
-
-
+ 
+ 
 function GalleryReelPlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, p => {
     p.loop = true;
@@ -164,7 +165,7 @@ function GalleryReelPlayer({ uri }: { uri: string }) {
     />
   );
 }
-
+ 
 export default function VenueDetailScreen() {
   const { id } = useLocalSearchParams();
   const [venue, setVenue] = useState<any>(null);
@@ -173,7 +174,7 @@ export default function VenueDetailScreen() {
   const [venueFlows, setVenueFlows] = useState<any[]>([]);
   const [reelUrl, setReelUrl] = useState<string | null>(null);
   const [venueReels, setVenueReels] = useState<string[]>([]);
-
+ 
   useEffect(() => {
     const loadFlows = async () => {
       try {
@@ -194,30 +195,31 @@ export default function VenueDetailScreen() {
   const [saved, setSaved] = useState(false);
   const [savingBusy, setSavingBusy] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
-
+  const tasteTrackedRef = useRef<string | null>(null);
+ 
   const heroOpacity = scrollY.interpolate({
     inputRange: [0, HERO_HEIGHT * 0.5],
     outputRange: [1, 0.4],
     extrapolate: 'clamp',
   });
-
+ 
   const navOpacity = scrollY.interpolate({
     inputRange: [HERO_HEIGHT * 0.4, HERO_HEIGHT * 0.7],
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
-
+ 
   const heroScale = scrollY.interpolate({
     inputRange: [-100, 0],
     outputRange: [1.08, 1],
     extrapolate: 'clamp',
   });
-
+ 
   useEffect(() => {
     StatusBar.setBarStyle('light-content');
     fetchVenueDetails();
   }, [id]);
-
+ 
   const fetchVenueDetails = async () => {
     try {
       setLoading(true);
@@ -234,17 +236,24 @@ export default function VenueDetailScreen() {
         setReelUrl(allReels[0]);
       }
       if (data?.id) trackBehavior(Number(data.id), 'view', 'detail');
+      // Record taste signal for personalization (guard against re-mounts)
+      const venueKey = String(venueData?.id || id);
+      if (tasteTrackedRef.current !== venueKey) {
+        tasteTrackedRef.current = venueKey;
+        const cat = venueData?.standardized_category || venueData?.category || '';
+        tasteTracker.recordDetailView(venueData?.id || id, cat);
+      }
     } catch (error) {
       console.error('Error fetching venue:', error);
     } finally {
       setLoading(false);
     }
   };
-
+ 
   useEffect(() => {
     if (venue?.id) checkSaved(venue.id);
   }, [venue?.id]);
-
+ 
   const handleShare = async () => {
     if (!venue) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -254,11 +263,11 @@ export default function VenueDetailScreen() {
       });
     } catch {}
   };
-
+ 
   const checkSaved = async (vid: number | string) => {
     try { setSaved(await api.isVenueSaved(Number(vid))); } catch {}
   };
-
+ 
   const handleToggleSave = async () => {
     if (!venue?.id || savingBusy) return;
     const authed = await requireAuth();
@@ -271,13 +280,15 @@ export default function VenueDetailScreen() {
       const r = next ? await api.saveFavorite(Number(venue.id))
                      : await api.removeFavorite(Number(venue.id));
       if (r && r.error === 'not_logged_in') setSaved(!next); // revert
+      // Record save taste signal (higher weight)
+      if (next) tasteTracker.recordSave(venue.id, venue.standardized_category || venue.category || '');
     } catch {
       setSaved(!next); // revert on failure
     } finally {
       setSavingBusy(false);
     }
   };
-
+ 
   const handleDirections = () => {
     if (!venue?.address) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -285,25 +296,25 @@ export default function VenueDetailScreen() {
     const url = `https://maps.apple.com/?daddr=${encoded}`;
     Linking.openURL(url);
   };
-
+ 
   const handleInstagram = () => {
     if (!venue?.instagram_handle) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Linking.openURL(`https://instagram.com/${venue.instagram_handle.replace('@', '')}`);
   };
-
+ 
   const handleCall = () => {
     if (!venue?.phone) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Linking.openURL(`tel:${venue.phone}`);
   };
-
+ 
   if (loading) {
     return (
       <LoadingScreen />
     );
   }
-
+ 
   if (!venue) {
     return (
       <View style={styles.loader}>
@@ -311,7 +322,7 @@ export default function VenueDetailScreen() {
       </View>
     );
   }
-
+ 
   const heroImage = getPhotoUrl(venue);
   const allPhotos = getAllPhotos(venue).slice(0, 12);
   const vibes = safeParseArray(venue.primary_vibes || venue.vibe_tags).slice(0, 3);
@@ -322,11 +333,11 @@ export default function VenueDetailScreen() {
   const description = venue.description || venue.bio || null;
   const descPreview = description ? description.slice(0, 180) : null;
   const needsExpand = description && description.length > 180;
-
+ 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-
+ 
       {/* Floating nav */}
       <Animated.View style={[styles.floatingNav, { opacity: navOpacity }]}>
         <View style={{ height: 44 + (Platform.OS === 'ios' ? 44 : 24) }} />
@@ -340,7 +351,7 @@ export default function VenueDetailScreen() {
           </TouchableOpacity>
         </View>
       </Animated.View>
-
+ 
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -371,7 +382,7 @@ export default function VenueDetailScreen() {
             locations={[0, 0.4, 0.75, 1]}
             style={StyleSheet.absoluteFill}
           />
-
+ 
           {/* Back + Share */}
           <View style={styles.heroTopRow}>
             <TouchableOpacity onPress={() => router.back()} style={styles.heroBtn} activeOpacity={0.8}>
@@ -386,7 +397,7 @@ export default function VenueDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
-
+ 
           {/* Hero content */}
           <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
             {vibes.length > 0 && (
@@ -406,7 +417,7 @@ export default function VenueDetailScreen() {
             </Text>
           </Animated.View>
         </View>
-
+ 
         {/* ── PRIMARY ACTION ── */}
         {venue.address && (
           <View style={styles.primaryActionRow}>
@@ -416,7 +427,7 @@ export default function VenueDetailScreen() {
             </TouchableOpacity>
           </View>
         )}
-
+ 
         {/* ── SECONDARY ACTIONS — text links ── */}
         <View style={styles.secondaryActionsRow}>
           {venue.phone && (
@@ -439,7 +450,7 @@ export default function VenueDetailScreen() {
             </>
           )}
         </View>
-
+ 
         {/* ── ABOUT ── */}
         {description && (
           <View style={styles.section}>
@@ -454,7 +465,7 @@ export default function VenueDetailScreen() {
             )}
           </View>
         )}
-
+ 
         {/* ── REELS & PHOTOS — reels first ── */}
         {(venueReels.length > 0 || allPhotos.length > 0) && (
           <View style={[styles.section, { paddingHorizontal: 0 }]}>
@@ -487,7 +498,7 @@ export default function VenueDetailScreen() {
             </ScrollView>
           </View>
         )}
-
+ 
         {/* ── LOCATION MAP ── */}
         {venue.address && (
           <View style={styles.section}>
@@ -541,7 +552,7 @@ export default function VenueDetailScreen() {
             </View>
           </View>
         )}
-
+ 
         {/* ── HOURS ── */}
         {venue.hours_json && venue.hours_json !== '{}' && (
           <View style={styles.section}>
@@ -554,7 +565,7 @@ export default function VenueDetailScreen() {
             ))}
           </View>
         )}
-
+ 
         {/* ── CONTINUE THE NIGHT — FLOWS ── */}
         {venueFlows.length > 0 && (
           <View style={styles.section}>
@@ -567,7 +578,7 @@ export default function VenueDetailScreen() {
           </View>
         )}
       </Animated.ScrollView>
-
+ 
       {/* Bottom bar */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
@@ -581,7 +592,7 @@ export default function VenueDetailScreen() {
           </LinearGradient>
         </TouchableOpacity>
       </View>
-
+ 
       {addToPlanVisible && venue && (
         <AddToPlanSheet
           venue={venue}
@@ -592,11 +603,11 @@ export default function VenueDetailScreen() {
     </View>
   );
 }
-
+ 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loader: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-
+ 
   floatingNav: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
@@ -614,7 +625,7 @@ const styles = StyleSheet.create({
   },
   floatingNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   floatingNavTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
-
+ 
   heroContainer: { height: HERO_HEIGHT, overflow: 'hidden' },
   heroTopRow: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -639,7 +650,7 @@ const styles = StyleSheet.create({
   vibePillText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
   heroTitle: { fontSize: 30, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 6, lineHeight: 34 },
   heroMeta: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
-
+ 
   primaryActionRow: {
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -678,7 +689,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: 'rgba(255,255,255,0.2)',
   },
-
+ 
   section: { paddingHorizontal: 20, paddingTop: 28 },
   sectionLabel: {
     fontSize: 11, fontWeight: '700', color: '#52525b',
@@ -686,10 +697,10 @@ const styles = StyleSheet.create({
   },
   bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.72)', lineHeight: 24 },
   readMore: { fontSize: 14, color: '#a78bfa', marginTop: 8, fontWeight: '500' },
-
+ 
   photoLarge: { width: SCREEN_WIDTH * 0.72, height: 220, borderRadius: 14 },
   photoSmall: { width: SCREEN_WIDTH * 0.45, height: 220, borderRadius: 14 },
-
+ 
   mapCard: {
     borderRadius: 16,
     backgroundColor: '#111',
@@ -713,7 +724,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
   },
   directionsChipText: { fontSize: 11, color: '#a78bfa', fontWeight: '500' },
-
+ 
   mapImage: { width: '100%', height: 180, borderRadius: 16 },
   markerOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(139,92,246,0.35)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
   markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
@@ -735,7 +746,7 @@ const styles = StyleSheet.create({
   },
   hoursDay: { fontSize: 14, color: '#e4e4e7', fontWeight: '500' },
   hoursTime: { fontSize: 14, color: '#71717a' },
-
+ 
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.92)',
@@ -751,3 +762,4 @@ const styles = StyleSheet.create({
   },
   bottomBtnText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
 });
+ 

@@ -44,12 +44,15 @@ const isValidUrl = (url: string): boolean => {
 };
 
 // Check if URL is a trusted path (local or known CDN)
+// Google Places photos are served from lh3.googleusercontent.com (sometimes lh4/lh5)
+const GOOGLE_PHOTOS_CDN = /\/\/lh\d+\.googleusercontent\.com\//;
+
 const isLocalPath = (url: string): boolean => {
   if (!url || typeof url !== 'string') return false;
   return (
     url.startsWith('/') ||
     url.includes('viberyte.com') ||
-    url.includes('googleusercontent.com')
+    GOOGLE_PHOTOS_CDN.test(url)
   );
 };
 
@@ -168,26 +171,26 @@ export const getAllPhotos = (venue: any): string[] => {
   if (venue.google_photos) {
     try {
       const raw = venue.google_photos;
-      let photos: any[];
+      let gphotos: any[];
       if (typeof raw === 'string') {
         try {
           const parsed = JSON.parse(raw);
-          photos = Array.isArray(parsed) ? parsed : [parsed];
+          gphotos = Array.isArray(parsed) ? parsed : [parsed];
         } catch {
-          photos = [raw];
+          gphotos = [raw];
         }
       } else if (Array.isArray(raw)) {
-        photos = raw;
+        gphotos = raw;
       } else {
-        photos = [];
+        gphotos = [];
       }
-      photos.map(normalizeMedia).forEach(p => {
+      gphotos.map(normalizeMedia).forEach(p => {
         if (p.type === 'image') addPhoto(p.url);
       });
     } catch (e) {}
   }
 
-  // Add instagram_media IMAGES (from venue_instagram_media table)
+  // Add instagram_media IMAGES
   if (venue.instagram_media && Array.isArray(venue.instagram_media)) {
     venue.instagram_media.forEach((item: any) => {
       if (item.type !== 'video' && item.url) {
@@ -213,7 +216,7 @@ export const getAllPhotos = (venue: any): string[] => {
   return photos;
 };
 
-// Get all media (photos + videos) with source tagging for persona logic
+// Get all media (photos + videos) with source tagging
 export const getAllMedia = (venue: any): MediaItem[] => {
   if (!venue) return [];
   const media: MediaItem[] = [];
@@ -255,20 +258,20 @@ export const getAllMedia = (venue: any): MediaItem[] => {
   if (venue.google_photos) {
     try {
       const raw = venue.google_photos;
-      let photos: any[];
+      let gphotos: any[];
       if (typeof raw === 'string') {
         try {
           const parsed = JSON.parse(raw);
-          photos = Array.isArray(parsed) ? parsed : [parsed];
+          gphotos = Array.isArray(parsed) ? parsed : [parsed];
         } catch {
-          photos = [raw];
+          gphotos = [raw];
         }
       } else if (Array.isArray(raw)) {
-        photos = raw;
+        gphotos = raw;
       } else {
-        photos = [];
+        gphotos = [];
       }
-      photos.map(normalizeMedia).forEach(p => {
+      gphotos.map(normalizeMedia).forEach(p => {
         addMedia(p, 'google', googleIndex++);
       });
     } catch (e) {}
@@ -333,7 +336,6 @@ export const getTikTokVideos = (venue: any): MediaItem[] => {
 export const getVideoUrl = (venue: any): string | null => {
   if (!venue) return null;
 
-  // Check instagram_media for videos (local paths)
   if (venue.instagram_media && Array.isArray(venue.instagram_media)) {
     const video = venue.instagram_media.find((m: any) => m.type === 'video' && isLocalPath(m.url));
     if (video) {
@@ -341,7 +343,6 @@ export const getVideoUrl = (venue: any): string | null => {
     }
   }
 
-  // Check TikTok videos
   if (venue.tiktok_videos && Array.isArray(venue.tiktok_videos)) {
     const video = venue.tiktok_videos.find((m: any) => isLocalPath(m.url));
     if (video) {

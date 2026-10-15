@@ -1,42 +1,58 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   Animated,
   Dimensions,
   RefreshControl,
   FlatList,
   Pressable,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
-import { colors, typography, spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
 import luminaApi from '../../services/luminaApi';
 import FlowCard from '../../components/FlowCard';
-import FeaturedVenueCard from '../../components/FeaturedVenueCard';
-import InlineReel from '../../components/InlineReel';
 import { getPhotoUrl, parseVibeTags } from '../../utils/photoHelper';
 import { usePersona } from '../../hooks/usePersona';
 import StretchCitySelector from '../../components/StretchCitySelector';
 import personaService, { sortEventsByMusicPreference } from '../../services/personaService';
 import { useUserFollows } from '../../hooks/useFollow';
+import favoritesService from '../../services/favorites';
+import tasteTracker from '../../services/tasteTracker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Safely parse vibe tags (could be string or array)
+// ─── Layout constants ──────────────────────────────────────────────
+const SIDE_PAD = 16;
+const CARD_GAP = 10;
+const CARD_WIDTH = (SCREEN_WIDTH - SIDE_PAD * 2 - CARD_GAP) / 2.15;
+const CARD_IMAGE_HEIGHT = CARD_WIDTH;
+const HERO_HEIGHT = 220;
+const SECTION_GAP = 28;
+const FLOW_CARD_WIDTH = SCREEN_WIDTH * 0.82;
+const FOLLOW_SIZE = 64;
+
+// ─── Quick-intent → category mapping (values from MASTER_TAG_SCHEMA) ─
+const INTENT_MAP: Record<string, { label: string; icon: string; categories: string[]; tagPatterns?: RegExp }> = {
+  eat: { label: 'Eat', icon: 'restaurant-outline', categories: ['restaurant'], tagPatterns: /dining|brunch|food|bistro|cafe|diner/i },
+  drinks: { label: 'Drinks', icon: 'wine-outline', categories: ['bar'], tagPatterns: /cocktail|wine|rooftop|speakeasy|pub|beer|drinks/i },
+  goOut: { label: 'Go Out', icon: 'musical-notes-outline', categories: ['club', 'nightclub', 'lounge', 'live_music'], tagPatterns: /dance|dj|party|nightlife/i },
+  surprise: { label: 'Surprise Me', icon: 'sparkles-outline', categories: [] }, // empty = all categories, shuffled
+};
+
+// ─── Helpers ───────────────────────────────────────────────────────
 const safeGetTags = (vibeTags: any): string[] => {
   if (!vibeTags) return [];
   if (Array.isArray(vibeTags)) return vibeTags;
@@ -51,177 +67,212 @@ const safeGetTags = (vibeTags: any): string[] => {
   return [];
 };
 
-
-// Card sizes
-const CARD_WIDTH = 200;
-const CARD_HEIGHT = 300;
-const SUPER_CARD_WIDTH = 200;
-const SUPER_CARD_HEIGHT = 320;
-
-// Hero carousel
-const HERO_CARD_WIDTH = SCREEN_WIDTH - 60;
-const HERO_CARD_HEIGHT = 240;
-const HERO_CARD_SPACING = 12;
-
-// Daily refresh helper
 const getDailySeed = () => {
-  const today = new Date();
-  return today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 };
 
-const seededShuffle = (array: any[], seed: number) => {
-  const shuffled = [...array];
-  let currentSeed = seed;
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    currentSeed = (currentSeed * 9301 + 49297) % 233280;
-    const j = Math.floor((currentSeed / 233280) * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+const seededShuffle = (arr: any[], seed: number) => {
+  const a = [...arr];
+  let s = seed;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 9301 + 49297) % 233280;
+    const j = Math.floor((s / 233280) * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return shuffled;
+  return a;
 };
 
-// Get time-aware greeting
 const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  if (hour < 21) return 'Good evening';
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning';
+  if (h < 17) return 'Good Afternoon';
+  if (h < 21) return 'Good Evening';
   return 'Tonight';
 };
 
-// Get time-aware context
-const getTimeContext = () => {
-  const hour = new Date().getHours();
+const getContextLine = () => {
+  const h = new Date().getHours();
   const day = new Date().getDay();
   const isWeekend = day === 0 || day === 5 || day === 6;
-  
-  if (hour >= 17 && hour < 21) return isWeekend ? 'Weekend vibes starting' : 'The night is young';
-  if (hour >= 21) return 'Peak hours approaching';
-  if (hour < 12) return 'Planning ahead?';
-  return isWeekend ? 'Weekend mode' : 'Midweek escape';
+  if (h < 12) return isWeekend ? 'Brunch plans?' : 'Start the day right';
+  if (h < 17) return isWeekend ? 'Where to next?' : 'Planning tonight?';
+  if (h < 21) return 'The night is calling';
+  return 'Still going strong';
 };
 
-// Section hints by persona intent
-const getSectionHint = (section: string, persona: any): string => {
-  const status = persona?.relationship_status || 'single';
-  const hints: Record<string, Record<string, string>> = {
-    tonight: {
-      single: 'Curated for your vibe tonight',
-      dating: 'Perfect spots to impress',
-      in_relationship: 'Date night awaits',
-    },
-    popular: {
-      single: 'Where the energy is',
-      dating: 'Trending this week',
-      in_relationship: 'Couple favorites',
-    },
-    dating: {
-      single: 'Great first date energy',
-      dating: 'Take them here',
-      in_relationship: 'Romantic picks for two',
-    },
-    lateNight: {
-      single: 'Keep the night going',
-      dating: 'After dinner moves',
-      in_relationship: 'Late night together',
-    },
-  };
-  return hints[section]?.[status] || '';
-};
-
-// Skeleton loader
-const SkeletonCard = ({ width = CARD_WIDTH, height = CARD_HEIGHT }) => (
-  <View style={[styles.skeletonCard, { width, height }]}>
-    <Animated.View style={styles.skeletonShimmer} />
-  </View>
-);
-
-const SkeletonHome = () => (
-  <View style={styles.skeletonContainer}>
-    <View style={styles.skeletonHeader}>
-      <View style={[styles.skeletonBar, { width: 180, height: 28 }]} />
-      <View style={[styles.skeletonBar, { width: 100, height: 16, marginTop: 8 }]} />
-    </View>
-    <SkeletonCard width={HERO_CARD_WIDTH} height={HERO_CARD_HEIGHT} />
-    <View style={styles.skeletonSection}>
-      <View style={[styles.skeletonBar, { width: 140, height: 20 }]} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-      </ScrollView>
-    </View>
-  </View>
-);
-
-
-// Animated pressable card wrapper
+// ─── Animated press wrapper ────────────────────────────────────────
 const AnimatedPressable = ({ children, style, onPress }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
-  
-  const handlePressIn = () => {
-    Animated.spring(scale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
-  
-  const handlePressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  };
-  
   return (
-    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }).start()}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start()}
+    >
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         {children}
       </Animated.View>
     </Pressable>
   );
 };
-function ReelCardPlayer({ uri, photoUrl, playing = true }: { uri: string; photoUrl: string | null; playing?: boolean }) {
-  const player = useVideoPlayer(uri, p => {
-    p.loop = true;
-    p.muted = true;
-  });
 
-  React.useEffect(() => {
-    if (playing) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [playing]);
+// ─── Skeleton ──────────────────────────────────────────────────────
+const SkeletonHome = () => (
+  <View style={{ flex: 1, paddingHorizontal: SIDE_PAD, paddingTop: 20 }}>
+    <View style={{ width: 180, height: 22, backgroundColor: '#1a1a1f', borderRadius: 8, marginBottom: 6 }} />
+    <View style={{ width: 120, height: 14, backgroundColor: '#1a1a1f', borderRadius: 6, marginBottom: 20 }} />
+    <View style={{ width: '100%', height: 44, backgroundColor: '#1a1a1f', borderRadius: 12, marginBottom: 16 }} />
+    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
+      {[0, 1, 2, 3].map(i => (
+        <View key={i} style={{ width: 72, height: 36, backgroundColor: '#1a1a1f', borderRadius: 20 }} />
+      ))}
+    </View>
+    <View style={{ width: '100%', height: HERO_HEIGHT, backgroundColor: '#1a1a1f', borderRadius: 14, marginBottom: 28 }} />
+    <View style={{ width: 130, height: 20, backgroundColor: '#1a1a1f', borderRadius: 6, marginBottom: 14 }} />
+    <View style={{ flexDirection: 'row', gap: CARD_GAP }}>
+      <View style={{ width: CARD_WIDTH, height: CARD_IMAGE_HEIGHT + 44, backgroundColor: '#1a1a1f', borderRadius: 12 }} />
+      <View style={{ width: CARD_WIDTH, height: CARD_IMAGE_HEIGHT + 44, backgroundColor: '#1a1a1f', borderRadius: 12 }} />
+    </View>
+  </View>
+);
+
+// ─── Compact Venue Card ────────────────────────────────────────────
+const CompactVenueCard = React.memo(({ venue, onPress }: { venue: any; onPress: () => void }) => {
+  const photoUrl = getPhotoUrl(venue);
+  const category = (venue.standardized_category || venue.category || '').replace(/^\w/, (c: string) => c.toUpperCase());
 
   return (
-    <>
-      {photoUrl && <Image source={{ uri: photoUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />}
-      {playing && <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />}
-    </>
+    <AnimatedPressable style={s.compactCard} onPress={onPress}>
+      <View style={s.compactImageWrap}>
+        {photoUrl ? (
+          <Image
+            source={{ uri: photoUrl }}
+            style={s.compactImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+          />
+        ) : (
+          <View style={[s.compactImage, { backgroundColor: '#1a1a1f' }]} />
+        )}
+      </View>
+      <Text style={s.compactName} numberOfLines={1}>{venue.name}</Text>
+      <Text style={s.compactMeta} numberOfLines={1}>
+        {venue.neighborhood || category || venue.city}
+      </Text>
+    </AnimatedPressable>
   );
-}
+});
 
+// ─── Compact Event Card ────────────────────────────────────────────
+const CompactEventCard = React.memo(({ event, onPress }: { event: any; onPress: () => void }) => {
+  const imageUrl = event.image_url || event.cover_image_url;
+  const genre = event.genre || event.music_genre || '';
+
+  return (
+    <AnimatedPressable style={s.compactCard} onPress={onPress}>
+      <View style={s.compactImageWrap}>
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={s.compactImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+          />
+        ) : (
+          <View style={[s.compactImage, { backgroundColor: '#1a1a1f' }]} />
+        )}
+        {genre ? (
+          <View style={s.genrePill}>
+            <Text style={s.genrePillText} numberOfLines={1}>{genre}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={s.compactName} numberOfLines={1}>{event.title || event.name}</Text>
+      <Text style={s.compactMeta} numberOfLines={1}>
+        {event.venue_name || genre}
+      </Text>
+    </AnimatedPressable>
+  );
+});
+
+// ─── Section Header ────────────────────────────────────────────────
+const SectionHeader = ({ title, subtitle, onSeeAll }: { title: string; subtitle?: string; onSeeAll?: () => void }) => (
+  <View style={s.sectionHeader}>
+    <View style={{ flex: 1 }}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      {subtitle ? <Text style={s.sectionSubtitle}>{subtitle}</Text> : null}
+    </View>
+    {onSeeAll && (
+      <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Text style={s.seeAll}>See All</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
+
+// ─── Horizontal Collection Row ─────────────────────────────────────
+const CollectionRow = React.memo(({ data, renderItem, keyPrefix = 'v' }: { data: any[]; renderItem: (item: any) => React.ReactNode; keyPrefix?: string }) => (
+  <FlatList
+    data={data}
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ paddingHorizontal: SIDE_PAD, gap: CARD_GAP }}
+    decelerationRate="fast"
+    keyExtractor={(item) => `${keyPrefix}-${item.id}`}
+    renderItem={({ item }) => <>{renderItem(item)}</>}
+  />
+));
+
+// ─── Quick Intent Pill ─────────────────────────────────────────────
+const IntentPill = React.memo(({ intentKey, active, onPress }: { intentKey: string; active: boolean; onPress: () => void }) => {
+  const intent = INTENT_MAP[intentKey];
+  if (!intent) return null;
+  return (
+    <TouchableOpacity
+      style={[s.intentPill, active && s.intentPillActive]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Ionicons
+        name={intent.icon as any}
+        size={16}
+        color={active ? '#FAFAFA' : '#A1A1AA'}
+        style={{ marginRight: 5 }}
+      />
+      <Text style={[s.intentPillText, active && s.intentPillTextActive]}>
+        {intent.label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// HOME SCREEN
+// ═══════════════════════════════════════════════════════════════════
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { persona, content, isLoading: personaLoading } = usePersona();
-  
+  const { persona, isLoading: personaLoading } = usePersona();
+
+  // ── Core state ──────────────────────────────────────────────────
   const [userName, setUserName] = useState('');
   const [userCity, setUserCity] = useState('Manhattan');
-  const [heroVenues, setHeroVenues] = useState<any[]>([]);
+  const [heroVenue, setHeroVenue] = useState<any>(null);
   const [pickedForYou, setPickedForYou] = useState<any[]>([]);
+  const [yourKindVenues, setYourKindVenues] = useState<any[]>([]);
+  const [intentResults, setIntentResults] = useState<any[]>([]);
+  const [activeIntent, setActiveIntent] = useState<string | null>(null);
   const [featuredEvents, setFeaturedEvents] = useState<any[]>([]);
   const [happeningNow, setHappeningNow] = useState<any[]>([]);
   const [flowsData, setFlowsData] = useState<any[]>([]);
   const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
   const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
   const [nearYouVenues, setNearYouVenues] = useState<any[]>([]);
+  const [allVenues, setAllVenues] = useState<any[]>([]); // cache for intent filtering
+  const [hasTaste, setHasTaste] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCitySelector, setShowCitySelector] = useState(false);
@@ -229,224 +280,233 @@ export default function HomeScreen() {
   const [reloadingCity, setReloadingCity] = useState('');
   const [refreshSeed, setRefreshSeed] = useState(0);
   const reloadOpacity = useRef(new Animated.Value(0)).current;
-  
-  // User follows for "Following" section
-  const { follows, loading: followsLoading, refresh: refreshFollows } = useUserFollows();
-  
-  // Hero carousel state
-  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
-  const heroScrollX = useRef(new Animated.Value(0)).current;
-
-  // Subtle fade in animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const glowAnim = useRef(new Animated.Value(0.5)).current;
 
+  const { follows, refresh: refreshFollows } = useUserFollows();
+
+  // ── Lifecycle ───────────────────────────────────────────────────
   useEffect(() => {
     loadProfile();
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-
-  // Pulsing glow effect for greeting
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0.5,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-  // Fetch nearest venues using device location
   useEffect(() => {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const { latitude, longitude } = loc.coords;
         const res = await fetch(
-          `https://viberyte.com/api/venues?lat=${latitude}&lng=${longitude}&limit=10&sort=distance`
+          `https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=10&sort=distance`
         ).then(r => r.json()).catch(() => null);
         if (res?.venues?.length) {
           setNearYouVenues(res.venues.filter((v: any) => getPhotoUrl(v)).slice(0, 8));
         }
-      } catch (e) {
-        console.log('Location error:', e);
-      }
+      } catch {}
     })();
   }, []);
 
-  // Load content when persona is ready
   useEffect(() => {
-    if (!personaLoading) {
-      loadContent();
-    }
+    if (!personaLoading) loadContent();
   }, [personaLoading]);
 
   const loadProfile = async () => {
     try {
       const profile = await AsyncStorage.getItem('@lumina_profile');
       const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
-      if (profile) {
-        const data = JSON.parse(profile);
-        setUserName(data.name || '');
+      if (profile) { const d = JSON.parse(profile); setUserName(d.name || ''); }
+      if (savedCity && savedCity !== 'Near Me') setUserCity(savedCity);
+    } catch {}
+  };
+
+  // ── Build "Your Kind of Places" from taste + favorites + persona ─
+  const buildYourKindSection = async (sortedVenues: any[], heroId: any) => {
+    try {
+      const [topCats, recentIds, hasData, favs] = await Promise.all([
+        tasteTracker.getTopCategories(3),
+        tasteTracker.getRecentlyViewed(),
+        tasteTracker.hasTasteData(),
+        favoritesService.getFavorites(),
+      ]);
+      setHasTaste(hasData);
+
+      if (!hasData && favs.length < 2) {
+        // New user fallback: show persona-sorted top picks (not duplicating Tonight's Picks)
+        setYourKindVenues([]);
+        return;
       }
-      if (savedCity && savedCity !== "Near Me") {
-        setUserCity(savedCity);
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
+
+      // Score each venue based on: fav match, top-category match, recent view, persona sort position
+      const favIds = new Set(favs.map(f => String(f.id)));
+      const recentSet = new Set(recentIds);
+      const topCatSet = new Set(topCats);
+
+      const scored = sortedVenues
+        .filter((v: any) => v.id !== heroId && getPhotoUrl(v))
+        .map((v: any, idx: number) => {
+          let score = 0;
+          const cat = (v.standardized_category || v.category || '').toLowerCase();
+          if (topCatSet.has(cat)) score += 5;
+          if (favIds.has(String(v.id))) score += 4;
+          if (recentSet.has(String(v.id))) score += 2;
+          // Persona position bonus (higher ranked = higher score)
+          score += Math.max(0, 20 - idx) * 0.1;
+          return { ...v, _kindScore: score };
+        })
+        .filter((v: any) => v._kindScore > 0)
+        .sort((a: any, b: any) => b._kindScore - a._kindScore)
+        .slice(0, 8);
+
+      setYourKindVenues(scored);
+    } catch {
+      setYourKindVenues([]);
     }
   };
 
-  const loadContent = async (cityOverride?: string) => {
-    const rawCity = cityOverride || userCity;
-    // "Near Me" is a UI label not a real city — resolve to saved city or default
-    const savedFallback = await AsyncStorage.getItem('@lumina_selected_city').catch(() => null);
-    const activeCity = (!rawCity || rawCity === 'Near Me') 
-      ? (savedFallback && savedFallback !== 'Near Me' ? savedFallback : 'Manhattan')
-      : rawCity;
+  // ── Data loading (preserves all backend logic) ──────────────────
+  const loadContent = async (cityOverride?: string, seedOverride?: number) => {
+    // Always read saved city from storage to avoid race with useState
+    const savedCity = await AsyncStorage.getItem('@lumina_selected_city').catch(() => null);
+    const rawCity = cityOverride || (savedCity && savedCity !== 'Near Me' ? savedCity : null) || userCity;
+    const activeCity = (!rawCity || rawCity === 'Near Me') ? 'Manhattan' : rawCity;
+    // Sync state if storage had a different city
+    if (savedCity && savedCity !== 'Near Me' && savedCity !== userCity) setUserCity(savedCity);
     try {
       setLoading(true);
-      console.log('[loadContent] starting for city:', activeCity);
       const [venues, events, flowsRes, featuredRes] = await Promise.all([
-        luminaApi.getVenues(activeCity || 'Manhattan').then(r => { console.log('[loadContent] venues done', r?.length); return r; }),
-        luminaApi.getEvents(activeCity || 'New York').then(r => { console.log('[loadContent] events done', r?.length); return r; }),
-        fetch('https://viberyte.com/api/flows?city=' + encodeURIComponent(activeCity || 'Manhattan') + (persona?.music_preferences?.[0] ? '&music=' + encodeURIComponent(persona.music_preferences[0]) : '')).then(r => r.json()).then(r => { console.log('[loadContent] flows done'); return r; }).catch(() => { console.log('[loadContent] flows failed'); return { ok: false, flows: [] }; }),
-        fetch('https://viberyte.com/api/events?city=' + encodeURIComponent(activeCity || 'New York') + '&limit=15').then(r => r.json()).then(r => { console.log('[loadContent] featured done'); return r; }).catch(() => { console.log('[loadContent] featured failed'); return { events: [] }; })
+        luminaApi.getVenues(activeCity || 'Manhattan'),
+        luminaApi.getEvents(activeCity || 'New York'),
+        fetch('https://viberyte.com/api/flows?city=' + encodeURIComponent(activeCity || 'Manhattan')).then(r => r.json()).catch(() => ({ ok: false, flows: [] })),
+        fetch('https://viberyte.com/api/events?city=' + encodeURIComponent(activeCity || 'New York') + '&limit=15').then(r => r.json()).catch(() => ({ events: [] })),
       ]);
-      console.log('[loadContent] all promises resolved');
-      
-      const seed = refreshSeed > 0 ? refreshSeed : getDailySeed();
+
+      const seed = (seedOverride != null && seedOverride > 0) ? seedOverride : (refreshSeed > 0 ? refreshSeed : getDailySeed());
       const shuffledVenues = seededShuffle(venues, seed);
       const shuffledEvents = seededShuffle(events, seed + 1);
-      
-      // Apply persona-based sorting
       const sortedVenues = personaService.sortVenuesByPersona(shuffledVenues, persona);
-      
-      // Hero carousel - top 5 standout venues
-      const heroes = sortedVenues
-        .filter((v: any) => (v.google_rating || v.rating) >= 4.3 && getPhotoUrl(v))
-        .slice(0, 5);
-      setHeroVenues(heroes);
-      
-      // Tonight's picks - persona sorted (skip heroes)
-      const heroIds = new Set(heroes.map((h: any) => h.id));
+
+      // Cache all venues for intent filtering
+      setAllVenues(sortedVenues);
+
+      // Hero — single standout venue
+      const hero = sortedVenues.find((v: any) => (v.google_rating || v.rating) >= 4.3 && getPhotoUrl(v));
+      setHeroVenue(hero || null);
+
+      // Tonight's picks (skip hero)
+      const heroId = hero?.id;
       const picked = sortedVenues
-        .filter((v: any) => !heroIds.has(v.id) && getPhotoUrl(v))
+        .filter((v: any) => v.id !== heroId && getPhotoUrl(v))
         .slice(0, 10);
       setPickedForYou(picked);
-      
-      // Date night / romantic picks
+
+      // Build "Your Kind of Places"
+      await buildYourKindSection(sortedVenues, heroId);
+
+      // Date night
       const dateSpots = sortedVenues
         .filter((v: any) => {
           const tags = safeGetTags(v.vibe_tags);
-          const contextual = v.contextual_tags || {};
+          const ctx = v.contextual_tags || {};
           return (
-            tags.some((t: string) => 
-              t.toLowerCase().includes('romantic') || 
-              t.toLowerCase().includes('intimate') ||
-              t.toLowerCase().includes('cozy')
-            ) ||
-            contextual.date_spot ||
-            contextual.conversation_friendly
-          ) && getPhotoUrl(v) && !heroIds.has(v.id);
-        })
-        .slice(0, 6);
+            tags.some((t: string) => /romantic|intimate|cozy/i.test(t)) ||
+            ctx.date_spot || ctx.conversation_friendly
+          ) && getPhotoUrl(v) && v.id !== heroId;
+        }).slice(0, 8);
       setDateNightPicks(dateSpots);
-      
-      // Late night spots
+
+      // Late night
       const lateNight = sortedVenues
         .filter((v: any) => {
           const tags = safeGetTags(v.vibe_tags);
-          const category = (v.category || '').toLowerCase();
+          const cat = (v.category || '').toLowerCase();
           return (
-            tags.some((t: string) => 
-              t.toLowerCase().includes('late') || 
-              t.toLowerCase().includes('club') ||
-              t.toLowerCase().includes('dance')
-            ) ||
-            category.includes('nightclub') ||
-            category.includes('lounge') ||
-            category.includes('bar')
-          ) && getPhotoUrl(v) && !heroIds.has(v.id);
-        })
-        .slice(0, 6);
+            tags.some((t: string) => /late|club|dance/i.test(t)) ||
+            /nightclub|lounge|bar/.test(cat)
+          ) && getPhotoUrl(v) && v.id !== heroId;
+        }).slice(0, 8);
       setLateNightSpots(lateNight);
-      
-      // Happening now - upcoming events (sorted by music preference)
-      const musicPrefs = persona?.music_preferences || [];
-      const musicSortedEvents = sortEventsByMusicPreference(shuffledEvents, musicPrefs);
-      const upcoming = musicSortedEvents
-        .filter((e: any) => e.image_url || e.cover_image_url)
-        .slice(0, 8);
+
+      // Events
+      const musicPrefs = (persona as any)?.music_preferences || [];
+      const musicSorted = sortEventsByMusicPreference(shuffledEvents, musicPrefs);
+      setHappeningNow(musicSorted.filter((e: any) => e.image_url || e.cover_image_url).slice(0, 8));
       setFeaturedEvents((featuredRes?.events || []).slice(0, 10));
-        if (flowsRes?.ok && flowsRes?.flows) setFlowsData(flowsRes.flows);
-      setHappeningNow(upcoming);
+      if (flowsRes?.ok && flowsRes?.flows) setFlowsData(flowsRes.flows);
 
-      // Prefetch images for instant loading
-      const allImages = [
-        ...heroes.map((v: any) => getPhotoUrl(v)),
-        ...picked.map((v: any) => getPhotoUrl(v)),
-        ...dateSpots.slice(0, 10).map((v: any) => getPhotoUrl(v)),
+      // Prefetch key images
+      const imgs = [
+        hero && getPhotoUrl(hero),
+        ...picked.slice(0, 4).map((v: any) => getPhotoUrl(v)),
       ].filter(Boolean);
-      if (allImages.length > 0) Image.prefetch(allImages);
+      if (imgs.length) Image.prefetch(imgs);
 
-    } catch (error) {
-      console.error('Error loading content:', error);
+    } catch (err) {
+      console.error('Error loading content:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Intent pill tap → filter venues from cached data ────────────
+  const handleIntentPress = useCallback((key: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (activeIntent === key) {
+      // Toggle off — clear intent results
+      setActiveIntent(null);
+      setIntentResults([]);
+      return;
+    }
+    setActiveIntent(key);
+    const intent = INTENT_MAP[key];
+    if (!intent) return;
 
-  // City change with context reload effect
+    if (intent.categories.length === 0) {
+      // "Surprise Me" — random reshuffle from all venues
+      const shuffled = seededShuffle(allVenues, Date.now());
+      setIntentResults(shuffled.filter((v: any) => getPhotoUrl(v)).slice(0, 10));
+    } else {
+      // Filter by category match OR tagPattern match on vibe_tags
+      const catSet = new Set(intent.categories);
+      const filtered = allVenues.filter((v: any) => {
+        if (!getPhotoUrl(v)) return false;
+        const cat = (v.standardized_category || v.category || '').toLowerCase();
+        if (catSet.has(cat)) return true;
+        // Also match via tagPatterns against vibe_tags
+        if (intent.tagPatterns) {
+          const tags = safeGetTags(v.vibe_tags).join(' ');
+          const name = (v.name || '').toLowerCase();
+          if (intent.tagPatterns.test(tags) || intent.tagPatterns.test(name)) return true;
+        }
+        return false;
+      });
+      setIntentResults(filtered.slice(0, 10));
+    }
+  }, [activeIntent, allVenues]);
+
+  // ── City change ─────────────────────────────────────────────────
   const handleCityChange = async (newCity: string) => {
     setShowCitySelector(false);
     if (newCity === userCity) return;
-
-    // Fade to black first
     setIsReloading(true);
     setReloadingCity(newCity);
-    reloadOpacity.setValue(1); // Show splash instantly
-    // Clear old data immediately so skeleton shows
-    setHeroVenues([]);
+    reloadOpacity.setValue(1);
+    setHeroVenue(null);
     setPickedForYou([]);
+    setYourKindVenues([]);
+    setIntentResults([]);
+    setActiveIntent(null);
     setDateNightPicks([]);
     setLateNightSpots([]);
     setFeaturedEvents([]);
     setHappeningNow([]);
     setLoading(true);
-    // Small delay so splash renders before fetch starts
-    await new Promise<void>(resolve => setTimeout(resolve, 50));
-
-    // Now safely update city and fetch
+    await new Promise<void>(r => setTimeout(r, 50));
     setUserCity(newCity);
-    if (newCity !== "Near Me") await AsyncStorage.setItem('@lumina_selected_city', newCity);
+    if (newCity !== 'Near Me') await AsyncStorage.setItem('@lumina_selected_city', newCity);
     await loadContent(newCity);
-
-    // Hold splash for 1 second so it feels intentional not janky
-    await new Promise<void>(resolve => setTimeout(resolve, 1000));
-
-    // Fade back in slowly
-    await new Promise<void>(resolve => {
-      Animated.timing(reloadOpacity, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }).start(() => resolve());
+    await new Promise<void>(r => setTimeout(r, 800));
+    await new Promise<void>(r => {
+      Animated.timing(reloadOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => r());
     });
     setIsReloading(false);
   };
@@ -454,13 +514,19 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setRefreshSeed(Math.floor(Math.random() * 999999));
-    await loadContent();
+    const newSeed = Math.floor(Math.random() * 999999);
+    setRefreshSeed(newSeed);
+    setActiveIntent(null);
+    setIntentResults([]);
+    await loadContent(undefined, newSeed);
     setRefreshing(false);
   };
 
   const handleVenuePress = useCallback((venue: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Record taste signal
+    const cat = venue.standardized_category || venue.category || '';
+    tasteTracker.recordDetailView(venue.id, cat);
     router.push(`/venue/${venue.id}`);
   }, [router]);
 
@@ -469,988 +535,651 @@ export default function HomeScreen() {
     router.push(`/event/${event.id}`);
   }, [router]);
 
-  // Hero carousel item
-  const renderHeroItem = useCallback(({ item, index }: { item: any; index: number }) => {
-    const photoUrl = getPhotoUrl(item);
-    const tags = parseVibeTags(item.vibe_tags);
-    
-    const inputRange = [
-      (index - 1) * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
-      index * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
-      (index + 1) * (HERO_CARD_WIDTH + HERO_CARD_SPACING),
-    ];
-    
-    const scale = heroScrollX.interpolate({
-      inputRange,
-      outputRange: [0.92, 1, 0.92],
-      extrapolate: 'clamp',
-    });
-    
-    const opacity = heroScrollX.interpolate({
-      inputRange,
-      outputRange: [0.7, 1, 0.7],
-      extrapolate: 'clamp',
-    });
-    
+  // ── Dynamic section ordering ────────────────────────────────────
+  const hour = new Date().getHours();
+  const isLateNight = hour >= 22 || hour < 4;
+  const isEvening = hour >= 18 && hour < 22;
+  const isDaytime = hour >= 6 && hour < 18;
+
+  const orderedSections = useMemo(() => {
+    type Section =
+      | 'intentResults'
+      | 'yourKind'
+      | 'following'
+      | 'tonightPicks'
+      | 'nearYou'
+      | 'flows'
+      | 'events'
+      | 'contextual';
+
+    const sections: Section[] = [];
+
+    // Intent results always first when active
+    if (activeIntent && intentResults.length > 0) sections.push('intentResults');
+
+    // "Your Kind of Places" — when user has taste data
+    if (yourKindVenues.length > 0) sections.push('yourKind');
+
+    // Following — if user follows anyone
+    if (follows.venues.length > 0 || follows.promoters.length > 0) sections.push('following');
+
+    // Time-based ordering of main content
+    if (isLateNight) {
+      // Late night: contextual first (Still Going), then events, then picks
+      sections.push('contextual', 'events', 'tonightPicks');
+    } else if (isEvening) {
+      // Evening: picks first, then events, then date night (contextual)
+      sections.push('tonightPicks', 'events', 'contextual');
+    } else {
+      // Daytime: picks, nearby, events
+      sections.push('tonightPicks', 'events');
+    }
+
+    // Nearby — always shown if available
+    if (nearYouVenues.length > 0 && !sections.includes('nearYou')) {
+      sections.push('nearYou');
+    }
+
+    // Flows — always present if available
+    if (flowsData.length > 0) sections.push('flows');
+
+    return sections;
+  }, [activeIntent, intentResults, yourKindVenues, follows, nearYouVenues, flowsData, isLateNight, isEvening, hour]);
+
+  // ── Loading state ───────────────────────────────────────────────
+  if (personaLoading || (loading && !heroVenue && pickedForYou.length === 0)) {
     return (
-      <Animated.View style={[styles.heroCardWrapper, { transform: [{ scale }], opacity }]}>
-        <FeaturedVenueCard venue={item} isVisible={index === activeHeroIndex} isNearby={Math.abs(index - activeHeroIndex) <= 1} />
-      </Animated.View>
-    );
-  }, [heroScrollX]);
-
-  const _UNUSED_renderHeroItem = useCallback(({ item, index }: { item: any; index: number }) => {
-    const photoUrl = getPhotoUrl(item);
-    const tags = parseVibeTags(item.vibe_tags);
-    return (
-      <Animated.View style={[styles.heroCardWrapper]}>
-        <TouchableOpacity
-          style={styles.heroCard}
-          onPress={() => handleVenuePress(item)}
-          activeOpacity={0.95}
-        >
-          <Image source={{ uri: photoUrl }} style={styles.heroImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.9)']}
-            style={styles.heroGradient}
-          />
-          <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>Featured</Text>
-          </View>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>{item.name}</Text>
-            <Text style={styles.heroSubtitle}>
-              {item.neighborhood} · {item.category}
-            </Text>
-            {tags.length > 0 && (
-              <View style={styles.heroTags}>
-                {tags.slice(0, 2).map((tag, i) => (
-                  <View key={i} style={styles.heroTag}>
-                    <Text style={styles.heroTagText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  }, [heroScrollX, handleVenuePress]);
-
-  // Regular venue card
-  const renderVenueCard = useCallback((venue: any, isSuper: boolean = false) => {
-    const photoUrl = getPhotoUrl(venue);
-    const tags = parseVibeTags(venue.vibe_tags);
-    const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
-    const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
-    const reelUrl = venue.reel_url || null;
-
-    return (
-      <AnimatedPressable
-        key={venue.id}
-        style={[styles.card, { width, height }]}
-        onPress={() => handleVenuePress(venue)}
-      >
-        <InlineReel
-          reelUrl={reelUrl}
-          photoUrl={photoUrl}
-          style={styles.cardImage}
-          shouldPlay={false}
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.85)']}
-          style={styles.cardGradient}
-        />
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{venue.name}</Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {venue.neighborhood || venue.category}
-          </Text>
-          {tags.length > 0 && (
-            <View style={styles.tagRow}>
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{tags[0]}</Text>
-              </View>
-            </View>
-          )}
-        </View>
-      </AnimatedPressable>
-    );
-  }, [handleVenuePress]);
-
-  // Event card
-  // Derive mood from genre
-  const getMoodFromGenre = (genre: string): { label: string; color: string } | null => {
-    if (!genre) return null;
-    const g = genre.toLowerCase();
-    if (g.includes('hip-hop') || g.includes('hiphop') || g.includes('rap')) return { label: 'Hip-Hop', color: '#f59e0b' };
-    if (g.includes('afrobeats') || g.includes('afro')) return { label: 'Afrobeats', color: '#22c55e' };
-    if (g.includes('reggaeton')) return { label: 'Reggaeton', color: '#ef4444' };
-    if (g.includes('reggae')) return { label: 'Reggae', color: '#16a34a' };
-    if (g.includes('r&b') || g.includes('rnb')) return { label: 'R&B', color: '#ec4899' };
-    if (g.includes('latin') || g.includes('salsa')) return { label: 'Latin', color: '#f97316' };
-    if (g.includes('house')) return { label: 'House', color: '#8b5cf6' };
-    if (g.includes('techno')) return { label: 'Techno', color: '#6366f1' };
-    if (g.includes('edm')) return { label: 'EDM', color: '#3b82f6' };
-    if (g.includes('jazz') || g.includes('live music') || g.includes('live')) return { label: 'Live', color: '#14b8a6' };
-    if (g.includes('pop')) return { label: 'Pop', color: '#a78bfa' };
-    return null;
-  };
-
-  const renderEventCard = useCallback((event: any) => {
-    const imageUrl = event.image_url || event.cover_image_url;
-    const genre = event.genre || event.music_genre;
-    const mood = getMoodFromGenre(genre);
-    
-    return (
-      <AnimatedPressable
-        key={event.id}
-        style={styles.card}
-        onPress={() => handleEventPress(event)}
-      >
-        <Image source={{ uri: imageUrl }} style={styles.cardImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.88)']}
-          style={styles.cardGradient}
-        />
-
-        {/* Top badges row */}
-        <View style={styles.cardTopRow}>
-          {genre && (
-            <View style={styles.genreBadge}>
-              <Ionicons name="musical-note" size={10} color="#fff" style={{ marginRight: 3 }} />
-              <Text style={styles.genreBadgeText} numberOfLines={1}>{genre}</Text>
-            </View>
-          )}
-          {mood && (
-            <View style={[styles.moodBadge, { backgroundColor: mood.color + '33', borderColor: mood.color + '66' }]}>
-              <Text style={[styles.moodBadgeText, { color: mood.color }]}>{mood.label}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{event.title}</Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {event.venue_name || genre}
-          </Text>
-        </View>
-      </AnimatedPressable>
-    );
-  }, [handleEventPress]);
-
-  // Horizontal venue row component
-  const HorizontalVenueRow = ({ venues, isSuper = false }: { venues: any[]; isSuper?: boolean }) => {
-    const [visibleIds, setVisibleIds] = React.useState<Set<number>>(new Set());
-    const viewConfig = React.useRef({ itemVisiblePercentThreshold: 50 }).current;
-    const onViewable = React.useRef(({ viewableItems }: any) => {
-      const ids = new Set<number>();
-      for (const v of viewableItems) { if (v?.item?.id != null) ids.add(v.item.id); }
-      setVisibleIds(ids);
-    }).current;
-    const pairs = React.useRef([{ viewabilityConfig: viewConfig, onViewableItemsChanged: onViewable }]).current;
-
-    return (
-      <FlatList
-        data={venues}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.horizontalScroll, isSuper && styles.superScroll]}
-        decelerationRate="fast"
-        keyExtractor={(item) => String(item.id)}
-        viewabilityConfigCallbackPairs={pairs}
-        renderItem={({ item }) => {
-          const photoUrl = getPhotoUrl(item);
-          const tags = parseVibeTags(item.vibe_tags);
-          const width = isSuper ? SUPER_CARD_WIDTH : CARD_WIDTH;
-          const height = isSuper ? SUPER_CARD_HEIGHT : CARD_HEIGHT;
-          const reelUrl = item.reel_url || null;
-
-          return (
-            <AnimatedPressable
-              key={item.id}
-              style={[styles.card, { width, height }]}
-              onPress={() => handleVenuePress(item)}
-            >
-              <InlineReel
-                reelUrl={reelUrl}
-                photoUrl={photoUrl}
-                style={styles.cardImage}
-                shouldPlay={true}
-              />
-              {reelUrl ? (
-                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Ionicons name="play-circle" size={12} color="#fff" />
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff', letterSpacing: 0.5 }}>REEL</Text>
-                </View>
-              ) : null}
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.85)']}
-                style={styles.cardGradient}
-              />
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.cardSubtitle} numberOfLines={1}>{item.neighborhood || item.city}</Text>
-                {tags.length > 0 && (
-                  <View style={styles.tagRow}>
-                    {tags.slice(0, 1).map((tag: string) => (
-                      <View key={tag} style={styles.tagPill}>
-                        <Text style={styles.tagText}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </AnimatedPressable>
-          );
-        }}
-      />
-    );
-  };
-
-  // Section header with hint
-  const renderSectionHeader = (title: string, hint: string, icon?: string, onSeeAll?: () => void) => (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionHeaderTop}>
-        <View style={styles.sectionTitleRow}>
-          {icon && <Ionicons name={icon as any} size={20} color={colors.violet[400]} style={{ marginRight: 8 }} />}
-          <Text style={styles.sectionTitle}>{title}</Text>
-        </View>
-        {onSeeAll && (
-          <TouchableOpacity style={styles.seeAllButton} onPress={onSeeAll} activeOpacity={0.7}>
-            <Text style={styles.seeAllText}>See All</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.violet[400]} />
-          </TouchableOpacity>
-        )}
-      </View>
-      {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
-    </View>
-  );
-
-  // Hero pagination dots
-  const renderHeroPagination = () => (
-    <View style={styles.heroPagination}>
-      {heroVenues.map((_, index) => (
-        <View
-          key={index}
-          style={[
-            styles.heroDot,
-            index === activeHeroIndex && styles.heroDotActive,
-          ]}
-        />
-      ))}
-    </View>
-  );
-
-  // Show skeleton while loading
-  if (personaLoading || (loading && heroVenues.length === 0)) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[s.container, { paddingTop: insets.top }]}>
         <SkeletonHome />
       </View>
     );
   }
 
+  // ── Render sections by dynamic order ────────────────────────────
+  const renderSection = (key: string, index: number) => {
+    switch (key) {
+      case 'intentResults':
+        return (
+          <View key="intent-results" style={s.section}>
+            <SectionHeader
+              title={INTENT_MAP[activeIntent!]?.label || 'Results'}
+              subtitle={`${intentResults.length} spots in ${userCity}`}
+            />
+            <CollectionRow
+              data={intentResults}
+              keyPrefix="ir"
+              renderItem={(venue) => (
+                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              )}
+            />
+          </View>
+        );
+
+      case 'yourKind':
+        return (
+          <View key="your-kind" style={s.section}>
+            <SectionHeader
+              title="Your Kind of Places"
+              subtitle="Based on what you love"
+              onSeeAll={() => router.push('/explore')}
+            />
+            <CollectionRow
+              data={yourKindVenues}
+              keyPrefix="yk"
+              renderItem={(venue) => (
+                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              )}
+            />
+          </View>
+        );
+
+      case 'following':
+        return (
+          <View key="following" style={s.section}>
+            <SectionHeader title="Following" />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: SIDE_PAD, gap: 16 }}
+            >
+              {follows.venues.map((v: any) => {
+                const photo = v.professional_photo_url || (v.google_photos?.[0]) || v.image_url;
+                return (
+                  <TouchableOpacity
+                    key={`fv-${v.id}`}
+                    style={s.followItem}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/venue/${v.id}`); }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={s.followAvatarWrap}>
+                      <Image source={{ uri: photo }} style={s.followAvatar} contentFit="cover" cachePolicy="memory-disk" />
+                    </View>
+                    <Text style={s.followName} numberOfLines={1}>{v.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {follows.promoters.map((p: any) => {
+                const photo = p.profile_picture || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=200';
+                return (
+                  <TouchableOpacity
+                    key={`fp-${p.id}`}
+                    style={s.followItem}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/promoter/${p.instagram_handle}`); }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[s.followAvatarWrap, { borderColor: colors.violet[600] }]}>
+                      <Image source={{ uri: photo }} style={s.followAvatar} contentFit="cover" cachePolicy="memory-disk" />
+                    </View>
+                    <Text style={s.followName} numberOfLines={1}>{p.business_name || p.instagram_handle}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        );
+
+      case 'tonightPicks':
+        if (pickedForYou.length === 0) return null;
+        return (
+          <View key="tonight-picks" style={s.section}>
+            <SectionHeader
+              title={isLateNight ? 'Late Night Picks' : isDaytime ? 'Explore Today' : "Tonight's Picks"}
+              onSeeAll={() => router.push('/explore?filter=tonight')}
+            />
+            <CollectionRow
+              data={pickedForYou}
+              keyPrefix="tp"
+              renderItem={(venue) => (
+                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              )}
+            />
+          </View>
+        );
+
+      case 'nearYou':
+        if (nearYouVenues.length === 0) return null;
+        return (
+          <View key="near-you" style={s.section}>
+            <SectionHeader title="Nearest to You" onSeeAll={() => router.push('/explore?filter=nearby')} />
+            <CollectionRow
+              data={nearYouVenues}
+              keyPrefix="ny"
+              renderItem={(venue) => (
+                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              )}
+            />
+          </View>
+        );
+
+      case 'flows':
+        if (flowsData.length === 0) return null;
+        return (
+          <View key="flows" style={s.section}>
+            <SectionHeader
+              title="Flow of the Night"
+              subtitle="Multi-stop plans, curated for you"
+              onSeeAll={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/all-flows' as any); }}
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: SIDE_PAD, paddingRight: 40 }}
+              decelerationRate="fast"
+              snapToInterval={FLOW_CARD_WIDTH + 14}
+              snapToAlignment="start"
+            >
+              {flowsData.slice(0, 5).map((flow: any) => (
+                <FlowCard key={flow.slug} flow={flow} />
+              ))}
+            </ScrollView>
+          </View>
+        );
+
+      case 'events':
+        if (happeningNow.length === 0 && featuredEvents.length === 0) return null;
+        const eventsToShow = happeningNow.length > 0 ? happeningNow : featuredEvents.slice(0, 6);
+        const eventsTitle = happeningNow.length > 0
+          ? (isLateNight ? 'Live Now' : 'Events Tonight')
+          : 'Featured Events';
+        return (
+          <View key="events" style={s.section}>
+            <SectionHeader title={eventsTitle} onSeeAll={() => router.push('/explore?filter=events')} />
+            <CollectionRow
+              data={eventsToShow}
+              keyPrefix="ev"
+              renderItem={(event) => (
+                <CompactEventCard event={event} onPress={() => handleEventPress(event)} />
+              )}
+            />
+          </View>
+        );
+
+      case 'contextual':
+        if (isLateNight && lateNightSpots.length > 0) {
+          return (
+            <View key="contextual" style={s.section}>
+              <SectionHeader title="Still Going" onSeeAll={() => router.push('/explore?filter=latenight')} />
+              <CollectionRow
+                data={lateNightSpots}
+                keyPrefix="ln"
+                renderItem={(venue) => (
+                  <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+                )}
+              />
+            </View>
+          );
+        }
+        if (isEvening && dateNightPicks.length > 0) {
+          return (
+            <View key="contextual" style={s.section}>
+              <SectionHeader title="Date Night" onSeeAll={() => router.push('/explore?filter=datenight')} />
+              <CollectionRow
+                data={dateNightPicks}
+                keyPrefix="dn"
+                renderItem={(venue) => (
+                  <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+                )}
+              />
+            </View>
+          );
+        }
+        return null;
+
+      default:
+        return null;
+    }
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.violet[400]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#71717A" />
         }
       >
         <Animated.View style={{ opacity: fadeAnim }}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <View style={styles.greetingContainer}>
-                <Animated.Text style={[styles.greetingGlow, { opacity: glowAnim }]}>
-                  {getGreeting()}{userName ? `, ${userName}` : ''}
-                </Animated.Text>
-                <Text style={styles.greeting}>
-                  {getGreeting()}{userName ? `, ${userName}` : ''}
-                </Text>
+
+          {/* ───── CONTEXTUAL HEADER ───── */}
+          <View style={s.header}>
+            <View style={{ flex: 1 }}>
+              <View style={s.headerTopRow}>
+                <Text style={s.greeting}>{getGreeting()}</Text>
+                <TouchableOpacity
+                  style={s.locationPill}
+                  onPress={() => setShowCitySelector(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="location" size={11} color={colors.violet[400]} />
+                  <Text style={s.locationText}>{userCity}</Text>
+                  <Ionicons name="chevron-down" size={10} color="#52525B" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.context}>{getTimeContext()}</Text>
+              <Text style={s.contextLine}>{getContextLine()}</Text>
             </View>
-            <TouchableOpacity 
-              style={styles.citySelector}
-              onPress={() => setShowCitySelector(true)}
-            >
-              <Ionicons name="location" size={16} color={colors.violet[400]} />
-              <Text style={styles.cityText}>{userCity}</Text>
-            </TouchableOpacity>
           </View>
 
-
-          {/* Smart Search Bar */}
-          <TouchableOpacity 
-            style={styles.searchBar}
+          {/* ───── SEARCH BAR ───── */}
+          <TouchableOpacity
+            style={s.searchBar}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push('/search');
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <View style={styles.searchLeft}>
-              <Ionicons name="search" size={18} color={colors.zinc[500]} />
-              <Text style={styles.searchPlaceholder}>Search vibes, venues, events...</Text>
-            </View>
-
+            <Ionicons name="search" size={18} color="#52525B" />
+            <Text style={s.searchPlaceholder}>Search venues, events, vibes…</Text>
           </TouchableOpacity>
 
-          {/* Hero Carousel */}
-          {heroVenues.length > 0 && (
-            <View style={styles.heroSection}>
-              <Animated.FlatList
-                data={heroVenues}
-                renderItem={renderHeroItem}
-                keyExtractor={(item) => item.id.toString()}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={HERO_CARD_WIDTH + HERO_CARD_SPACING}
-                decelerationRate="fast"
-                contentContainerStyle={styles.heroList}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: heroScrollX } } }],
-                  { useNativeDriver: true }
-                )}
-                scrollEventThrottle={16}
-                onMomentumScrollEnd={(e) => {
-                  const index = Math.round(e.nativeEvent.contentOffset.x / (HERO_CARD_WIDTH + HERO_CARD_SPACING));
-                  setActiveHeroIndex(index);
-                }}
+          {/* ───── QUICK INTENT PILLS ───── */}
+          <View style={s.intentRow}>
+            {Object.keys(INTENT_MAP).map((key) => (
+              <IntentPill
+                key={key}
+                intentKey={key}
+                active={activeIntent === key}
+                onPress={() => handleIntentPress(key)}
               />
-              {renderHeroPagination()}
-            </View>
-          )}
+            ))}
+          </View>
 
-          {/* Following Section */}
-          {(follows.venues.length > 0 || follows.promoters.length > 0) && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionTitleGroup}>
-                  <Ionicons name="heart" size={18} color={colors.violet[400]} style={{ marginRight: 8 }} />
-                  <Text style={styles.sectionTitle}>Following</Text>
+          {/* ───── EDITORIAL HERO ───── */}
+          {heroVenue && !activeIntent && (
+            <AnimatedPressable
+              style={s.heroWrap}
+              onPress={() => handleVenuePress(heroVenue)}
+            >
+              <View style={s.heroImageWrap}>
+                <Image
+                  source={{ uri: getPhotoUrl(heroVenue) }}
+                  style={s.heroImage}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={300}
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.75)']}
+                  locations={[0.35, 0.6, 1]}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View style={s.heroOverlay}>
+                  <Text style={s.heroLabel}>FEATURED</Text>
                 </View>
-                <Text style={styles.sectionHint}>{follows.venues.length + follows.promoters.length} total</Text>
               </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScroll}
-                decelerationRate="fast"
-              >
-                {follows.venues.map((venue: any) => {
-                  const photoUrl = venue.professional_photo_url || 
-                    (venue.google_photos && venue.google_photos[0]) || 
-                    venue.image_url ||
-                    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400';
-                  return (
-                    <TouchableOpacity
-                      key={`venue-${venue.id}`}
-                      style={styles.followCard}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        router.push(`/venue/${venue.id}`);
-                      }}
-                      activeOpacity={0.9}
-                    >
-                      <Image source={{ uri: photoUrl }} style={styles.followImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
-                      <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.85)']}
-                        style={styles.cardGradient}
-                      />
-                      <View style={styles.followBadge}>
-                        <Ionicons name="business-outline" size={10} color="#fff" />
-                      </View>
-                      <View style={styles.followContent}>
-                        <Text style={styles.followName} numberOfLines={1}>{venue.name}</Text>
-                        <Text style={styles.followMeta} numberOfLines={1}>{venue.category}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-                {follows.promoters.map((promoter: any) => {
-                  const photoUrl = promoter.profile_picture || 
-                    'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400';
-                  return (
-                    <TouchableOpacity
-                      key={`promoter-${promoter.id}`}
-                      style={styles.followCard}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        router.push(`/promoter/${promoter.instagram_handle}`);
-                      }}
-                      activeOpacity={0.9}
-                    >
-                      <Image source={{ uri: photoUrl }} style={styles.followImage} cachePolicy="memory-disk" contentFit="cover" transition={200} />
-                      <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.85)']}
-                        style={styles.cardGradient}
-                      />
-                      <View style={[styles.followBadge, { backgroundColor: colors.violet[500] }]}>
-                        <Ionicons name="person" size={10} color="#fff" />
-                      </View>
-                      <View style={styles.followContent}>
-                        <Text style={styles.followName} numberOfLines={1}>{promoter.business_name || promoter.instagram_handle}</Text>
-                        <Text style={styles.followMeta} numberOfLines={1}>{promoter.primary_genre || 'Promoter'}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Flow of the Night */}
-          {flowsData.length > 0 && (
-            <View style={[styles.section, { overflow: 'hidden' }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 20, marginBottom: 12 }}>
-                <View>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', letterSpacing: -0.3 }}>Flow of the Night</Text>
-                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Your night, planned out</Text>
-                </View>
-                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/all-flows' as any); }} activeOpacity={0.7}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#a78bfa' }}>See All</Text>
-                </TouchableOpacity>
+              <View style={s.heroInfo}>
+                <Text style={s.heroName}>{heroVenue.name}</Text>
+                <Text style={s.heroMeta}>
+                  {heroVenue.neighborhood}
+                  {heroVenue.category ? ` · ${heroVenue.category.charAt(0).toUpperCase() + heroVenue.category.slice(1)}` : ''}
+                </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 40 }} decelerationRate="fast" snapToInterval={SCREEN_WIDTH * 0.82 + 14} snapToAlignment="start">
-                {flowsData.slice(0, 5).map((flow: any) => (
-                  <FlowCard key={flow.slug} flow={flow} />
-                ))}
-              </ScrollView>
-            </View>
+            </AnimatedPressable>
           )}
 
-          {/* 1. Tonight's Picks */}
-          {pickedForYou.length > 0 && (
-            <View style={styles.section}>
-              {renderSectionHeader(
-                "Tonight's Picks",
-                'Curated for your taste',
-                'moon',
-                () => router.push('/explore?filter=tonight')
-              )}
-              <HorizontalVenueRow venues={pickedForYou} />
-            </View>
-          )}
+          {/* ───── DYNAMIC SECTIONS ───── */}
+          {orderedSections.map((section, idx) => renderSection(section, idx))}
 
-          {/* 2. Nearest to You */}
-          {nearYouVenues.length > 0 && (
-            <View style={styles.section}>
-              {renderSectionHeader(
-                'Nearest to You',
-                'Spots close by right now',
-                'location',
-                () => router.push('/explore?filter=nearby')
-              )}
-              <HorizontalVenueRow venues={nearYouVenues} />
-            </View>
-          )}
-
-          {/* 3. Events happening tonight */}
-          {happeningNow.length > 0 && (
-            <View style={styles.section}>
-              {renderSectionHeader(
-                'Events Tonight',
-                'Live music, parties & more',
-                'flame',
-                () => router.push('/explore?filter=events')
-              )}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScroll}
-                decelerationRate="fast"
-              >
-                {happeningNow.slice(0, 8).map((event) => renderEventCard(event))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* 4. One smart contextual section based on time */}
-          {(() => {
-            const hour = new Date().getHours();
-            const isLateNight = hour >= 22 || hour < 4;
-            const isEvening = hour >= 18 && hour < 22;
-            
-            if (isLateNight && lateNightSpots.length > 0) {
-              return (
-                <View style={styles.section}>
-                  {renderSectionHeader('Still Going', 'Open late tonight', 'moon', () => router.push('/explore?filter=latenight'))}
-                  <HorizontalVenueRow venues={lateNightSpots} />
-                </View>
-              );
-            }
-            if (isEvening && dateNightPicks.length > 0) {
-              return (
-                <View style={styles.section}>
-                  {renderSectionHeader('Date Night', 'Great first date energy', 'heart', () => router.push('/explore?filter=datenight'))}
-                  <HorizontalVenueRow venues={dateNightPicks} isSuper />
-                </View>
-              );
-            }
-            if (featuredEvents.length > 0) {
-              return (
-                <View style={styles.section}>
-                  {renderSectionHeader('Partner Events', 'Book directly through Viberyte', 'star', () => router.push('/explore?filter=events'))}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
-                    {featuredEvents.slice(0, 5).map((event: any) => renderEventCard(event))}
-                  </ScrollView>
-                </View>
-              );
-            }
-            return null;
-          })()}
-
-          <View style={{ height: 100 }} />
         </Animated.View>
       </ScrollView>
 
-      {/* City Selector Modal */}
-      <Modal
-        visible={showCitySelector}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowCitySelector(false)}
-      >
-        <StretchCitySelector
-          currentCity={userCity}
-          onSelectCity={handleCityChange}
-        />
+      {/* ───── CITY SELECTOR MODAL ───── */}
+      <Modal visible={showCitySelector} animationType="fade" transparent onRequestClose={() => setShowCitySelector(false)}>
+        <StretchCitySelector currentCity={userCity} onSelectCity={handleCityChange} />
       </Modal>
 
-      {/* City Switch Splash Overlay */}
+      {/* ───── CITY SWITCH OVERLAY ───── */}
       {isReloading && (
-        <Animated.View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            backgroundColor: '#08080d',
-            opacity: reloadOpacity,
-            zIndex: 999,
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          <Text style={{
-            fontSize: 32,
-            fontWeight: '300',
-            color: '#ffffff',
-            letterSpacing: 8,
-            marginBottom: 24,
-          }}>VIBERYTE</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
-            <Text style={{
-              fontSize: 12,
-              fontWeight: '400',
-              color: '#7C3AED',
-              letterSpacing: 2,
-            }}>{reloadingCity.toUpperCase()}</Text>
-            <View style={{ width: 20, height: 1, backgroundColor: '#3f3f46' }} />
+        <Animated.View style={[s.reloadOverlay, { opacity: reloadOpacity }]}>
+          <Text style={s.reloadBrand}>VIBERYTE</Text>
+          <View style={s.reloadCityRow}>
+            <View style={s.reloadLine} />
+            <Text style={s.reloadCity}>{reloadingCity.toUpperCase()}</Text>
+            <View style={s.reloadLine} />
           </View>
         </Animated.View>
       )}
-
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+// ═══════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════
+const s = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
-  // Following section
-  followCard: {
-    width: 130,
-    height: 160,
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginRight: 12,
-    backgroundColor: colors.zinc[800],
-  },
-  followImage: {
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
-  },
-  followBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  followContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 10,
-  },
-  followName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 2,
-  },
-  followMeta: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
-    textTransform: 'capitalize',
-  },
-  // Search Bar
-  searchBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.zinc[800],
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.zinc[700],
-  },
-  searchPlaceholder: {
-    marginLeft: 10,
-    fontSize: 15,
-    color: colors.zinc[500],
-  },
-  searchLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  searchSparkle: {
-    backgroundColor: colors.violet[500] + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
+
+  // ── Header ─────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.lg,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: SIDE_PAD,
+    paddingTop: 8,
+    paddingBottom: 12,
   },
-  greetingContainer: {
-    position: 'relative',
-  },
-  greetingGlow: {
-    position: 'absolute',
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.violet[400],
-    letterSpacing: -0.5,
-    textShadowColor: colors.violet[500],
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: -0.5,
-  },
-  context: {
-    fontSize: 15,
-    color: colors.zinc[400],
-    marginTop: 4,
-  },
-  citySelector: {
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.zinc[800],
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+    justifyContent: 'space-between',
   },
-  cityText: {
+  greeting: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FAFAFA',
+    letterSpacing: -0.5,
+  },
+  contextLine: {
     fontSize: 14,
-    color: colors.white,
+    color: '#71717A',
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  locationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(139,92,246,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.12)',
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#A1A1AA',
     fontWeight: '500',
   },
-  
-  // Hero Carousel
-  heroSection: {
-    marginBottom: spacing.xl,
+
+  // ── Search Bar ──────────────────────────────────────────────────
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: SIDE_PAD,
+    marginBottom: 14,
+    height: 44,
+    backgroundColor: '#121216',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#1a1a1f',
   },
-  heroList: {
-    paddingHorizontal: 30,
+  searchPlaceholder: {
+    fontSize: 14,
+    color: '#52525B',
+    fontWeight: '400',
   },
-  heroCardWrapper: {
-    width: HERO_CARD_WIDTH,
-    marginRight: HERO_CARD_SPACING,
+
+  // ── Quick Intent Pills ──────────────────────────────────────────
+  intentRow: {
+    flexDirection: 'row',
+    paddingHorizontal: SIDE_PAD,
+    gap: 8,
+    marginBottom: 24,
   },
-  heroCard: {
+  intentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    backgroundColor: '#121216',
+    borderWidth: 1,
+    borderColor: '#1a1a1f',
+  },
+  intentPillActive: {
+    backgroundColor: colors.violet[600],
+    borderColor: colors.violet[500],
+  },
+  intentPillText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#A1A1AA',
+  },
+  intentPillTextActive: {
+    color: '#FAFAFA',
+  },
+
+  // ── Editorial Hero ──────────────────────────────────────────────
+  heroWrap: {
+    marginHorizontal: SIDE_PAD,
+    marginBottom: SECTION_GAP,
+  },
+  heroImageWrap: {
     width: '100%',
-    height: HERO_CARD_HEIGHT,
-    borderRadius: 24,
+    height: HERO_HEIGHT,
+    borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: colors.zinc[800],
+    backgroundColor: '#1a1a1f',
   },
   heroImage: {
     width: '100%',
     height: '100%',
   },
-  heroGradient: {
+  heroOverlay: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '70%',
+    top: 14,
+    left: 14,
   },
-  heroBadge: {
-    position: 'absolute',
-    top: spacing.md,
-    left: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    gap: 4,
-  },
-  heroBadgeText: {
-    fontSize: 11,
-    color: colors.violet[300],
-    fontWeight: '600',
-  },
-  heroContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacing.lg,
-  },
-  heroTitle: {
-    fontSize: 22,
+  heroLabel: {
+    fontSize: 10,
     fontWeight: '700',
-    color: colors.white,
-    marginBottom: 4,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 1.5,
   },
-  heroSubtitle: {
-    fontSize: 14,
-    color: colors.zinc[300],
-    marginBottom: 10,
+  heroInfo: {
+    paddingTop: 10,
+    paddingHorizontal: 2,
   },
-  heroTags: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  heroTag: {
-    backgroundColor: colors.violet[600] + '50',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  heroTagText: {
-    fontSize: 12,
-    color: colors.violet[200],
-    fontWeight: '600',
-  },
-  heroPagination: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    gap: 6,
-  },
-  heroDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.violet[500],
-    opacity: 0.4,
-  },
-  heroDotActive: {
-    width: 24,
-    opacity: 1,
-  },
-
-  // Sections
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionHeader: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  sectionHeaderTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  seeAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: colors.violet[400],
-    fontWeight: '600',
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 20,
+  heroName: {
+    fontSize: 18,
     fontWeight: '700',
-    color: colors.white,
+    color: '#FAFAFA',
     letterSpacing: -0.3,
   },
-  sectionHint: {
+  heroMeta: {
     fontSize: 13,
-    color: colors.zinc[500],
-    marginTop: 4,
+    color: '#71717A',
+    marginTop: 2,
     fontWeight: '400',
   },
-  horizontalScroll: {
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.xl,
-    gap: spacing.md,
-  },
-  superScroll: {
-    gap: spacing.lg,
-  },
 
-  // Cards
-  card: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: colors.zinc[800],
+  // ── Following ───────────────────────────────────────────────────
+  followItem: {
+    alignItems: 'center',
+    width: FOLLOW_SIZE + 8,
   },
-  cardImage: {
+  followAvatarWrap: {
+    width: FOLLOW_SIZE,
+    height: FOLLOW_SIZE,
+    borderRadius: FOLLOW_SIZE / 2,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#3F3F46',
+    marginBottom: 6,
+  },
+  followAvatar: {
     width: '100%',
     height: '100%',
   },
-  cardGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
-  },
-  cardTopRow: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  genreBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  genreBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#fff',
-    letterSpacing: 0.3,
-  },
-  moodBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-  },
-  moodBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  cardContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacing.sm + 2,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.white,
-    marginBottom: 2,
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: colors.zinc[400],
-  },
-  tagRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
-  tag: {
-    backgroundColor: colors.pink[500] + '35',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  tagText: {
-    fontSize: 10,
-    color: colors.pink[300],
-    fontWeight: '600',
+  followName: {
+    fontSize: 11,
+    color: '#A1A1AA',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 
-  // Skeleton
-  skeletonContainer: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
+  // ── Sections ────────────────────────────────────────────────────
+  section: {
+    marginBottom: SECTION_GAP,
   },
-  skeletonHeader: {
-    marginVertical: spacing.lg,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: SIDE_PAD,
+    marginBottom: 14,
   },
-  skeletonBar: {
-    backgroundColor: colors.zinc[800],
-    borderRadius: 8,
+  sectionTitle: {
+    fontSize: 21,
+    fontWeight: '700',
+    color: '#FAFAFA',
+    letterSpacing: -0.3,
   },
-  skeletonCard: {
-    backgroundColor: colors.zinc[800],
-    borderRadius: 18,
-    marginRight: spacing.md,
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#52525B',
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  seeAll: {
+    fontSize: 14,
+    color: '#A78BFA',
+    fontWeight: '500',
+  },
+
+  // ── Compact Card (Apple Music style) ────────────────────────────
+  compactCard: {
+    width: CARD_WIDTH,
+  },
+  compactImageWrap: {
+    width: CARD_WIDTH,
+    height: CARD_IMAGE_HEIGHT,
+    borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: '#1a1a1f',
+    marginBottom: 8,
   },
-  skeletonShimmer: {
-    flex: 1,
-    backgroundColor: colors.zinc[700],
-    opacity: 0.5,
+  compactImage: {
+    width: '100%',
+    height: '100%',
   },
-  skeletonSection: {
-    marginTop: spacing.xl,
+  compactName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FAFAFA',
+    letterSpacing: -0.1,
+    marginBottom: 1,
+  },
+  compactMeta: {
+    fontSize: 12,
+    color: '#71717A',
+    fontWeight: '400',
+  },
+
+  // ── Genre pill on event cards ───────────────────────────────────
+  genrePill: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  genrePillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.2,
+  },
+
+  // ── City Reload Overlay ─────────────────────────────────────────
+  reloadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reloadBrand: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#fff',
+    letterSpacing: 8,
+    marginBottom: 20,
+  },
+  reloadCityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reloadLine: {
+    width: 20,
+    height: 1,
+    backgroundColor: '#3F3F46',
+  },
+  reloadCity: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#7C3AED',
+    letterSpacing: 2,
   },
 });
+

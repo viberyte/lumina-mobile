@@ -90,7 +90,7 @@ const isWeekendFn  = (e: Event) => {
   return (dow===5||dow===6||dow===0) && diff>=0 && diff<=7;
 };
 const genreCat = (e: Event) => {
-  const g = (e.music_genre||'').toLowerCase(), n = e.name.toLowerCase();
+  const g = (e.music_genre||'').toLowerCase(), n = (e.name||'').toLowerCase();
   if (g.includes('afrobeat')||g.includes('amapiano')||n.includes('afro')||n.includes('amapiano')) return 'afro';
   if (g.includes('latin')||g.includes('reggaeton')||g.includes('bachata')) return 'latin';
   if (g.includes('house')||g.includes('tech house')||g.includes('afro house')) return 'house';
@@ -246,7 +246,7 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
 
     if (filters.searchQuery) {
       const q = filters.searchQuery.toLowerCase();
-      ev = ev.filter(e => e.name.toLowerCase().includes(q) || e.venue_name?.toLowerCase().includes(q));
+      ev = ev.filter(e => (e.name||'').toLowerCase().includes(q) || e.venue_name?.toLowerCase().includes(q));
     }
 
     if (vibe !== 'all') {
