@@ -148,7 +148,7 @@ export default function BookingsScreen() {
             <Ionicons name="location" size={24} color={colors.zinc[600]} />
           </View>
         )}
-        <View style={[styles.typeIcon, { backgroundColor: colors.violet[500] }]}>
+        <View style={[styles.typeIcon, { backgroundColor: colors.lux.bronze }]}>
           <Ionicons name={getBookingTypeIcon(item.booking_type) as any} size={14} color="#fff" />
         </View>
       </View>
@@ -232,7 +232,7 @@ export default function BookingsScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.violet[500]} />
+          <ActivityIndicator size="large" color={colors.lux.ivory} />
         </View>
       ) : (
         <FlatList
@@ -245,7 +245,7 @@ export default function BookingsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={colors.violet[500]}
+              tintColor={colors.lux.ivory}
             />
           }
           ListEmptyComponent={renderEmpty}
@@ -261,9 +261,9 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 32, fontWeight: '700', color: '#fff' },
   filterContainer: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.md, gap: spacing.sm },
   filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.zinc[900] },
-  filterTabActive: { backgroundColor: colors.violet[500] },
+  filterTabActive: { backgroundColor: colors.lux.ivory },
   filterText: { fontSize: 14, fontWeight: '600', color: colors.zinc[500] },
-  filterTextActive: { color: '#fff' },
+  filterTextActive: { color: colors.lux.ink },
   listContent: { padding: spacing.lg, paddingBottom: 120 },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   bookingCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.zinc[900], borderRadius: 16, padding: spacing.md, marginBottom: spacing.sm },
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   typeIcon: { position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.zinc[900] },
   bookingInfo: { flex: 1 },
   venueName: { fontSize: 16, fontWeight: '600', color: '#fff', marginBottom: 2 },
-  eventName: { fontSize: 13, color: colors.violet[400], marginBottom: 4 },
+  eventName: { fontSize: 13, color: colors.lux.champagne, marginBottom: 4 },
   bookingMeta: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xs },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: colors.zinc[500] },
@@ -286,6 +286,6 @@ const styles = StyleSheet.create({
   emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.zinc[900], alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#fff', marginBottom: spacing.xs },
   emptySubtitle: { fontSize: 14, color: colors.zinc[500], textAlign: 'center', marginBottom: spacing.lg },
-  exploreButton: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.violet[500], paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
+  exploreButton: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.lux.bronze, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
   exploreButtonText: { fontSize: 15, fontWeight: '600', color: '#fff' },
 });

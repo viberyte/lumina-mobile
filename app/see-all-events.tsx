@@ -274,7 +274,7 @@ export default function SeeAllEventsScreen() {
           </Text>
           {time ? (
             <View style={styles.timeRow}>
-              <Ionicons name="time-outline" size={12} color={colors.violet[400]} />
+              <Ionicons name="time-outline" size={12} color={colors.lux.champagne} />
               <Text style={styles.eventTime}>{time}</Text>
             </View>
           ) : null}
@@ -301,7 +301,7 @@ export default function SeeAllEventsScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.violet[500]} />
+          <ActivityIndicator size="large" color={colors.lux.ivory} />
           <Text style={styles.loadingText}>Finding events...</Text>
         </View>
       ) : filteredEvents.length === 0 ? (
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.champagne,
     marginRight: spacing.sm,
   },
   dateSectionTitle: {
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fb923c',
   },
   dateBadgeTomorrow: {
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.bronze,
   },
   dateBadgeText: {
     fontSize: 11,
@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
   },
   eventTime: {
     fontSize: 12,
-    color: colors.violet[400],
+    color: colors.lux.champagne,
     fontWeight: '500',
   },
 });

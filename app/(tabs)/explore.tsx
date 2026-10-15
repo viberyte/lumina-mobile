@@ -186,7 +186,7 @@ export default function ExploreScreen() {
             style={styles.cityButton}
             onPress={() => setShowCityModal(true)}
           >
-            <Ionicons name="location" size={16} color={colors.violet[400]} />
+            <Ionicons name="location" size={16} color={colors.lux.champagne} />
             <Text style={styles.cityButtonText}>{effectiveCity}</Text>
             <Ionicons name="chevron-down" size={16} color={colors.zinc[400]} />
           </TouchableOpacity>
@@ -204,7 +204,7 @@ export default function ExploreScreen() {
             },
           ]}
         >
-          <Ionicons name="search" size={16} color={colors.violet[400]} />
+          <Ionicons name="search" size={16} color={colors.lux.champagne} />
           <Text style={styles.overrideText}>Searching in {overrideCity}</Text>
           <TouchableOpacity onPress={clearOverride} style={styles.clearOverride} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="close-circle" size={18} color={colors.zinc[300]} />
@@ -246,8 +246,8 @@ export default function ExploreScreen() {
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 }}>
             <Text style={{ fontSize: 24, fontWeight: '700', color: '#fff', letterSpacing: -0.3, marginBottom: 8, textAlign: 'center' }}>Stays</Text>
             <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.4)', textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>Curated hotels and boutique properties, connected to exclusive guest experiences.</Text>
-            <View style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.12)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)' }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#8B5CF6', letterSpacing: 0.5 }}>COMING SOON</Text>
+            <View style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(197, 163, 107, 0.12)', borderWidth: 1, borderColor: 'rgba(197, 163, 107, 0.25)' }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#C5A36B', letterSpacing: 0.5 }}>COMING SOON</Text>
             </View>
           </View>
         )}
@@ -274,7 +274,7 @@ export default function ExploreScreen() {
             alignItems: 'center',
           }}
         >
-          <View style={{ width: 40, height: 3, backgroundColor: colors.violet[500], borderRadius: 2 }} />
+          <View style={{ width: 40, height: 3, backgroundColor: colors.lux.ivory, borderRadius: 2 }} />
         </Animated.View>
       )}
 
@@ -307,8 +307,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     fontSize: typography.sizes.xxl,
     fontWeight: '700',
-    color: colors.violet[400],
-    textShadowColor: colors.violet[500],
+    color: colors.lux.champagne,
+    textShadowColor: colors.lux.champagne,
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 20,
   },
@@ -339,14 +339,14 @@ const styles = StyleSheet.create({
     gap: spacing.xs, 
     paddingHorizontal: spacing.lg, 
     paddingVertical: spacing.sm, 
-    backgroundColor: colors.violet[500] + '20', 
+    backgroundColor: colors.lux.champagne + '20', 
     borderBottomWidth: 1, 
-    borderBottomColor: colors.violet[500] + '40' 
+    borderBottomColor: colors.lux.champagne + '40' 
   },
   overrideText: { 
     flex: 1, 
     fontSize: typography.sizes.sm, 
-    color: colors.violet[300] 
+    color: colors.lux.champagne 
   },
   clearOverride: { 
     padding: spacing.xs 
@@ -370,8 +370,8 @@ const styles = StyleSheet.create({
     borderColor: colors.zinc[800], 
   },
   activeTab: { 
-    backgroundColor: colors.violet[500] + '22', 
-    borderColor: colors.violet[500], 
+    backgroundColor: colors.lux.ivory, 
+    borderColor: colors.lux.ivory, 
   },
   tabText: { 
     fontSize: typography.sizes.md, 
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     fontWeight: '600', 
   },
   activeTabText: { 
-    color: colors.white, 
+    color: colors.lux.ink, 
   },
   content: { 
     flex: 1 
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs 
   },
   cityOptionActive: { 
-    backgroundColor: colors.violet[500] + '20' 
+    backgroundColor: colors.lux.champagne + '20' 
   },
   cityOptionText: { 
     fontSize: typography.sizes.md, 
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     fontWeight: '500' 
   },
   cityOptionTextActive: { 
-    color: colors.violet[400], 
+    color: colors.lux.champagne, 
     fontWeight: '600' 
   },
 });

@@ -97,8 +97,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cityButtonSelected: {
-    backgroundColor: colors.violet[600],
-    borderColor: colors.violet[500],
+    backgroundColor: colors.lux.bronzeDeep,
+    borderColor: colors.lux.champagne,
   },
   cityName: {
     fontSize: typography.sizes.lg,

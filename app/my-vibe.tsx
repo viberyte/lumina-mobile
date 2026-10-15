@@ -232,19 +232,19 @@ export default function MyVibeScreen() {
     </View>
   );
 
-  if (loading) return <View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.violet[500]} /></View>;
+  if (loading) return <View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.lux.ivory} /></View>;
 
   // Full-screen saving overlay
   if (saving || saved) return (
     <View style={[styles.container, styles.centered]}>
       {saving ? (
         <>
-          <ActivityIndicator size="large" color={colors.violet[500]} style={{ marginBottom: 16 }} />
+          <ActivityIndicator size="large" color={colors.lux.ivory} style={{ marginBottom: 16 }} />
           <Text style={{ fontSize: 18, color: colors.white, fontWeight: '500' }}>Saving your vibe...</Text>
         </>
       ) : (
         <>
-          <Ionicons name="checkmark-circle" size={72} color={colors.violet[500]} style={{ marginBottom: 16 }} />
+          <Ionicons name="checkmark-circle" size={72} color={colors.lux.champagne} style={{ marginBottom: 16 }} />
           <Text style={{ fontSize: 20, color: colors.white, fontWeight: '600' }}>Vibe locked in</Text>
           <Text style={{ fontSize: 14, color: colors.zinc[500], marginTop: 8 }}>Your experience is now personalized</Text>
         </>
@@ -334,10 +334,10 @@ const styles = StyleSheet.create({
   backButton: { padding: spacing.xs },
   headerTitle: { fontSize: typography.sizes.lg, fontWeight: '600', color: colors.white },
   saveButton: { padding: spacing.xs },
-  saveText: { fontSize: typography.sizes.md, color: colors.violet[400], fontWeight: '600' },
+  saveText: { fontSize: typography.sizes.md, color: colors.lux.champagne, fontWeight: '600' },
   saveTextDisabled: { opacity: 0.5 },
-  vibeSummaryCard: { marginHorizontal: spacing.lg, marginVertical: spacing.md, padding: spacing.lg, backgroundColor: 'rgba(139, 92, 246, 0.08)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(139, 92, 246, 0.15)' },
-  vibeSummaryLabel: { fontSize: typography.sizes.xs, color: colors.violet[400], fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: spacing.xs },
+  vibeSummaryCard: { marginHorizontal: spacing.lg, marginVertical: spacing.md, padding: spacing.lg, backgroundColor: 'rgba(197, 163, 107, 0.08)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(197, 163, 107, 0.15)' },
+  vibeSummaryLabel: { fontSize: typography.sizes.xs, color: colors.lux.champagne, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: spacing.xs },
   vibeSummaryText: { fontSize: typography.sizes.md, color: colors.white, fontWeight: '500', lineHeight: 22 },
   scroll: { flex: 1, paddingHorizontal: spacing.lg },
   chapter: { paddingTop: spacing.xl, paddingBottom: spacing.sm },
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   helperText: { fontSize: typography.sizes.xs, color: colors.zinc[600], marginBottom: spacing.lg, fontStyle: 'italic' },
   chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  chipSelected: { backgroundColor: colors.violet[600], borderColor: colors.violet[500] },
+  chipSelected: { backgroundColor: colors.lux.bronzeDeep, borderColor: colors.lux.ivory },
   chipText: { fontSize: typography.sizes.sm, color: colors.zinc[400], fontWeight: '500' },
-  chipTextSelected: { color: colors.white },
+  chipTextSelected: { color: colors.lux.ink },
 });

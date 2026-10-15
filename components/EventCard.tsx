@@ -59,7 +59,7 @@ export default function EventCard({ event }: EventCardProps) {
           
           {event.genre && (
             <View style={styles.detailRow}>
-              <Ionicons name="musical-notes" size={14} color={colors.violet[400]} />
+              <Ionicons name="musical-notes" size={14} color={colors.lux.champagne} />
               <Text style={styles.genreText} numberOfLines={1}>{event.genre}</Text>
             </View>
           )}
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   card: { width: 280, height: 320, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.gray[800], marginRight: 12 },
   image: { width: '100%', height: '100%', position: 'absolute' },
   gradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%' },
-  datebadge: { position: 'absolute', top: 12, right: 12, backgroundColor: colors.violet[600], borderRadius: 12, padding: 8, alignItems: 'center', minWidth: 50 },
+  datebadge: { position: 'absolute', top: 12, right: 12, backgroundColor: colors.lux.bronzeDeep, borderRadius: 12, padding: 8, alignItems: 'center', minWidth: 50 },
   dateMonth: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase' },
   dateDay: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 2 },
   content: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
@@ -81,5 +81,5 @@ const styles = StyleSheet.create({
   details: { gap: 6 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   detailText: { fontSize: 13, color: colors.gray[400], flex: 1 },
-  genreText: { fontSize: 13, color: colors.violet[300], fontWeight: '600', flex: 1 },
+  genreText: { fontSize: 13, color: colors.lux.champagne, fontWeight: '600', flex: 1 },
 });

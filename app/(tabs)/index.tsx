@@ -782,7 +782,7 @@ export default function HomeScreen() {
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/promoter/${p.instagram_handle}`); }}
                     activeOpacity={0.8}
                   >
-                    <View style={[s.followAvatarWrap, { borderColor: colors.violet[600] }]}>
+                    <View style={[s.followAvatarWrap, { borderColor: colors.lux.champagne }]}>
                       <Image source={{ uri: photo }} style={s.followAvatar} contentFit="cover" cachePolicy="memory-disk" />
                     </View>
                     <Text style={s.followName} numberOfLines={1}>{p.business_name || p.instagram_handle}</Text>
@@ -928,7 +928,7 @@ export default function HomeScreen() {
                   onPress={() => setShowCitySelector(true)}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="location" size={11} color={colors.violet[400]} />
+                  <Ionicons name="location" size={11} color={colors.lux.champagne} />
                   <Text style={s.locationText}>{userCity}</Text>
                   <Ionicons name="chevron-down" size={10} color="#52525B" />
                 </TouchableOpacity>
@@ -1085,12 +1085,12 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(139,92,246,0.08)',
+    backgroundColor: 'rgba(197, 163, 107, 0.08)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.12)',
+    borderColor: 'rgba(197, 163, 107, 0.12)',
   },
   locationText: {
     fontSize: 12,
@@ -1141,8 +1141,8 @@ const s = StyleSheet.create({
     borderColor: 'transparent',
   },
   intentPillActive: {
-    backgroundColor: '#1C1A24',
-    borderColor: 'rgba(139,92,246,0.45)',
+    backgroundColor: '#1C1C1E',
+    borderColor: 'rgba(243, 240, 233, 0.35)',
   },
   intentPillText: {
     fontSize: 15,
@@ -1248,7 +1248,7 @@ const s = StyleSheet.create({
   },
   seeAll: {
     fontSize: 14,
-    color: '#A78BFA',
+    color: '#C5A36B',
     fontWeight: '500',
   },
 
@@ -1341,7 +1341,7 @@ const s = StyleSheet.create({
   reloadCity: {
     fontSize: 12,
     fontWeight: '400',
-    color: '#7C3AED',
+    color: '#C5A36B',
     letterSpacing: 2,
   },
 });

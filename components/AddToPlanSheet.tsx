@@ -181,17 +181,17 @@ export default function AddToPlanSheet({ visible, venue, onClose, onSuccess }: P
 
           {saving ? (
             <View style={styles.center}>
-              <ActivityIndicator color="#8B5CF6" />
+              <ActivityIndicator color="#F3F0E9" />
             </View>
           ) : loading ? (
             <View style={styles.center}>
-              <ActivityIndicator color="#8B5CF6" />
+              <ActivityIndicator color="#F3F0E9" />
             </View>
           ) : mode === 'list' ? (
             <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {/* Tonight */}
               <TouchableOpacity style={styles.tonightBtn} onPress={addToTonight} activeOpacity={0.8}>
-                <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.tonightGrad}>
+                <LinearGradient colors={['#8C6D3F', '#7A5E34']} style={styles.tonightGrad}>
                   <Text style={styles.tonightEmoji}>🌙</Text>
                   <Text style={styles.tonightText}>Tonight</Text>
                   <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
@@ -215,7 +215,7 @@ export default function AddToPlanSheet({ visible, venue, onClose, onSuccess }: P
                   setTimeout(() => inputRef.current?.focus(), 200);
                 }}
               >
-                <Ionicons name="add-circle-outline" size={20} color="#8B5CF6" />
+                <Ionicons name="add-circle-outline" size={20} color="#C5A36B" />
                 <Text style={styles.newPlanText}>Create New Plan</Text>
               </TouchableOpacity>
 
@@ -384,13 +384,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.3)',
+    borderColor: 'rgba(197, 163, 107, 0.3)',
     borderStyle: 'dashed',
     marginBottom: 12,
   },
   newPlanText: {
     fontSize: 14,
-    color: '#8B5CF6',
+    color: '#C5A36B',
     fontWeight: '500',
   },
 
@@ -427,9 +427,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emojiBtnActive: {
-    backgroundColor: 'rgba(139,92,246,0.3)',
+    backgroundColor: 'rgba(197, 163, 107, 0.3)',
     borderWidth: 2,
-    borderColor: '#8B5CF6',
+    borderColor: '#C5A36B',
   },
   emojiText: {
     fontSize: 20,
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   createBtn: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: '#8C6D3F',
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',

@@ -271,7 +271,7 @@ export default function BookingChatScreen() {
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#8B5CF6" />
+          <ActivityIndicator size="large" color="#F3F0E9" />
         </View>
       </View>
     );
@@ -350,7 +350,7 @@ export default function BookingChatScreen() {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={() => loadMessages(true)}
-                  tintColor="#8B5CF6"
+                  tintColor="#F3F0E9"
                 />
               }
             />
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  headerSubtitle: { color: '#8B5CF6', fontSize: 12, marginTop: 2 },
+  headerSubtitle: { color: '#C5A36B', fontSize: 12, marginTop: 2 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   chatContainer: { flex: 1 },
   messagesList: { padding: 16, paddingBottom: 8 },
@@ -394,9 +394,9 @@ const styles = StyleSheet.create({
   messageRow: { flexDirection: 'row', marginBottom: 8 },
   messageRowMe: { justifyContent: 'flex-end' },
   messageBubble: { maxWidth: '80%', padding: 12, borderRadius: 16 },
-  bubbleMe: { backgroundColor: '#8B5CF6', borderBottomRightRadius: 4 },
+  bubbleMe: { backgroundColor: '#8C6D3F', borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: '#222', borderBottomLeftRadius: 4 },
-  senderName: { color: '#8B5CF6', fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  senderName: { color: '#C5A36B', fontSize: 12, fontWeight: '600', marginBottom: 4 },
   messageText: { color: '#fff', fontSize: 16, lineHeight: 22 },
   messageTextMe: { color: '#fff' },
   timeText: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 4, textAlign: 'right' },
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   systemText: { color: '#666', fontSize: 13, fontStyle: 'italic' },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#000' },
   input: { flex: 1, backgroundColor: '#111', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#fff', fontSize: 16, maxHeight: 100, marginRight: 8 },
-  sendButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#8B5CF6', justifyContent: 'center', alignItems: 'center' },
+  sendButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#8C6D3F', justifyContent: 'center', alignItems: 'center' },
   sendButtonDisabled: { backgroundColor: '#333' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '600', marginTop: 16 },
@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
   instagramInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, width: '100%' },
   atSymbol: { color: '#666', fontSize: 18, marginRight: 4 },
   instagramInput: { flex: 1, color: '#fff', fontSize: 18, paddingVertical: 14 },
-  linkButton: { backgroundColor: '#8B5CF6', paddingVertical: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
+  linkButton: { backgroundColor: '#8C6D3F', paddingVertical: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
   linkButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   backToBookingButton: { marginTop: 20, paddingVertical: 12 },
   backToBookingText: { color: '#888', fontSize: 15 },

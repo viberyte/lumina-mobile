@@ -270,7 +270,7 @@ export default function RegisterScreen() {
                   editable={!loading}
                 />
                 {name.trim().length > 0 && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.violet[400]} />
+                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
                 )}
               </View>
               {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
@@ -289,7 +289,7 @@ export default function RegisterScreen() {
                   editable={!loading}
                 />
                 {validateEmail(email) && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.violet[400]} />
+                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
                 )}
               </View>
               {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
@@ -310,7 +310,7 @@ export default function RegisterScreen() {
                       editable={!loading}
                     />
                     {businessName.trim().length > 0 && (
-                      <Ionicons name="checkmark-circle" size={18} color={colors.violet[400]} />
+                      <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
                     )}
                   </View>
                   {businessError ? <Text style={styles.errorText}>{businessError}</Text> : null}
@@ -393,7 +393,7 @@ export default function RegisterScreen() {
                   editable={!loading}
                 />
                 {confirmPassword.length > 0 && password === confirmPassword && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.violet[400]} />
+                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
                 )}
               </View>
               {confirmError ? <Text style={styles.errorText}>{confirmError}</Text> : null}
@@ -407,7 +407,7 @@ export default function RegisterScreen() {
               >
                 <LinearGradient
                   colors={isValid 
-                    ? ['#8b5cf6', '#7c3aed', '#6d28d9']
+                    ? ['#8c6d3f', '#7a5e34', '#7a5e34']
                     : ['#3f3f46', '#3f3f46', '#3f3f46']
                   }
                   start={{ x: 0, y: 0 }}
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
     width: 350,
     height: 350,
     borderRadius: 175,
-    backgroundColor: colors.violet[600],
+    backgroundColor: colors.lux.champagne,
     top: -50,
     right: -100,
   },
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: '48%',
     height: '100%',
-    backgroundColor: colors.violet[600],
+    backgroundColor: colors.lux.bronzeDeep,
     borderRadius: 10,
     top: 4,
   },
@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   hintSuccess: {
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
   // Partner Role Section
   roleSection: {
@@ -604,8 +604,8 @@ const styles = StyleSheet.create({
     borderColor: colors.zinc[800],
   },
   rolePillActive: {
-    backgroundColor: colors.violet[600],
-    borderColor: colors.violet[600],
+    backgroundColor: colors.lux.bronzeDeep,
+    borderColor: colors.lux.champagne,
   },
   rolePillText: {
     fontSize: 13,
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginTop: spacing.lg,
-    shadowColor: colors.violet[500],
+    shadowColor: colors.lux.champagne,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
@@ -664,7 +664,7 @@ const styles = StyleSheet.create({
   signInLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
   footer: {
     marginTop: 'auto',

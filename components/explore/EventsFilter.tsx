@@ -125,7 +125,7 @@ export default function EventsFilter({ onFilterChange }: EventsFilterProps) {
       {/* Header */}
       <TouchableOpacity style={styles.header} onPress={toggleExpand} activeOpacity={0.8}>
         <View style={styles.headerLeft}>
-          <Ionicons name="options-outline" size={18} color={colors.violet[400]} />
+          <Ionicons name="options-outline" size={18} color={colors.lux.champagne} />
           <Text style={styles.headerText}>Filters</Text>
           {activeCount > 0 && (
             <View style={styles.badge}>
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   badge: {
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.ivory,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.white,
+    color: colors.lux.ink,
   },
   content: {
     marginTop: spacing.md,
@@ -264,8 +264,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   chipActive: {
-    backgroundColor: colors.violet[500] + '25',
-    borderColor: colors.violet[500],
+    backgroundColor: colors.lux.ivory,
+    borderColor: colors.lux.ivory,
   },
   chipIcon: {
     fontSize: 14,
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     color: colors.zinc[400],
   },
   chipTextActive: {
-    color: colors.white,
+    color: colors.lux.ink,
   },
   clearButton: {
     alignItems: 'center',
@@ -286,6 +286,6 @@ const styles = StyleSheet.create({
   clearText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
 });

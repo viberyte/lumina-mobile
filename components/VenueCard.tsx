@@ -74,7 +74,7 @@ export default function VenueCard({ venue }: VenueCardProps) {
               />
               {imageLoading && (
                 <View style={styles.loadingOverlay}>
-                  <ActivityIndicator size="small" color={colors.violet[500]} />
+                  <ActivityIndicator size="small" color={colors.lux.ivory} />
                 </View>
               )}
             </>
@@ -213,11 +213,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: colors.violet[100],
+    backgroundColor: colors.lux.champagneTint,
   },
   tagText: {
     fontSize: typography.sizes.xs,
-    color: colors.violet[700],
+    color: colors.lux.champagne,
     fontWeight: '500',
   },
 });

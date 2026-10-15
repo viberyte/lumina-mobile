@@ -81,7 +81,7 @@ export default function ForgotPasswordScreen() {
 
           <View style={styles.header}>
             <View style={styles.iconContainer}>
-              <Ionicons name="lock-open-outline" size={40} color={colors.violet[400]} />
+              <Ionicons name="lock-open-outline" size={40} color={colors.lux.champagne} />
             </View>
             <Text style={styles.title}>Reset Password</Text>
             <Text style={styles.subtitle}>
@@ -115,7 +115,7 @@ export default function ForgotPasswordScreen() {
                 activeOpacity={0.9}
               >
                 <LinearGradient
-                  colors={['#8b5cf6', '#7c3aed', '#6d28d9']}
+                  colors={['#8c6d3f', '#7a5e34', '#7a5e34']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.resetButtonGradient}
@@ -131,7 +131,7 @@ export default function ForgotPasswordScreen() {
           ) : (
             <View style={styles.successContainer}>
               <View style={styles.successIcon}>
-                <Ionicons name="checkmark-circle" size={60} color={colors.violet[400]} />
+                <Ionicons name="checkmark-circle" size={60} color={colors.lux.champagne} />
               </View>
               <Text style={styles.successText}>
                 We've sent a password reset link to {email}
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    backgroundColor: 'rgba(197, 163, 107, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -256,6 +256,6 @@ const styles = StyleSheet.create({
   backToLoginText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
 });

@@ -156,7 +156,7 @@ export default function RoomsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.violet[500]} />
+          <ActivityIndicator size="large" color={colors.lux.ivory} />
           <Text style={styles.loadingText}>Loading cities...</Text>
         </View>
       </SafeAreaView>
@@ -227,7 +227,7 @@ export default function RoomsScreen() {
                         <Text style={styles.cityName}>{borough.name}</Text>
                         <Text style={styles.roomCount}>{borough.room_count} vibes</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={24} color={colors.violet[400]} />
+                      <Ionicons name="chevron-forward" size={24} color={colors.lux.champagne} />
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -265,7 +265,7 @@ export default function RoomsScreen() {
                         <Text style={styles.cityName}>{city.name}</Text>
                         <Text style={styles.roomCount}>{city.room_count} vibes</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={24} color={colors.violet[400]} />
+                      <Ionicons name="chevron-forward" size={24} color={colors.lux.champagne} />
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -320,7 +320,7 @@ export default function RoomsScreen() {
                     <Text style={styles.vibeName}>{vibe.name}</Text>
                     <Text style={styles.vibeDescription}>{vibe.description}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.violet[400]} />
+                  <Ionicons name="chevron-forward" size={20} color={colors.lux.champagne} />
                 </View>
               </TouchableOpacity>
             ))}
@@ -355,7 +355,7 @@ export default function RoomsScreen() {
                     <Text style={styles.vibeName}>{vibe.name}</Text>
                     <Text style={styles.vibeDescription}>{vibe.description}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.violet[400]} />
+                  <Ionicons name="chevron-forward" size={20} color={colors.lux.champagne} />
                 </View>
               </TouchableOpacity>
             ))}
@@ -382,7 +382,7 @@ export default function RoomsScreen() {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={[colors.violet[600] + '40', colors.violet[700] + '20']}
+                colors={[colors.lux.champagne + '40', colors.lux.champagne + '20']}
                 style={[styles.card, styles.flexVibeCard]}
               >
                 <View style={styles.vibeInfo}>
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   },
   flexVibeCard: {
     borderWidth: 1,
-    borderColor: colors.violet[500] + '40',
+    borderColor: colors.lux.champagne + '40',
   },
   vibeInfo: {
     flex: 1,
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   expandText: {
     fontSize: typography.sizes.sm,
     fontWeight: '600',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
   loadingContainer: {
     flex: 1,

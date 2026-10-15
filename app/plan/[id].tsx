@@ -32,8 +32,8 @@ const colors = {
   background: '#0A0A0F',
   card: '#16161F',
   cardBorder: '#2A2A3A',
-  accent: '#8B5CF6',
-  accentDark: '#1B1630',
+  accent: '#C5A36B',
+  accentDark: '#1C1C1E',
   textPrimary: '#FFFFFF',
   textSecondary: '#9CA3AF',
   textMuted: '#6B7280',
@@ -518,7 +518,7 @@ export default function PlanDetailScreen() {
                 onPress={handleSaveEdit}
               >
                 <LinearGradient
-                  colors={[colors.accent, '#7C3AED']}
+                  colors={[colors.accent, '#8C6D3F']}
                   style={styles.saveButtonGradient}
                 >
                   <Text style={styles.saveButtonText}>Save</Text>
@@ -739,7 +739,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   exploreButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#7a5e34',
     borderRadius: 13,
     paddingVertical: 15,
     paddingHorizontal: 32,
@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
     height: 40,
   },
   startButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#7a5e34',
     borderRadius: 14,
     paddingVertical: 17,
     flexDirection: 'row',

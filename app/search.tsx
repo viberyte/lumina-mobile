@@ -171,7 +171,7 @@ const FeaturedResultCard = ({ item, onPress }: { item: Venue; onPress: () => voi
           
           <View style={styles.featuredInfo}>
             <View style={styles.topMatchBadge}>
-              <Ionicons name="sparkles" size={10} color={colors.violet[400]} />
+              <Ionicons name="sparkles" size={10} color={colors.lux.champagne} />
               <Text style={styles.topMatchText}>TOP MATCH</Text>
             </View>
             
@@ -249,7 +249,7 @@ const ResultCard = ({ item, type, onPress }: { item: any; type: 'venue' | 'event
             <Text style={styles.resultName} numberOfLines={1}>
               {item.name || item.title || item.business_name || item.handle}
             </Text>
-            {item.verified && <Ionicons name="checkmark-circle" size={14} color={colors.violet[400]} />}
+            {item.verified && <Ionicons name="checkmark-circle" size={14} color={colors.lux.champagne} />}
           </View>
           <Text style={styles.resultSubtitle} numberOfLines={1}>{subtitle}</Text>
           {type === 'venue' && item.matchReason && (
@@ -417,7 +417,7 @@ export default function SearchScreen() {
               returnKeyType="search"
               autoCorrect={false}
             />
-            {isSearching && <ActivityIndicator size="small" color={colors.violet[400]} />}
+            {isSearching && <ActivityIndicator size="small" color={colors.lux.ivory} />}
             {searchQuery.length > 0 && !isSearching && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
                 <Ionicons name="close-circle" size={18} color={colors.zinc[500]} />
@@ -430,12 +430,12 @@ export default function SearchScreen() {
         {intent?.reasoning && (
           <View style={styles.intentContainer}>
             <LinearGradient
-              colors={['rgba(139, 92, 246, 0.18)', 'rgba(139, 92, 246, 0.06)']}
+              colors={['rgba(197, 163, 107, 0.18)', 'rgba(197, 163, 107, 0.06)']}
               style={styles.intentBadge}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Ionicons name="sparkles" size={14} color={colors.violet[400]} />
+              <Ionicons name="sparkles" size={14} color={colors.lux.champagne} />
               <Text style={styles.intentText}>{intent.reasoning}</Text>
               {aiPowered && (
                 <View style={styles.aiPill}>
@@ -475,7 +475,7 @@ export default function SearchScreen() {
               {promoters.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
-                    <Ionicons name="people" size={16} color={colors.violet[400]} />
+                    <Ionicons name="people" size={16} color={colors.lux.champagne} />
                     <Text style={styles.sectionTitle}>Promoters</Text>
                   </View>
                   {promoters.map((promoter) => (
@@ -493,7 +493,7 @@ export default function SearchScreen() {
               {(showFeatured ? otherVenues : venues).length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
-                    <Ionicons name="location" size={16} color={colors.violet[400]} />
+                    <Ionicons name="location" size={16} color={colors.lux.champagne} />
                     <Text style={styles.sectionTitle}>
                       {showFeatured ? 'More Options' : 'Venues'}
                     </Text>
@@ -641,17 +641,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: 'rgba(197, 163, 107, 0.2)',
   },
-  intentText: { fontSize: 14, color: colors.violet[300], fontWeight: '600' },
+  intentText: { fontSize: 14, color: colors.lux.champagne, fontWeight: '600' },
   aiPill: {
-    backgroundColor: 'rgba(139, 92, 246, 0.3)',
+    backgroundColor: 'rgba(197, 163, 107, 0.3)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 4,
   },
-  aiPillText: { fontSize: 9, color: colors.violet[300], fontWeight: '700' },
+  aiPillText: { fontSize: 9, color: colors.lux.champagne, fontWeight: '700' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   resultsContainer: { gap: spacing.md },
@@ -684,15 +684,15 @@ const styles = StyleSheet.create({
   featuredGlow: {
     position: 'absolute',
     top: -6, left: -6, right: -6, bottom: -6,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.champagne,
     borderRadius: 24,
   },
   featuredContent: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    backgroundColor: 'rgba(197, 163, 107, 0.08)',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: 'rgba(197, 163, 107, 0.2)',
     padding: spacing.md,
     gap: spacing.md,
   },
@@ -708,16 +708,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 4,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    backgroundColor: 'rgba(197, 163, 107, 0.2)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     marginBottom: 4,
   },
-  topMatchText: { fontSize: 9, fontWeight: '700', color: colors.violet[400], letterSpacing: 0.5 },
+  topMatchText: { fontSize: 9, fontWeight: '700', color: colors.lux.champagne, letterSpacing: 0.5 },
   featuredName: { fontSize: 17, fontWeight: '700', color: colors.white, lineHeight: 21 },
   featuredSubtitle: { fontSize: 13, color: colors.zinc[400] },
-  matchReasonText: { fontSize: 12, color: colors.violet[400], fontWeight: '600', marginTop: 2 },
+  matchReasonText: { fontSize: 12, color: colors.lux.champagne, fontWeight: '600', marginTop: 2 },
   featuredMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 6 },
   // Result Card
   resultCard: {
@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
   resultNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   resultName: { fontSize: 15, fontWeight: '600', color: colors.white, flexShrink: 1 },
   resultSubtitle: { fontSize: 13, color: colors.zinc[500] },
-  resultMatchReason: { fontSize: 12, color: colors.violet[400], fontWeight: '500', marginTop: 2 },
+  resultMatchReason: { fontSize: 12, color: colors.lux.champagne, fontWeight: '500', marginTop: 2 },
   ratingBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: 'rgba(251, 191, 36, 0.12)',
@@ -761,8 +761,8 @@ const styles = StyleSheet.create({
   suggestionChip: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14, borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-    borderWidth: 1, borderColor: 'rgba(139, 92, 246, 0.15)',
+    backgroundColor: 'rgba(197, 163, 107, 0.08)',
+    borderWidth: 1, borderColor: 'rgba(197, 163, 107, 0.15)',
   },
   suggestionText: { fontSize: 15, color: colors.white, fontWeight: '500' },
   trendingChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -778,7 +778,7 @@ const styles = StyleSheet.create({
   },
   recentText: { flex: 1, fontSize: 15, color: colors.zinc[300] },
   clearButton: { paddingHorizontal: spacing.sm },
-  clearButtonText: { fontSize: 13, color: colors.violet[400], fontWeight: '600' },
+  clearButtonText: { fontSize: 13, color: colors.lux.champagne, fontWeight: '600' },
   noResults: { alignItems: 'center', paddingVertical: spacing.xxl * 2 },
   noResultsIcon: {
     width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.04)',

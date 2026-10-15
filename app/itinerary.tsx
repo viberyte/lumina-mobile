@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.violet[600],
+    backgroundColor: colors.lux.bronzeDeep,
     borderRadius: 30,
     paddingVertical: spacing.md + 2,
   },

@@ -188,7 +188,7 @@ export default function NewBookingScreen() {
                 >
                   {isSelected && (
                     <View style={styles.selectedBadge}>
-                      <Ionicons name="checkmark-circle" size={20} color={colors.violet[400]} />
+                      <Ionicons name="checkmark-circle" size={20} color={colors.lux.champagne} />
                     </View>
                   )}
                   <Text style={styles.packageName}>{pkg.name}</Text>
@@ -260,7 +260,7 @@ export default function NewBookingScreen() {
           {selectedPackage && (
             <View style={styles.summaryCard}>
               <LinearGradient
-                colors={[colors.violet[600] + '20', colors.violet[700] + '10']}
+                colors={[colors.lux.champagne + '20', colors.lux.champagne + '10']}
                 style={styles.summaryGradient}
               >
                 <View style={styles.summaryRow}>
@@ -313,7 +313,7 @@ export default function NewBookingScreen() {
           activeOpacity={0.8}
         >
           <LinearGradient
-            colors={selectedPackage ? [colors.violet[600], colors.violet[700]] : [colors.zinc[700], colors.zinc[800]]}
+            colors={selectedPackage ? [colors.lux.bronze, colors.lux.bronzeDeep] : [colors.zinc[700], colors.zinc[800]]}
             style={styles.submitGradient}
           >
             {submitting ? (
@@ -358,8 +358,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   packageCardSelected: {
-    borderColor: colors.violet[500],
-    backgroundColor: colors.violet[600] + '10',
+    borderColor: colors.lux.champagne,
+    backgroundColor: colors.lux.champagne + '10',
   },
   selectedBadge: {
     position: 'absolute',
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     right: 12,
   },
   packageName: { fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 4 },
-  packagePrice: { fontSize: 24, fontWeight: '800', color: colors.violet[400], marginBottom: 8 },
+  packagePrice: { fontSize: 24, fontWeight: '800', color: colors.lux.champagne, marginBottom: 8 },
   packageDesc: { fontSize: 14, color: colors.zinc[400], marginBottom: 12 },
   packageMeta: { flexDirection: 'row', gap: 16 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.zinc[700],
     marginVertical: 12,
   },
-  summaryTotal: { fontSize: 20, fontWeight: '800', color: colors.violet[400] },
+  summaryTotal: { fontSize: 20, fontWeight: '800', color: colors.lux.champagne },
   summaryNote: {
     fontSize: 12,
     color: colors.zinc[500],
@@ -459,11 +459,11 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.violet[600] + '30',
+    backgroundColor: colors.lux.champagne + '30',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  stepNumberText: { fontSize: 14, fontWeight: '700', color: colors.violet[400] },
+  stepNumberText: { fontSize: 14, fontWeight: '700', color: colors.lux.champagne },
   stepText: { fontSize: 14, color: colors.zinc[300], flex: 1 },
   // Bottom Bar
   bottomBar: {

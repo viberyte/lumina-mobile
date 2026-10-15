@@ -390,7 +390,7 @@ export default function VenueDetailScreen() {
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity onPress={handleToggleSave} style={styles.heroBtn} activeOpacity={0.8}>
-                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={19} color={saved ? '#a78bfa' : '#fff'} />
+                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={19} color={saved ? '#c5a36b' : '#fff'} />
               </TouchableOpacity>
               <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
                 <Ionicons name="share-outline" size={20} color="#fff" />
@@ -538,7 +538,7 @@ export default function VenueDetailScreen() {
               />
               <TouchableOpacity style={styles.mapOverlay} onPress={handleDirections} activeOpacity={0.85}>
                 <View style={styles.mapPin}>
-                  <Ionicons name="location" size={14} color="#8b5cf6" />
+                  <Ionicons name="location" size={14} color="#c5a36b" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.mapVenueName}>{venue.name}</Text>
@@ -546,7 +546,7 @@ export default function VenueDetailScreen() {
                 </View>
                 <View style={styles.directionsChip}>
                   <Text style={styles.directionsChipText}>Directions</Text>
-                  <Ionicons name="arrow-forward" size={11} color="#a78bfa" />
+                  <Ionicons name="arrow-forward" size={11} color="#c5a36b" />
                 </View>
               </TouchableOpacity>
             </View>
@@ -586,7 +586,7 @@ export default function VenueDetailScreen() {
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setAddToPlanVisible(true); }}
           activeOpacity={0.9}
         >
-          <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+          <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
             <Ionicons name="add" size={18} color="#fff" />
             <Text style={styles.bottomBtnText}>Add to Plans</Text>
           </LinearGradient>
@@ -696,7 +696,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
   },
   bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.72)', lineHeight: 24 },
-  readMore: { fontSize: 14, color: '#a78bfa', marginTop: 8, fontWeight: '500' },
+  readMore: { fontSize: 14, color: '#c5a36b', marginTop: 8, fontWeight: '500' },
  
   photoLarge: { width: SCREEN_WIDTH * 0.72, height: 220, borderRadius: 14 },
   photoSmall: { width: SCREEN_WIDTH * 0.45, height: 220, borderRadius: 14 },
@@ -712,30 +712,30 @@ const styles = StyleSheet.create({
   },
   mapPin: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(139,92,246,0.15)',
+    backgroundColor: 'rgba(197, 163, 107, 0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
   mapVenueName: { fontSize: 14, fontWeight: '600', color: '#fff', marginBottom: 2 },
   mapAddress: { fontSize: 12, color: '#a1a1aa', lineHeight: 16 },
   directionsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(139,92,246,0.12)',
-    borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
+    backgroundColor: 'rgba(197, 163, 107, 0.12)',
+    borderWidth: 1, borderColor: 'rgba(197, 163, 107, 0.25)',
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
   },
-  directionsChipText: { fontSize: 11, color: '#a78bfa', fontWeight: '500' },
+  directionsChipText: { fontSize: 11, color: '#c5a36b', fontWeight: '500' },
  
   mapImage: { width: '100%', height: 180, borderRadius: 16 },
-  markerOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(139,92,246,0.35)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
-  markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
+  markerOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(197, 163, 107, 0.35)', borderWidth: 2, borderColor: '#c5a36b', alignItems: 'center', justifyContent: 'center' },
+  markerInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#c5a36b' },
   mapView: { width: '100%', height: 180, borderRadius: 16 },
   mapImageFallback: { width: '100%', height: 180, borderRadius: 16, backgroundColor: '#0d0d1a', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   mapGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  mapGridLine: { position: 'absolute', backgroundColor: 'rgba(139,92,246,0.08)' },
+  mapGridLine: { position: 'absolute', backgroundColor: 'rgba(197, 163, 107, 0.08)' },
   mapCenterPin: { alignItems: 'center' },
-  mapPinOuter: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.3)', borderWidth: 2, borderColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
-  mapPinInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#8b5cf6' },
-  mapPinStem: { width: 2, height: 10, backgroundColor: '#8b5cf6', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  mapPinOuter: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(197, 163, 107, 0.3)', borderWidth: 2, borderColor: '#c5a36b', alignItems: 'center', justifyContent: 'center' },
+  mapPinInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#c5a36b' },
+  mapPinStem: { width: 2, height: 10, backgroundColor: '#c5a36b', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
   mapGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
   mapOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
   hoursRow: {

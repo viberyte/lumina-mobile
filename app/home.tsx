@@ -291,7 +291,7 @@ export default function HomeScreen() {
             <View style={styles.itineraryButtonContainer}>
               <TouchableOpacity style={styles.itineraryButton} onPress={handleViewItinerary}>
                 <LinearGradient
-                  colors={['#9333EA', '#7C3AED']}
+                  colors={['#8C6D3F', '#7A5E34']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.itineraryGradient}
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.violet[600],
+    backgroundColor: colors.lux.bronzeDeep,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   messagesContainer: { flex: 1 },
   messagesContent: { paddingVertical: spacing.lg, paddingBottom: spacing.xl },
   itineraryButtonContainer: { paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.xl },
-  itineraryButton: { borderRadius: 30, overflow: 'hidden', shadowColor: '#7C3AED', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  itineraryButton: { borderRadius: 30, overflow: 'hidden', shadowColor: '#C5A36B', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   itineraryGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md + 4 },
   itineraryButtonText: { fontSize: typography.sizes.lg, fontWeight: '600', color: colors.white },
   inputContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.zinc[900], gap: spacing.sm },

@@ -32,12 +32,13 @@ const colors = {
   background: '#0A0A0F',
   card: '#16161F',
   cardBorder: '#2A2A3A',
-  accent: '#8B5CF6',
-  accentDark: '#1B1630',
+  accent: '#C5A36B',
+  accentFill: '#8C6D3F',
+  accentDark: '#1C1C1E',
   textPrimary: '#FFFFFF',
   textSecondary: '#9CA3AF',
   textMuted: '#6B7280',
-  tonight: '#7C3AED',
+  tonight: '#8C6D3F',
 };
 
 interface AddEventToPlanSheetProps {
@@ -223,7 +224,7 @@ export default function AddEventToPlanSheet({
                 activeOpacity={0.7}
               >
                 <LinearGradient
-                  colors={[colors.tonight, '#5B21B6']}
+                  colors={[colors.tonight, '#8C6D3F']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.tonightGradient}
@@ -544,7 +545,7 @@ const styles = StyleSheet.create({
     flex: 2,
     paddingVertical: 12,
     alignItems: 'center',
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     borderRadius: 10,
   },
   createButtonDisabled: {

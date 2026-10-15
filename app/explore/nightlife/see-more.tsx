@@ -144,7 +144,7 @@ export default function NightlifeSeeMore() {
   if (loading) {
     return (
       <View style={styles.loader}>
-        <ActivityIndicator size="large" color={colors.violet[500]} />
+        <ActivityIndicator size="large" color={colors.lux.ivory} />
       </View>
     );
   }
@@ -251,8 +251,8 @@ const styles = StyleSheet.create({
     borderColor: colors.zinc[800],
   },
   filterChipActive: {
-    backgroundColor: colors.violet[600],
-    borderColor: colors.violet[500],
+    backgroundColor: colors.lux.bronzeDeep,
+    borderColor: colors.lux.champagne,
   },
   filterChipText: {
     fontSize: typography.sizes.sm,

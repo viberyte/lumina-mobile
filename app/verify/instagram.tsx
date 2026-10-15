@@ -135,15 +135,15 @@ export default function InstagramVerifyScreen() {
 
           <View style={styles.benefits}>
             <View style={styles.benefitRow}>
-              <Ionicons name="checkmark-circle" size={20} color={colors.violet[500]} />
+              <Ionicons name="checkmark-circle" size={20} color={colors.lux.champagne} />
               <Text style={styles.benefitText}>Book VIP tables at premium venues</Text>
             </View>
             <View style={styles.benefitRow}>
-              <Ionicons name="checkmark-circle" size={20} color={colors.violet[500]} />
+              <Ionicons name="checkmark-circle" size={20} color={colors.lux.champagne} />
               <Text style={styles.benefitText}>Message promoters directly</Text>
             </View>
             <View style={styles.benefitRow}>
-              <Ionicons name="checkmark-circle" size={20} color={colors.violet[500]} />
+              <Ionicons name="checkmark-circle" size={20} color={colors.lux.champagne} />
               <Text style={styles.benefitText}>Get on exclusive guest lists</Text>
             </View>
           </View>
@@ -154,7 +154,7 @@ export default function InstagramVerifyScreen() {
             disabled={loading}
           >
             <LinearGradient
-              colors={[colors.violet[600], colors.violet[700]]}
+              colors={[colors.lux.bronze, colors.lux.bronzeDeep]}
               style={styles.verifyBtnGradient}
             >
               {loading ? (

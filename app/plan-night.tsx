@@ -184,7 +184,7 @@ export default function PlanNightScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ADD TO YOUR NIGHT</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#8B5CF6" style={{ marginTop: 20 }} />
+            <ActivityIndicator size="large" color="#F3F0E9" style={{ marginTop: 20 }} />
           ) : suggestions.length > 0 ? (
             <View style={styles.suggestionsGrid}>
               {suggestions.map((venue) => (
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   timeline: { gap: 0 },
   timelineItem: { flexDirection: 'row', gap: 16 },
   timeColumn: { width: 60, alignItems: 'center' },
-  timeText: { fontSize: 13, fontWeight: '600', color: '#8B5CF6' },
+  timeText: { fontSize: 13, fontWeight: '600', color: '#C5A36B' },
   timeLine: { width: 2, flex: 1, backgroundColor: '#27272a', marginTop: 8, marginBottom: -8, minHeight: 40 },
   
   stopCard: { flex: 1, flexDirection: 'row', backgroundColor: '#18181b', borderRadius: 16, padding: 12, marginBottom: 16, alignItems: 'center', gap: 12 },
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     width: 28, 
     height: 28, 
     borderRadius: 14, 
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#7A5E34',
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   // Bottom bar
   bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: '#09090b', borderTopWidth: 1, borderTopColor: '#27272a' },
   confirmButton: { 
-    backgroundColor: '#7C3AED', 
+    backgroundColor: '#7A5E34', 
     paddingVertical: 16, 
     borderRadius: 16, 
     flexDirection: 'row',

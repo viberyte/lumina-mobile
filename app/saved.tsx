@@ -165,7 +165,7 @@ export default function SavedScreen() {
             activeOpacity={0.85}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Ionicons name="git-branch-outline" size={20} color="#a78bfa" />
+              <Ionicons name="git-branch-outline" size={20} color="#c5a36b" />
               <View>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 2 }}>{flow.title}</Text>
                 <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
@@ -243,7 +243,7 @@ export default function SavedScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={colors.violet[500]}
+            tintColor={colors.lux.ivory}
           />
         }
       >

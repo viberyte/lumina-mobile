@@ -42,7 +42,7 @@ export default function ChatBubble({ role, content }: ChatBubbleProps) {
       {!isUser && (
         <View style={styles.avatarContainer}>
           <LinearGradient
-            colors={[colors.violet[500], colors.purple[600]]}
+            colors={[colors.lux.bronze, colors.lux.bronzeDeep]}
             style={styles.avatar}
           >
             <Text style={styles.sparkle}></Text>
@@ -53,7 +53,7 @@ export default function ChatBubble({ role, content }: ChatBubbleProps) {
       <View style={styles.bubbleWrapper}>
         {isUser ? (
           <LinearGradient
-            colors={['#9333EA', '#7C3AED']}
+            colors={['#8C6D3F', '#7A5E34']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.userBubble}
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.violet[500],
+    shadowColor: colors.lux.champagne,
     shadowOpacity: 0.4,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    shadowColor: '#7C3AED',
+    shadowColor: '#C5A36B',
     shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },

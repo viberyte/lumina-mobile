@@ -301,7 +301,7 @@ export default function ChatScreen() {
       <View style={styles.stepCta}>
         <TouchableOpacity onPress={() => goToStep(2)} disabled={!canProceedStep1} activeOpacity={0.8}>
           <LinearGradient
-            colors={canProceedStep1 ? [colors.amethyst.primary, colors.amethyst.deep] : ['#2a2a2a', '#2a2a2a']}
+            colors={canProceedStep1 ? [colors.lux.bronze, colors.lux.bronzeDeep] : ['#2a2a2a', '#2a2a2a']}
             style={[styles.ctaButton, !canProceedStep1 && styles.ctaButtonDisabled]}
           >
             <Text style={[styles.ctaText, !canProceedStep1 && styles.ctaTextDisabled]}>Set the Vibe</Text>
@@ -375,7 +375,7 @@ export default function ChatScreen() {
 
       <View style={styles.stepCta}>
         <TouchableOpacity onPress={() => goToStep(3)} activeOpacity={0.8}>
-          <LinearGradient colors={[colors.amethyst.primary, colors.amethyst.deep]} style={styles.ctaButton}>
+          <LinearGradient colors={[colors.lux.bronze, colors.lux.bronzeDeep]} style={styles.ctaButton}>
             <Text style={styles.ctaText}>Lock in Timing</Text>
             <Ionicons name="arrow-forward" size={20} color={colors.white} style={{ marginLeft: 8 }} />
           </LinearGradient>
@@ -417,7 +417,7 @@ export default function ChatScreen() {
 
       <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.previewCard}>
         <View style={styles.previewHeader}>
-          <Ionicons name="sparkles" size={16} color={colors.amethyst.primary} />
+          <Ionicons name="sparkles" size={16} color={colors.lux.champagne} />
           <Text style={styles.previewTitle}>Your Night</Text>
         </View>
         <Text style={styles.previewText}>{getPreviewText()}</Text>
@@ -427,7 +427,7 @@ export default function ChatScreen() {
       <View style={styles.stepCta}>
         <TouchableOpacity onPress={handleSubmit} disabled={!canSubmit || isLoading} activeOpacity={0.8}>
           <LinearGradient
-            colors={canSubmit ? [colors.amethyst.primary, colors.amethyst.deep] : ['#2a2a2a', '#2a2a2a']}
+            colors={canSubmit ? [colors.lux.bronze, colors.lux.bronzeDeep] : ['#2a2a2a', '#2a2a2a']}
             style={[styles.ctaButtonFinal, !canSubmit && styles.ctaButtonDisabled]}
           >
             {isLoading ? (
@@ -463,7 +463,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <LinearGradient colors={[colors.amethyst.primary, colors.amethyst.deep]} style={styles.headerIcon}>
+          <LinearGradient colors={[colors.lux.bronze, colors.lux.bronzeDeep]} style={styles.headerIcon}>
             <Ionicons name="sparkles" size={20} color={colors.white} />
           </LinearGradient>
           <View>
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
   
   progressContainer: { flexDirection: 'row', gap: 8 },
   progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2a2a2a' },
-  progressDotActive: { backgroundColor: colors.amethyst.primary },
+  progressDotActive: { backgroundColor: colors.lux.champagne },
   progressDotCurrent: { width: 24 },
   
   content: { flex: 1, backgroundColor: '#0a0a0a' },
@@ -544,20 +544,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   chipSelected: { 
-    backgroundColor: colors.amethyst.primary,
+    backgroundColor: colors.lux.bronze,
   },
   chipText: { fontSize: typography.sizes.sm, fontWeight: '500', color: '#999' },
   chipTextLarge: { fontSize: typography.sizes.md },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
   
   feedbackContainer: { 
-    backgroundColor: 'rgba(139, 92, 246, 0.15)', 
+    backgroundColor: 'rgba(197, 163, 107, 0.15)', 
     paddingHorizontal: spacing.md, 
     paddingVertical: spacing.sm, 
     borderRadius: 12,
     marginTop: spacing.md,
   },
-  feedbackText: { color: colors.amethyst.primary, fontSize: typography.sizes.sm, fontWeight: '500', textAlign: 'center' },
+  feedbackText: { color: colors.lux.champagne, fontSize: typography.sizes.sm, fontWeight: '500', textAlign: 'center' },
   
   previewCard: {
     backgroundColor: '#1a1a1a',
@@ -565,10 +565,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginTop: spacing.lg,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
+    borderColor: 'rgba(197, 163, 107, 0.3)',
   },
   previewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  previewTitle: { fontSize: typography.sizes.sm, fontWeight: '600', color: colors.amethyst.primary, marginLeft: spacing.xs },
+  previewTitle: { fontSize: typography.sizes.sm, fontWeight: '600', color: colors.lux.champagne, marginLeft: spacing.xs },
   previewText: { fontSize: typography.sizes.md, color: '#fff', fontWeight: '500' },
   previewStops: { fontSize: typography.sizes.sm, color: '#888', marginTop: spacing.xs },
   

@@ -1,6 +1,15 @@
 export const colors = {
   black: '#000000',
   white: '#FFFFFF',
+  // Viberyte Phase 2a palette (VIBERYTE_PALETTE_V1)
+  lux: {
+    ivory: '#F3F0E9',
+    ink: '#09090B',
+    champagne: '#C5A36B',
+    champagneTint: 'rgba(197, 163, 107, 0.12)',
+    bronze: '#8C6D3F',
+    bronzeDeep: '#7A5E34',
+  },
   graphite: {
     bg: '#0B0B0D',
     surface: '#121216',

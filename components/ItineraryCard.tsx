@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.violet[600],
+    backgroundColor: colors.lux.bronzeDeep,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   time: {
     fontSize: typography.sizes.sm,
     fontWeight: '600',
-    color: colors.violet[500],
+    color: colors.lux.champagne,
     marginBottom: spacing.xs,
   },
   connector: {
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   venueTag: {
-    backgroundColor: colors.violet[600] + '20',
+    backgroundColor: colors.lux.champagne + '20',
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: 8,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   venueTagText: {
     fontSize: 10,
     fontWeight: '600',
-    color: colors.violet[600],
+    color: colors.lux.champagne,
   },
   footer: {
     alignItems: 'center',

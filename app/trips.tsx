@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 36, height: 36, justifyContent: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '600', color: '#fff', letterSpacing: -0.3 },
   editBtn: { width: 60, alignItems: 'flex-end' },
-  editBtnText: { fontSize: 15, color: '#a78bfa', fontWeight: '500' },
+  editBtnText: { fontSize: 15, color: '#c5a36b', fontWeight: '500' },
 
   // Empty state
   emptyState: {

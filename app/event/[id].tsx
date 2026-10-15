@@ -337,7 +337,7 @@ export default function EventDetailScreen() {
       <View style={styles.loadingContainer}>
         <Text style={styles.errorText}>Event not found</Text>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ color: '#8b5cf6' }}>Go back</Text>
+          <Text style={{ color: '#c5a36b' }}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -394,7 +394,7 @@ export default function EventDetailScreen() {
             </TouchableOpacity>
             <View style={styles.heroTopRight}>
               <TouchableOpacity onPress={handleSaveEvent} style={styles.heroBtn} activeOpacity={0.8}>
-                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={20} color={isSaved ? '#a78bfa' : '#fff'} />
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={20} color={isSaved ? '#c5a36b' : '#fff'} />
               </TouchableOpacity>
               <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
                 <Ionicons name="share-outline" size={20} color="#fff" />
@@ -406,7 +406,7 @@ export default function EventDetailScreen() {
           <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
             {event.genre && (
               <View style={styles.genrePill}>
-                <Ionicons name="musical-note" size={11} color="#a78bfa" />
+                <Ionicons name="musical-note" size={11} color="#c5a36b" />
                 <Text style={styles.genrePillText}>{event.genre}</Text>
               </View>
             )}
@@ -425,7 +425,7 @@ export default function EventDetailScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
               activeOpacity={0.9}
             >
-              <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Ionicons name="ticket-outline" size={18} color="#fff" />
                 <Text style={styles.primaryButtonText}>Get Tickets</Text>
               </LinearGradient>
@@ -433,7 +433,7 @@ export default function EventDetailScreen() {
           )}
           {primaryCTA === 'book' && (
             <TouchableOpacity style={styles.primaryButton} onPress={handleBookTable} activeOpacity={0.9} disabled={bookingLoading}>
-              <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Ionicons name="wine-outline" size={18} color="#fff" />
                 <Text style={styles.primaryButtonText}>{bookingLoading ? 'Loading...' : 'Reserve a Table'}</Text>
               </LinearGradient>
@@ -444,7 +444,7 @@ export default function EventDetailScreen() {
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
             activeOpacity={0.8}
           >
-            <Ionicons name="add" size={18} color="#a78bfa" />
+            <Ionicons name="add" size={18} color="#c5a36b" />
             <Text style={styles.secondaryButtonText}>Add to Plan</Text>
           </TouchableOpacity>
         </View>
@@ -526,7 +526,7 @@ export default function EventDetailScreen() {
               <View style={styles.mapOverlay}>
                 <View style={styles.mapInfo}>
                   <View style={styles.mapPin}>
-                    <Ionicons name="location" size={16} color="#8b5cf6" />
+                    <Ionicons name="location" size={16} color="#c5a36b" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.mapVenueName}>{event.venue_name}</Text>
@@ -534,7 +534,7 @@ export default function EventDetailScreen() {
                   </View>
                   <View style={styles.directionsChip}>
                     <Text style={styles.directionsChipText}>Directions</Text>
-                    <Ionicons name="arrow-forward" size={12} color="#a78bfa" />
+                    <Ionicons name="arrow-forward" size={12} color="#c5a36b" />
                   </View>
                 </View>
               </View>
@@ -547,7 +547,7 @@ export default function EventDetailScreen() {
           <View style={styles.section}>
             <TouchableOpacity style={styles.promoterRow} onPress={handleMessagePromoter} activeOpacity={0.8}>
               <View style={styles.promoterIcon}>
-                <Ionicons name="chatbubble-outline" size={18} color="#a78bfa" />
+                <Ionicons name="chatbubble-outline" size={18} color="#c5a36b" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.promoterTitle}>Message the Promoter</Text>
@@ -591,13 +591,13 @@ export default function EventDetailScreen() {
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
             activeOpacity={0.9}
           >
-            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={styles.bottomPrimaryText}>Get Tickets</Text>
             </LinearGradient>
           </TouchableOpacity>
         ) : primaryCTA === 'book' ? (
           <TouchableOpacity style={styles.bottomPrimary} onPress={handleBookTable} activeOpacity={0.9}>
-            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={styles.bottomPrimaryText}>Reserve a Table</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -607,7 +607,7 @@ export default function EventDetailScreen() {
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
             activeOpacity={0.9}
           >
-            <LinearGradient colors={['#7c3aed', '#6d28d9']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={styles.bottomPrimaryText}>Add to Plan</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -685,15 +685,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(139,92,246,0.2)',
+    backgroundColor: 'rgba(197, 163, 107, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.4)',
+    borderColor: 'rgba(197, 163, 107, 0.4)',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginBottom: 10,
   },
-  genrePillText: { fontSize: 11, fontWeight: '600', color: '#a78bfa', letterSpacing: 0.5 },
+  genrePillText: { fontSize: 11, fontWeight: '600', color: '#c5a36b', letterSpacing: 0.5 },
   heroTitle: {
     fontSize: 32,
     fontWeight: '700',
@@ -728,9 +728,9 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.3)',
+    borderColor: 'rgba(197, 163, 107, 0.3)',
   },
-  secondaryButtonText: { fontSize: 15, fontWeight: '500', color: '#a78bfa' },
+  secondaryButtonText: { fontSize: 15, fontWeight: '500', color: '#c5a36b' },
 
   // Sections
   section: { paddingHorizontal: 20, paddingTop: 28 },
@@ -747,7 +747,7 @@ const styles = StyleSheet.create({
   // Lineup
   lineupList: { gap: 10 },
   lineupItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  lineupDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#7c3aed' },
+  lineupDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#c5a36b' },
   lineupName: { fontSize: 16, color: '#e4e4e7', fontWeight: '500' },
 
   // Timeline
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(139,92,246,0.2)',
+    backgroundColor: 'rgba(197, 163, 107, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -790,14 +790,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(139,92,246,0.15)',
+    backgroundColor: 'rgba(197, 163, 107, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.3)',
+    borderColor: 'rgba(197, 163, 107, 0.3)',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  directionsChipText: { fontSize: 12, color: '#a78bfa', fontWeight: '500' },
+  directionsChipText: { fontSize: 12, color: '#c5a36b', fontWeight: '500' },
 
   // Promoter
   promoterRow: {
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(139,92,246,0.12)',
+    backgroundColor: 'rgba(197, 163, 107, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },

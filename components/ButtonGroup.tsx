@@ -88,11 +88,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: colors.violet[400],
+    borderColor: colors.lux.champagne,
   },
   buttonText: {
     fontSize: typography.sizes.sm,
     fontWeight: '500',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
 });

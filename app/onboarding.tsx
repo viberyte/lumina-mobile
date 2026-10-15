@@ -64,7 +64,7 @@ const questions = [
       { value: 'afrobeats', label: 'Afrobeats', icon: 'globe', color: '#22c55e' },
       { value: 'edm', label: 'EDM', icon: 'flash', color: '#3b82f6' },
       { value: 'rnb', label: 'R&B', icon: 'heart', color: '#ec4899' },
-      { value: 'house', label: 'House', icon: 'radio', color: '#8b5cf6' },
+      { value: 'house', label: 'House', icon: 'radio', color: '#c5a36b' },
       { value: 'pop', label: 'Pop', icon: 'star', color: '#f472b6' },
       { value: 'live', label: 'Live / Jazz', icon: 'musical-notes', color: '#14b8a6' },
       { value: 'reggae', label: 'Reggae', icon: 'musical-note', color: '#16a34a' },
@@ -649,7 +649,7 @@ export default function OnboardingScreen() {
               {locationStatus === 'idle' && (
                 <>
                   <View style={styles.locationIconWrap}>
-                    <Ionicons name="location" size={48} color="#8b5cf6" />
+                    <Ionicons name="location" size={48} color="#c5a36b" />
                   </View>
                   <Text style={styles.locationHint}>
                     We use your location to surface the best venues and events happening near you right now.
@@ -660,7 +660,7 @@ export default function OnboardingScreen() {
                     activeOpacity={0.9}
                   >
                     <LinearGradient
-                      colors={['#8b5cf6', '#7c3aed']}
+                      colors={['#8c6d3f', '#7a5e34']}
                       style={styles.continueGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
@@ -673,7 +673,7 @@ export default function OnboardingScreen() {
               )}
               {locationStatus === 'requesting' && (
                 <View style={styles.locationIconWrap}>
-                  <Ionicons name="location" size={48} color="#8b5cf6" />
+                  <Ionicons name="location" size={48} color="#c5a36b" />
                   <Text style={styles.locationHint}>Finding your location...</Text>
                 </View>
               )}
@@ -719,13 +719,13 @@ const styles = StyleSheet.create({
   optionButtonSelected: { borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.08)' },
   optionContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   optionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
-  optionIconSelected: { backgroundColor: '#8b5cf6' },
+  optionIconSelected: { backgroundColor: '#8c6d3f' },
   optionEmoji: { fontSize: 24 },
   optionTextContainer: { flex: 1 },
   optionLabel: { fontSize: 17, fontWeight: '600', color: '#a1a1aa' },
   optionLabelSelected: { color: '#fff' },
   optionSubtitle: { fontSize: 13, color: '#52525b', marginTop: 2 },
-  checkCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#8b5cf6', justifyContent: 'center', alignItems: 'center' },
+  checkCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#8c6d3f', justifyContent: 'center', alignItems: 'center' },
   multiContainer: { flex: 1 },
   multiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20 },
   multiChip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)', gap: 8 },
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   buildingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   orbContainer: { position: 'relative', marginBottom: 32 },
   buildingOrb: { width: 100, height: 100, borderRadius: 50 },
-  orbGlow: { position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, borderRadius: 70, backgroundColor: '#8b5cf6', opacity: 0.15 },
+  orbGlow: { position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, borderRadius: 70, backgroundColor: '#c5a36b', opacity: 0.15 },
   buildingWordmark: {
     fontSize: 28,
     fontWeight: '300',

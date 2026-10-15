@@ -105,7 +105,7 @@ const MapCard = React.memo(({ v, onPress }: { v: any; onPress: () => void }) => 
       {photo ? (
         <Image source={{ uri: photo }} style={s.mapThumb} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
-        <View style={[s.mapThumb, { backgroundColor: '#1C1A24' }]} />
+        <View style={[s.mapThumb, { backgroundColor: '#1C1C1E' }]} />
       )}
       <View style={{ flex: 1 }}>
         <Text style={s.rowName} numberOfLines={1}>{v.name}</Text>
@@ -361,7 +361,7 @@ const s = StyleSheet.create({
   subtitle: { fontSize: 13, color: MUTED, marginTop: 2 },
   segment: { flexDirection: 'row', backgroundColor: SURFACE, borderRadius: 10, padding: 2, marginLeft: 12 },
   segBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' },
-  segBtnActive: { backgroundColor: '#1C1A24', borderColor: 'rgba(139,92,246,0.45)' },
+  segBtnActive: { backgroundColor: '#1C1C1E', borderColor: 'rgba(243, 240, 233, 0.35)' },
   segText: { fontSize: 13, fontWeight: '500', color: MUTED },
   segTextActive: { color: IVORY },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
@@ -389,6 +389,6 @@ const s = StyleSheet.create({
   },
   mapThumb: { width: 64, height: 64, borderRadius: 10 },
   pin: { width: 12, height: 12, borderRadius: 6, backgroundColor: 'rgba(245,241,234,0.85)', borderWidth: 2, borderColor: '#000' },
-  pinFeatured: { width: 16, height: 16, borderRadius: 8, backgroundColor: IVORY, borderWidth: 3, borderColor: '#8B5CF6' },
-  pinSel: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#8B5CF6', borderWidth: 3, borderColor: IVORY },
+  pinFeatured: { width: 16, height: 16, borderRadius: 8, backgroundColor: IVORY, borderWidth: 3, borderColor: '#C5A36B' },
+  pinSel: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#F3F0E9', borderWidth: 3, borderColor: '#09090B' },
 });

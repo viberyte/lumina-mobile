@@ -333,7 +333,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/my-vibe"); }} activeOpacity={0.7}>
-            <Ionicons name="sparkles-outline" size={20} color={colors.violet[500]} />
+            <Ionicons name="sparkles-outline" size={20} color={colors.lux.champagne} />
             <Text style={styles.rowText}>My Vibe</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
@@ -352,7 +352,7 @@ export default function ProfileScreen() {
             
             <TouchableOpacity style={styles.partnerRow} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/partner/dashboard'); }} activeOpacity={0.7}>
               <View style={styles.partnerIconContainer}>
-                <Ionicons name="business" size={20} color="#8b5cf6" />
+                <Ionicons name="business" size={20} color="#c5a36b" />
               </View>
               <View style={styles.partnerTextContainer}>
                 <Text style={styles.partnerTitle}>Partner Dashboard</Text>
@@ -381,7 +381,7 @@ export default function ProfileScreen() {
             </>
           ) : (
             <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/login"); }} activeOpacity={0.7}>
-              <Ionicons name="log-in-outline" size={20} color={colors.violet[500]} />
+              <Ionicons name="log-in-outline" size={20} color={colors.lux.champagne} />
               <Text style={styles.rowText}>Sign In</Text>
             </TouchableOpacity>
           )}
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   signOutText: { flex: 1, fontSize: typography.sizes.md, color: '#ef4444', fontWeight: '500' },
   modalContainer: { flex: 1, backgroundColor: colors.black },
   partnerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, gap: spacing.md },
-  partnerIconContainer: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(139, 92, 246, 0.15)', alignItems: 'center', justifyContent: 'center' },
+  partnerIconContainer: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(197, 163, 107, 0.15)', alignItems: 'center', justifyContent: 'center' },
   partnerTextContainer: { flex: 1 },
   partnerTitle: { fontSize: typography.sizes.md, color: colors.white, fontWeight: '600', marginBottom: 2 },
   partnerSubtitle: { fontSize: typography.sizes.xs, color: colors.zinc[500] },

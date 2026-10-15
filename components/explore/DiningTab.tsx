@@ -1049,14 +1049,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   comingSoonBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+    backgroundColor: 'rgba(197, 163, 107, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   comingSoonText: {
     fontSize: 10,
-    color: colors.violet[400],
+    color: colors.lux.champagne,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,

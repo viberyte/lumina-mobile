@@ -34,9 +34,10 @@ const colors = {
   card: '#12121A',
   cardElevated: '#1A1A24',
   cardBorder: '#2A2A3A',
-  accent: '#8B5CF6',
-  accentSoft: 'rgba(139, 92, 246, 0.15)',
-  accentGlow: 'rgba(139, 92, 246, 0.4)',
+  accent: '#C5A36B',
+  accentFill: '#8C6D3F',
+  accentSoft: 'rgba(197, 163, 107, 0.15)',
+  accentGlow: 'rgba(197, 163, 107, 0.4)',
   white: '#FFFFFF',
   textPrimary: '#FFFFFF',
   textSecondary: '#A1A1AA',
@@ -827,7 +828,7 @@ export default function VenueProfileScreen() {
                         title={venue.name}
                       >
                         <View style={{ alignItems: 'center' }}>
-                          <View style={{ backgroundColor: '#8b5cf6', borderRadius: 20, padding: 6, borderWidth: 2, borderColor: '#fff' }}>
+                          <View style={{ backgroundColor: '#8c6d3f', borderRadius: 20, padding: 6, borderWidth: 2, borderColor: '#fff' }}>
                             <Ionicons name="location" size={16} color="#fff" />
                           </View>
                         </View>
@@ -835,7 +836,7 @@ export default function VenueProfileScreen() {
                     </MapView>
                     {distanceText && (
                       <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.75)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Ionicons name="navigate" size={12} color="#8b5cf6" />
+                        <Ionicons name="navigate" size={12} color="#c5a36b" />
                         <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{distanceText}</Text>
                       </View>
                     )}
@@ -844,7 +845,7 @@ export default function VenueProfileScreen() {
                         <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{venue.address}</Text>
                         {venue.city && <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>{venue.city}, {venue.state}</Text>}
                       </View>
-                      <View style={{ backgroundColor: '#8b5cf6', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
+                      <View style={{ backgroundColor: '#8c6d3f', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
                         <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Directions</Text>
                       </View>
                     </View>
@@ -952,7 +953,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     borderRadius: 12,
   },
   backButtonText: {
@@ -1029,7 +1030,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: 'rgba(139, 92, 246, 0.9)',
+    backgroundColor: 'rgba(197, 163, 107, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingLeft: 4,
@@ -1145,7 +1146,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   followButtonActive: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     borderColor: colors.accent,
   },
   followButtonText: {
@@ -1277,7 +1278,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   countBadge: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1568,7 +1569,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     paddingVertical: 16,
     borderRadius: 16,
     gap: 8,

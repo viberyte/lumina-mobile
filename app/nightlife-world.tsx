@@ -248,7 +248,7 @@ export default function NightlifeWorldScreen() {
   const [showCityPicker, setShowCityPicker] = useState(false);
   const [data, setData] = useState<WorldData | null>(null);
   const [loading, setLoading] = useState(true);
-  const accentColor = data?.accentColor || '#8B5CF6';
+  const accentColor = data?.accentColor || '#C5A36B';
   const [allRowsActive, setAllRowsActive] = useState(false);
 
   // Section rows below the fold: activate their reels shortly after mount

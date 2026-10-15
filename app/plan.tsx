@@ -343,7 +343,7 @@ export default function PlanScreen() {
             Crafting your night...
           </Animated.Text>
           <Animated.View entering={FadeInUp.delay(500).duration(500)} style={styles.loadingDots}>
-            <ActivityIndicator size="small" color={colors.violet[400]} />
+            <ActivityIndicator size="small" color={colors.lux.ivory} />
           </Animated.View>
         </View>
       </View>
@@ -402,7 +402,7 @@ export default function PlanScreen() {
           </TouchableOpacity>
           <TouchableOpacity onPress={handleShuffle} style={styles.headerButton}>
             <BlurView intensity={60} tint="dark" style={styles.blurButton}>
-              <Ionicons name="shuffle" size={20} color={colors.violet[400]} />
+              <Ionicons name="shuffle" size={20} color={colors.lux.champagne} />
             </BlurView>
           </TouchableOpacity>
         </View>
@@ -555,7 +555,7 @@ export default function PlanScreen() {
         <BlurView intensity={90} tint="dark" style={styles.ctaBlur}>
           <TouchableOpacity style={styles.ctaButton} onPress={handleStartNight} activeOpacity={0.9}>
             <LinearGradient
-              colors={[colors.violet[500], colors.violet[600]]}
+              colors={[colors.lux.bronze, colors.lux.bronzeDeep]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.ctaGradient}
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
   loadingContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingLogoContainer: {
     width: 100, height: 100, borderRadius: 50,
-    backgroundColor: colors.violet[500] + '20',
+    backgroundColor: colors.lux.champagne + '20',
     justifyContent: 'center', alignItems: 'center', marginBottom: 24,
   },
   loadingLogo: { width: 60, height: 60 },
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
 
   // Title
   titleSection: { alignItems: 'center', marginBottom: 32 },
-  titleLabel: { fontSize: 11, fontWeight: '700', color: colors.violet[400], letterSpacing: 3, marginBottom: 8 },
+  titleLabel: { fontSize: 11, fontWeight: '700', color: colors.lux.champagne, letterSpacing: 3, marginBottom: 8 },
   title: { fontSize: 36, fontWeight: '800', color: colors.white, textAlign: 'center', marginBottom: 6 },
   subtitle: { fontSize: 16, color: colors.zinc[400], fontWeight: '500' },
 
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
 
   // Card
   card: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.zinc[800] },
-  heroCard: { borderColor: colors.violet[500] + '50', borderWidth: 2 },
+  heroCard: { borderColor: colors.lux.champagne + '50', borderWidth: 2 },
   cardGradient: { padding: 18 },
   
   stepLabel: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },

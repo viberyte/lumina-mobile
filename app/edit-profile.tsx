@@ -262,7 +262,7 @@ export default function EditProfile() {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
+        <ActivityIndicator size="large" color="#F3F0E9" />
       </View>
     );
   }
@@ -365,7 +365,7 @@ export default function EditProfile() {
                 <Text style={styles.sectionCount}>{profile.galleryPhotos.length}</Text>
               </View>
               {<TouchableOpacity onPress={addGalleryPhoto}>
-                  <Ionicons name="add-circle" size={24} color="#8B5CF6" />
+                  <Ionicons name="add-circle" size={24} color="#C5A36B" />
                 </TouchableOpacity>}
             </View>
             <Text style={styles.helper}>Photos & videos guests see on your page</Text>
@@ -412,13 +412,13 @@ export default function EditProfile() {
                 <Text style={styles.sectionCount}>{events.length}</Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/partner/events/new')}>
-                <Ionicons name="add-circle" size={24} color="#8B5CF6" />
+                <Ionicons name="add-circle" size={24} color="#C5A36B" />
               </TouchableOpacity>
             </View>
             <Text style={styles.helper}>Events shown on your public page</Text>
 
             {loadingEvents ? (
-              <ActivityIndicator size="small" color="#8B5CF6" style={{ marginVertical: 20 }} />
+              <ActivityIndicator size="small" color="#F3F0E9" style={{ marginVertical: 20 }} />
             ) : events.length === 0 ? (
               <TouchableOpacity style={styles.eventsEmpty} onPress={() => router.push('/partner/events/new')}>
                 <Ionicons name="calendar-outline" size={32} color="#3f3f46" />
@@ -512,7 +512,7 @@ export default function EditProfile() {
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Vibes</Text>
               <TouchableOpacity onPress={() => setShowVibesModal(true)}>
-                <Ionicons name="add-circle" size={24} color="#8B5CF6" />
+                <Ionicons name="add-circle" size={24} color="#C5A36B" />
               </TouchableOpacity>
             </View>
             <Text style={styles.helper}>Helps match you with the right guests</Text>
@@ -534,7 +534,7 @@ export default function EditProfile() {
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Music</Text>
               <TouchableOpacity onPress={() => setShowGenresModal(true)}>
-                <Ionicons name="add-circle" size={24} color="#8B5CF6" />
+                <Ionicons name="add-circle" size={24} color="#C5A36B" />
               </TouchableOpacity>
             </View>
             <Text style={styles.helper}>Used in AI search</Text>
@@ -566,14 +566,14 @@ export default function EditProfile() {
               style={styles.contactRow}
               onPress={() => { setEditingField('phone'); setEditValue(profile.phone); }}
             >
-              <Ionicons name="call-outline" size={20} color="#8B5CF6" />
+              <Ionicons name="call-outline" size={20} color="#C5A36B" />
               <Text style={styles.contactText}>{profile.phone || 'Add phone'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.contactRow, { borderBottomWidth: 0 }]}
               onPress={() => { setEditingField('website'); setEditValue(profile.website); }}
             >
-              <Ionicons name="globe-outline" size={20} color="#8B5CF6" />
+              <Ionicons name="globe-outline" size={20} color="#C5A36B" />
               <Text style={styles.contactText}>{profile.website || 'Add website'}</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -613,7 +613,7 @@ export default function EditProfile() {
                 if (editingField) update(editingField, editValue);
                 setEditingField(null);
               }}>
-                <Text style={{ color: '#8B5CF6', fontSize: 16, fontWeight: '600' }}>Done</Text>
+                <Text style={{ color: '#C5A36B', fontSize: 16, fontWeight: '600' }}>Done</Text>
               </TouchableOpacity>
             </View>
             <TextInput
@@ -639,7 +639,7 @@ export default function EditProfile() {
               </TouchableOpacity>
               <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600' }}>Select Vibes</Text>
               <TouchableOpacity onPress={() => setShowVibesModal(false)}>
-                <Text style={{ color: '#8B5CF6', fontSize: 16, fontWeight: '600' }}>Done</Text>
+                <Text style={{ color: '#C5A36B', fontSize: 16, fontWeight: '600' }}>Done</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.optionsGrid}>
@@ -649,7 +649,7 @@ export default function EditProfile() {
                   style={[styles.option, profile.vibes.includes(v) && styles.optionSelected]}
                   onPress={() => toggleItem('vibes', v)}
                 >
-                  <Text style={[styles.optionText, profile.vibes.includes(v) && { color: '#8B5CF6' }]}>{v}</Text>
+                  <Text style={[styles.optionText, profile.vibes.includes(v) && { color: '#C5A36B' }]}>{v}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -667,7 +667,7 @@ export default function EditProfile() {
               </TouchableOpacity>
               <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600' }}>Select Music</Text>
               <TouchableOpacity onPress={() => setShowGenresModal(false)}>
-                <Text style={{ color: '#8B5CF6', fontSize: 16, fontWeight: '600' }}>Done</Text>
+                <Text style={{ color: '#C5A36B', fontSize: 16, fontWeight: '600' }}>Done</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.optionsGrid}>
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
 
   // Strength
-  strengthCard: { backgroundColor: 'rgba(139,92,246,0.08)', borderRadius: 16, padding: 16, marginBottom: 16 },
+  strengthCard: { backgroundColor: 'rgba(197, 163, 107, 0.08)', borderRadius: 16, padding: 16, marginBottom: 16 },
   strengthLabel: { color: '#a1a1aa', fontSize: 13 },
   strengthScore: { fontSize: 32, fontWeight: '700', marginVertical: 4 },
   strengthBar: { height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3 },
@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
   profilePhotoSection: { alignItems: 'center', marginTop: -50, marginBottom: 16 },
   profilePhoto: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#000' },
   profilePhotoPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#27272a', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#000' },
-  editBadgeSmall: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#8B5CF6', borderRadius: 10, padding: 4 },
+  editBadgeSmall: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#8C6D3F', borderRadius: 10, padding: 4 },
 
   // Cards
   card: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 16, marginBottom: 16 },
@@ -770,12 +770,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', borderStyle: 'dashed',
   },
   viewAllBtn: { paddingVertical: 12, alignItems: 'center' },
-  viewAllText: { color: '#8B5CF6', fontSize: 13, fontWeight: '500' },
+  viewAllText: { color: '#C5A36B', fontSize: 13, fontWeight: '500' },
 
   // Tags
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#8B5CF6' },
-  tagText: { color: '#8B5CF6', fontSize: 13, fontWeight: '500' },
+  tag: { backgroundColor: 'rgba(197, 163, 107, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#C5A36B' },
+  tagText: { color: '#C5A36B', fontSize: 13, fontWeight: '500' },
 
   // Contact
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
@@ -783,7 +783,7 @@ const styles = StyleSheet.create({
 
   // Save
   saveContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(0,0,0,0.95)' },
-  saveButton: { backgroundColor: '#8B5CF6', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  saveButton: { backgroundColor: '#8C6D3F', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 
   // Modals
@@ -793,6 +793,6 @@ const styles = StyleSheet.create({
   input: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 16, margin: 16, fontSize: 16, color: '#fff', minHeight: 50 },
   optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 16 },
   option: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  optionSelected: { backgroundColor: 'rgba(139,92,246,0.2)', borderColor: '#8B5CF6' },
+  optionSelected: { backgroundColor: 'rgba(197, 163, 107, 0.2)', borderColor: '#C5A36B' },
   optionText: { color: '#a1a1aa', fontSize: 14 },
 });

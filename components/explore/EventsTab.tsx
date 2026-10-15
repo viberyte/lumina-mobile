@@ -139,7 +139,7 @@ const Hero = ({ event, onPress }: { event: Event; onPress: ()=>void }) => {
         {/* Minimal top label */}
         <View style={styles.heroTop}>
           <BlurView intensity={28} tint="dark" style={styles.heroTopPill}>
-            <View style={[styles.heroTopDot,{backgroundColor: upscale ? '#D4AF6A' : '#A78BFA'}]}/>
+            <View style={[styles.heroTopDot,{backgroundColor: upscale ? '#D4AF6A' : '#F3F0E9'}]}/>
             <Text style={styles.heroTopText}>{upscale ? 'UPSCALE PICK' : isTonightFn(event) ? 'TONIGHT' : 'COMING UP'}</Text>
           </BlurView>
         </View>
@@ -315,7 +315,7 @@ export default function EventsTab({ filters = {} }: EventsTabProps) {
 
   if (loading) return (
     <View style={styles.center}>
-      <ActivityIndicator size="small" color={colors.violet[500]}/>
+      <ActivityIndicator size="small" color={colors.lux.ivory}/>
       <Text style={styles.loadingText}>Finding tonight's best spots…</Text>
     </View>
   );
@@ -401,9 +401,9 @@ const styles = StyleSheet.create({
   card: { width:CARD_WIDTH, height:CARD_HEIGHT, borderRadius:16, overflow:'hidden', backgroundColor:colors.zinc[900] },
   cardTop: { position:'absolute', top:12, left:12, right:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
   cardPill: { paddingHorizontal:9, paddingVertical:5, borderRadius:4, overflow:'hidden', borderWidth:1, borderColor:'rgba(255,255,255,0.06)' },
-  cardPillTonight: { borderColor:'rgba(167,139,250,0.3)' },
+  cardPillTonight: { borderColor:'rgba(197, 163, 107, 0.3)' },
   cardPillText: { fontSize:10, fontWeight:'700', color:'rgba(255,255,255,0.6)', letterSpacing:0.6 },
-  cardPillTextTonight: { color:'#C4B5FD' },
+  cardPillTextTonight: { color:'#C5A36B' },
   cardDot: { width:6, height:6, borderRadius:3, backgroundColor:'#D4AF6A' },
   cardBottom: { position:'absolute', bottom:0, left:0, right:0, padding:14 },
   cardTitle: { fontSize:15, fontWeight:'700', color:'#fff', lineHeight:20, marginBottom:3 },
@@ -413,14 +413,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(139,92,246,0.25)',
+    backgroundColor: 'rgba(197, 163, 107, 0.25)',
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.4)',
+    borderColor: 'rgba(197, 163, 107, 0.4)',
   },
   genreTagText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#a78bfa',
+    color: '#c5a36b',
     letterSpacing: 0.3,
   },
   cardVenue: { fontSize:12, color:'rgba(255,255,255,0.4)', fontWeight:'500' },

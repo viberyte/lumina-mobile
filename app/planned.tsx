@@ -149,7 +149,7 @@ export default function PlannedScreen() {
         {plans.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="moon-outline" size={48} color="#8B5CF6" />
+              <Ionicons name="moon-outline" size={48} color="#C5A36B" />
             </View>
             <Text style={styles.emptyTitle}>Start Building Your Night</Text>
             <Text style={styles.emptySubtitle}>
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    backgroundColor: 'rgba(197, 163, 107, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   exploreButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#7A5E34',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 14,
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   planActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   
   sparkleButtonWrapper: {
-    shadowColor: '#8B5CF6',
+    shadowColor: '#C5A36B',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#7A5E34',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#7A5E34',
     paddingVertical: 16,
     borderRadius: 16,
     marginTop: 12

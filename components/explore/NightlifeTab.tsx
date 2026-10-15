@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
   heroWrapper: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg, marginTop: spacing.md },
   heroGlow: {
     position: 'absolute', top: 8, left: spacing.lg + 8, right: spacing.lg + 8, bottom: 8,
-    backgroundColor: '#8B5CF6', borderRadius: 22, shadowColor: '#8B5CF6',
+    backgroundColor: '#C5A36B', borderRadius: 22, shadowColor: '#C5A36B',
     shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
   },
   heroCard: { height: 200, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.zinc[900] },

@@ -143,7 +143,7 @@ const MessageComponent: React.FC<MessageComponentProps> = ({
                   <Ionicons 
                     name={messageIcon as any} 
                     size={14} 
-                    color={colors.violet[400]} 
+                    color={colors.lux.champagne} 
                     style={styles.messageIcon}
                   />
                 )}
@@ -405,7 +405,7 @@ export default function ChatRoomScreen() {
 
   const inputBorderColor = inputFocusAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['rgba(167, 139, 250, 0.2)', 'rgba(167, 139, 250, 0.6)'],
+    outputRange: ['rgba(197, 163, 107, 0.2)', 'rgba(197, 163, 107, 0.6)'],
   });
 
   const inputOpacity = scrollY.interpolate({
@@ -422,7 +422,7 @@ export default function ChatRoomScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.violet[500]} />
+          <ActivityIndicator size="large" color={colors.lux.ivory} />
           <Text style={styles.loadingText}>Loading chat...</Text>
         </View>
       </SafeAreaView>
@@ -468,7 +468,7 @@ export default function ChatRoomScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={colors.violet[400]}
+              tintColor={colors.lux.ivory}
             />
           }
         >
@@ -597,7 +597,7 @@ const styles = StyleSheet.create({
   },
   roomContext: {
     fontSize: typography.sizes.sm,
-    color: colors.violet[400],
+    color: colors.lux.champagne,
     fontWeight: '500',
   },
   messagesContainer: {
@@ -663,8 +663,8 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   officialBubble: {
-    backgroundColor: 'rgba(167, 139, 250, 0.1)',
-    borderColor: 'rgba(167, 139, 250, 0.3)',
+    backgroundColor: 'rgba(197, 163, 107, 0.1)',
+    borderColor: 'rgba(197, 163, 107, 0.3)',
     maxWidth: '92%',
     borderRadius: 12,
   },
@@ -674,7 +674,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.bronze,
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
   },
@@ -698,14 +698,14 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   partnerNameTappable: {
-    color: colors.violet[400],
+    color: colors.lux.champagne,
     textDecorationLine: 'underline',
   },
   officialBadge: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.violet[400],
-    backgroundColor: 'rgba(167, 139, 250, 0.2)',
+    color: colors.lux.champagne,
+    backgroundColor: 'rgba(197, 163, 107, 0.2)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -744,7 +744,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.bronze,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -787,7 +787,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.bronze,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,

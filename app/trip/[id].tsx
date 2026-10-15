@@ -227,7 +227,7 @@ export default function TripDetailScreen() {
           style={styles.addMoreButton}
           onPress={() => router.push('/(tabs)')}
         >
-          <Ionicons name="add-circle-outline" size={24} color="#a855f7" />
+          <Ionicons name="add-circle-outline" size={24} color="#c5a36b" />
           <Text style={styles.addMoreText}>Add More Places</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   heroSubtitle: { fontSize: 16, color: '#d1d5db' },
   content: { flex: 1, padding: 20 },
   venueCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#18181b', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#27272a' },
-  venueNumber: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#a855f7', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  venueNumber: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#8c6d3f', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   venueNumberText: { fontSize: 16, fontWeight: '700', color: '#fff' },
   venueImage: { width: 60, height: 60, borderRadius: 8, marginRight: 12 },
   venueInfo: { flex: 1 },
@@ -262,9 +262,9 @@ const styles = StyleSheet.create({
   venueNeighborhood: { fontSize: 14, color: '#9ca3af' },
   removeButton: { padding: 8 },
   addMoreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#18181b', borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46', borderStyle: 'dashed', gap: 8 },
-  addMoreText: { fontSize: 16, fontWeight: '600', color: '#a855f7' },
+  addMoreText: { fontSize: 16, fontWeight: '600', color: '#c5a36b' },
   footer: { padding: 20, borderTopWidth: 1, borderTopColor: '#27272a' },
-  shareButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#a855f7', paddingVertical: 16, borderRadius: 12, gap: 8 },
+  shareButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#8c6d3f', paddingVertical: 16, borderRadius: 12, gap: 8 },
   shareButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
   header: { padding: 20 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },

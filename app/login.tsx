@@ -207,7 +207,7 @@ export default function LoginScreen() {
       {/* Single ambient glow — centered, top third */}
       <Animated.View style={[styles.ambientGlow, { opacity: glowPulse }]}>
         <LinearGradient
-          colors={['#4c1d95', '#2e1065', 'transparent']}
+          colors={['rgba(197, 163, 107, 0.16)', 'rgba(197, 163, 107, 0.05)', 'transparent']}
           locations={[0, 0.4, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#7a5e34',
   },
   primaryBtnText: {
     fontSize: 17,
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  trackOn: { backgroundColor: '#7c3aed' },
+  trackOn: { backgroundColor: '#c5a36b' },
   thumb: {
     width: 17,
     height: 17,
@@ -522,7 +522,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.25)',
     fontWeight: '500',
   },
-  partnerLabelOn: { color: '#a78bfa' },
+  partnerLabelOn: { color: '#c5a36b' },
   emailSubmit: {
     backgroundColor: '#fff',
     borderRadius: 14,
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.25)',
   },
   signupLink: {
-    color: '#a78bfa',
+    color: '#c5a36b',
     fontWeight: '600',
   },
 });

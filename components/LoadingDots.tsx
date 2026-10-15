@@ -59,6 +59,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.violet[500],
+    backgroundColor: colors.lux.champagne,
   },
 });

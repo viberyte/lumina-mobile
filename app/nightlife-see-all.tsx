@@ -211,7 +211,7 @@ export default function NightlifeSeeAll() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={colors.violet[500]}
+            tintColor={colors.lux.ivory}
           />
         }
       >
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   countBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    backgroundColor: 'rgba(197, 163, 107, 0.2)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   countText: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.violet[400],
+    color: colors.lux.champagne,
   },
   // Grid
   scrollView: {
