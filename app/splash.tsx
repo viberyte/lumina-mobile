@@ -10,6 +10,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import authService from '../services/auth';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function SplashScreen() {
@@ -30,8 +32,15 @@ export default function SplashScreen() {
       Animated.delay(800),
       Animated.timing(screenFade, { toValue: 0, duration: 350, useNativeDriver: true }),
       Animated.delay(100),
-    ]).start(() => {
-      router.replace('/login');
+    ]).start(async () => {
+      // VIBERYTE_CONSUMER_ONLY_V1: guests go straight in, no login wall
+      try {
+        const m = Object.fromEntries(await AsyncStorage.multiGet(['@lumina_auth_token', '@lumina_user_id', '@lumina_persona', '@lumina_preferences']));
+        if (!m['@lumina_auth_token'] && !m['@lumina_user_id']) await authService.continueAsGuest();
+        router.replace(m['@lumina_persona'] || m['@lumina_preferences'] ? '/(tabs)' : '/onboarding');
+      } catch {
+        router.replace('/login');
+      }
     });
   }, []);
 

@@ -91,7 +91,8 @@ function RootLayoutNav() {
     const isAuthScreen = inLogin || inRegister || inOnboarding || inPartnerOnboarding || inForgotPassword;
 
     if (!isLoggedIn && !isAuthScreen) {
-      router.replace('/login');
+      // VIBERYTE_CONSUMER_ONLY_V1: browse as guest instead of a login wall
+      authService.continueAsGuest().then(() => setIsLoggedIn(true)).catch(() => router.replace('/login'));
     }
   }, [isReady, isLoggedIn, segments]);
 

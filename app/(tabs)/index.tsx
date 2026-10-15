@@ -641,7 +641,7 @@ export default function HomeScreen() {
     if (yourKindVenues.length > 0) sections.push('yourKind');
 
     // Following — if user follows anyone
-    if (follows.venues.length > 0 || follows.promoters.length > 0) sections.push('following');
+    if (follows.venues.length > 0) sections.push('following'); // VIBERYTE_CONSUMER_ONLY_V1
 
     // Time-based ordering of main content
     if (isLateNight) {
@@ -773,7 +773,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 );
               })}
-              {follows.promoters.map((p: any) => {
+              {follows.promoters.filter(() => false).map((p: any) => {
                 const photo = p.profile_picture || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=200';
                 return (
                   <TouchableOpacity

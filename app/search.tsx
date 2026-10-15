@@ -387,8 +387,8 @@ export default function SearchScreen() {
     await AsyncStorage.removeItem('@lumina_recent_searches');
   };
 
-  const hasResults = venues.length > 0 || events.length > 0 || promoters.length > 0;
-  const totalResults = venues.length + events.length + promoters.length;
+  const hasResults = venues.length > 0 || events.length > 0;
+  const totalResults = venues.length + events.length;
   const topVenue = venues[0];
   const otherVenues = venues.slice(1);
   const showFeatured = intent && intent.confidence > 25 && topVenue;
@@ -472,7 +472,7 @@ export default function SearchScreen() {
               )}
               
               {/* Promoters */}
-              {promoters.length > 0 && (
+              {false && promoters.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
                     <Ionicons name="people" size={16} color={colors.lux.champagne} />

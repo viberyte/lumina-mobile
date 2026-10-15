@@ -346,7 +346,7 @@ export default function EventDetailScreen() {
   const lineup = getLineupArray();
   const timeDisplay = event.time ? formatEventTime(event.time) : null;
   const dateDisplay = event.date ? formatEventDate(event.date) : null;
-  const primaryCTA = event.ticket_url ? 'tickets' : hasBookingOptions ? 'book' : null;
+  const primaryCTA = (event.ticket_url ? 'tickets' : null) as 'tickets' | 'book' | null; // VIBERYTE_CONSUMER_ONLY_V1: no table booking
 
   return (
     <View style={styles.container}>
@@ -542,8 +542,8 @@ export default function EventDetailScreen() {
           </View>
         )}
 
-        {/* ── PROMOTER MESSAGE ── */}
-        {event.partner?.id && (
+        {/* ── PROMOTER MESSAGE (hidden: consumer-only) ── */}
+        {false && event.partner?.id && (
           <View style={styles.section}>
             <TouchableOpacity style={styles.promoterRow} onPress={handleMessagePromoter} activeOpacity={0.8}>
               <View style={styles.promoterIcon}>
