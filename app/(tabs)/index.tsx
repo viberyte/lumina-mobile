@@ -300,6 +300,11 @@ export default function HomeScreen() {
   const wantsLocation = cityChoice === null || cityChoice === 'Near Me';
   const locationMode = wantsLocation && locStatus === 'granted' && coords != null;
   const locationBlocked = wantsLocation && (locStatus === 'denied' || locStatus === 'unavailable');
+  // VIBERYTE_LOC_MODE_V1: venue pages show distance only in Near Me mode
+  useEffect(() => {
+    if (cityChoice === undefined) return;
+    AsyncStorage.setItem('@viberyte_loc_mode', wantsLocation ? 'near' : 'city').catch(() => {});
+  }, [cityChoice, wantsLocation]);
   const cityLabel = userCity === 'Near Me' || userCity === '' ? 'Manhattan' : userCity;
 
   // ── Lifecycle ───────────────────────────────────────────────────

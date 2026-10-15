@@ -1,9 +1,10 @@
-// VIBERYTE_VENUE_V2: cinematic venue page. Data: GET /api/venues/:id/detail
+// VIBERYTE_VENUE_V3: cinematic venue page + Inside the vibe. Data: GET /api/venues/:id/detail
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions, Linking, Share,
-  ScrollView, StatusBar, Platform, Pressable,
+  ScrollView, StatusBar, Platform, Pressable, Modal, FlatList, ViewToken,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -25,7 +26,7 @@ const C = {
 };
 
 type Card = { id: number; name: string; type: string; neighborhood: string | null; image_url: string | null; distance_mi: number | null; vibe: string | null };
-type Reel = { url: string; duration: number };
+type Reel = { url: string; poster: string | null; duration: number; width?: number; height?: number };
 type Detail = {
   venue: {
     id: number; name: string; type: string; neighborhood: string | null; borough: string | null; address: string | null;
@@ -38,10 +39,11 @@ type Detail = {
 
 const fmtMi = (d: number | null) => (d == null ? null : d < 0.1 ? 'Under 0.1 mi' : `${d.toFixed(1)} mi`);
 const img = (u?: string | null) => (u ? (u.startsWith('/') ? API + u : u) : null);
+const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const tap = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-function HeroVideo({ uri, playing }: { uri: string; playing: boolean }) {
-  const player = useVideoPlayer(uri, (p) => { p.loop = true; p.muted = true; });
+function HeroVideo({ uri, playing, muted = true }: { uri: string; playing: boolean; muted?: boolean }) {
+  const player = useVideoPlayer(uri, (p) => { p.loop = true; p.muted = muted; });
   useEffect(() => {
     try { playing ? player.play() : player.pause(); } catch {}
   }, [playing, player]);
@@ -52,20 +54,91 @@ function RailCard({ c, size }: { c: Card; size: 'medium' | 'compact' }) {
   const w = size === 'medium' ? 264 : 148;
   const h = size === 'medium' ? 196 : 108;
   const u = img(c.image_url);
-  const meta = size === 'medium'
-    ? [fmtMi(c.distance_mi), c.vibe || c.type].filter(Boolean).join(' · ')
-    : [c.type, fmtMi(c.distance_mi)].filter(Boolean).join(' · ');
+  const dist = fmtMi(c.distance_mi);
   return (
     <TouchableOpacity activeOpacity={0.85} style={{ width: w }} onPress={() => { tap(); router.push(`/venue/${c.id}`); }}>
       <View style={{ width: w, height: h, borderRadius: size === 'medium' ? 14 : 10, overflow: 'hidden', backgroundColor: C.raise }}>
         {u ? <Image source={{ uri: u }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={200} />
           : <Text style={s.initial}>{c.name.slice(0, 1)}</Text>}
       </View>
-      {size === 'medium' && <Text style={s.cardEyebrow} numberOfLines={1}>{meta.toUpperCase()}</Text>}
-      <Text style={size === 'medium' ? s.cardNameM : s.cardNameS} numberOfLines={1}>{c.name}</Text>
-      {size === 'compact' && <Text style={s.cardMeta} numberOfLines={1}>{meta}</Text>}
-      {size === 'medium' && c.neighborhood ? <Text style={s.cardMeta} numberOfLines={1}>{c.neighborhood}</Text> : null}
+      {size === 'medium' ? (
+        <>
+          <View style={s.metaLine}>
+            {dist ? <Text style={[s.cardEyebrow, s.noShrink]}>{dist.toUpperCase()}</Text> : null}
+            {dist && (c.vibe || c.type) ? <Text style={[s.cardEyebrow, s.noShrink]}>  ·  </Text> : null}
+            <Text style={[s.cardEyebrow, s.shrink]} numberOfLines={1}>{(c.vibe || c.type || '').toUpperCase()}</Text>
+          </View>
+          <Text style={s.cardNameM} numberOfLines={2}>{c.name}</Text>
+          {c.neighborhood ? <Text style={s.cardMeta} numberOfLines={1}>{c.neighborhood}</Text> : null}
+        </>
+      ) : (
+        <>
+          <Text style={s.cardNameS} numberOfLines={2}>{c.name}</Text>
+          <View style={s.metaLine}>
+            <Text style={[s.cardMeta, s.shrink]} numberOfLines={1}>{c.type}</Text>
+            {dist ? <Text style={[s.cardMeta, s.noShrink]}>{c.type ? '  ·  ' : ''}{dist}</Text> : null}
+          </View>
+        </>
+      )}
     </TouchableOpacity>
+  );
+}
+
+function InsideRail({ reels, onOpen }: { reels: Reel[]; onOpen: (i: number) => void }) {
+  if (reels.length < 2) return null;
+  return (
+    <View style={s.section}>
+      <Text style={[s.h2, s.pad]}>Inside the vibe</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast"
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 10, paddingTop: 12 }}>
+        {reels.map((r, i) => (
+          <TouchableOpacity key={r.url} activeOpacity={0.85} onPress={() => { tap(); onOpen(i); }}
+            accessibilityLabel={`Play reel ${i + 1} of ${reels.length}`} style={s.reelThumb}>
+            <Image source={{ uri: r.poster! }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+            <LinearGradient pointerEvents="none" colors={['rgba(9,9,11,0)', 'rgba(9,9,11,0.7)']} style={s.thumbScrim} />
+            <View style={s.playDot}><Ionicons name="play" size={11} color={C.ivory} style={{ marginLeft: 1 }} /></View>
+            <Text style={s.dur}>{fmtDur(r.duration)}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function ReelViewer({ reels, start, handle, onClose }: { reels: Reel[]; start: number; handle: string | null; onClose: () => void }) {
+  const [active, setActive] = useState(start);
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems.find((v) => v.isViewable);
+    if (first?.index != null) setActive(first.index);
+  }).current;
+  return (
+    <Modal visible animationType="fade" onRequestClose={onClose} statusBarTranslucent supportedOrientations={['portrait']}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <FlatList
+          data={reels}
+          keyExtractor={(r) => r.url}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          initialScrollIndex={start}
+          getItemLayout={(_, i) => ({ length: H, offset: H * i, index: i })}
+          onViewableItemsChanged={onViewable}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+          windowSize={3}
+          renderItem={({ item, index }) => (
+            <View style={{ width: W, height: H, backgroundColor: '#000' }}>
+              {item.poster ? <Image source={{ uri: item.poster }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+              {index === active ? <HeroVideo uri={item.url} playing muted={false} /> : null}
+            </View>
+          )}
+        />
+        <View style={s.viewerTop} pointerEvents="box-none">
+          <Text style={s.meta}>{handle ? `@${handle.replace('@', '')}  ·  ` : ''}{active + 1} / {reels.length}</Text>
+          <TouchableOpacity onPress={onClose} style={s.circle} accessibilityLabel="Close">
+            <Ionicons name="close" size={20} color={C.ivory} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -90,6 +163,7 @@ export default function VenueScreen() {
   const [reelIdx, setReelIdx] = useState(0);
   const [heroVisible, setHeroVisible] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [viewerAt, setViewerAt] = useState<number | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<any>(null);
 
@@ -97,9 +171,17 @@ export default function VenueScreen() {
     setFailed(false);
     let q = '';
     try {
+      // Distance only in Near Me mode, from a fresh GPS fix (VIBERYTE_LOC_MODE_V1)
+      const mode = await AsyncStorage.getItem('@viberyte_loc_mode');
       const perm = await Location.getForegroundPermissionsAsync();
-      if (perm.granted) {
-        const pos = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000 });
+      if (mode !== 'city' && perm.granted) {
+        let pos = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 500 });
+        if (!pos) {
+          pos = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+          ]);
+        }
         if (pos) q = `?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`;
       }
     } catch {}
@@ -168,6 +250,7 @@ export default function VenueScreen() {
 
   const v = data.venue;
   const reels = v.reels || [];
+  const thumbReels = reels.filter((r, i, a) => !!r.poster && a.findIndex((x) => x.url === r.url) === i);
   const reel = reels.length ? reels[reelIdx % reels.length] : null;
   const photo = img(v.image_url);
   const eyebrow = [v.type, v.neighborhood].filter(Boolean).join(' · ');
@@ -220,7 +303,7 @@ export default function VenueScreen() {
           onPress={() => { if (reels.length > 1) { tap(); setReelIdx((i) => i + 1); } }}>
           <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: heroScale }] }]}>
             {photo ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" /> : null}
-            {reel ? <HeroVideo key={reel.url} uri={reel.url} playing={heroVisible} /> : null}
+            {reel ? <HeroVideo key={reel.url} uri={reel.url} playing={heroVisible && viewerAt === null} /> : null}
           </Animated.View>
           <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
             colors={['rgba(9,9,11,0.5)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0.85)', C.ground]}
@@ -230,7 +313,7 @@ export default function VenueScreen() {
             <Text style={s.h1}>{v.name}</Text>
             {v.why ? <Text style={s.why}>{v.why}</Text> : null}
             <View style={s.metaRow}>
-              {dist ? <Text style={s.meta}>{dist} away</Text> : null}
+              {dist ? <Text style={s.meta}>{dist} from you</Text> : null}
               {reel && v.instagram_handle ? (
                 <View style={s.credit}>
                   <View style={s.dot} />
@@ -270,8 +353,9 @@ export default function VenueScreen() {
           </View>
         ) : null}
 
-        <Rail title="Next stop" sub="Where the night can go from here" items={data.rails.next_stop} size="medium" />
+        <InsideRail reels={thumbReels} onOpen={setViewerAt} />
         <Rail title="Nearby" items={data.rails.nearby} size="compact" />
+        <Rail title="Next stop" sub="Where the night can go from here" items={data.rails.next_stop} size="medium" />
 
         {v.latitude != null && v.longitude != null ? (
           <View style={[s.section, s.pad]}>
@@ -299,6 +383,10 @@ export default function VenueScreen() {
 
         <Rail title="Same feel" items={data.rails.same_feel} size="compact" />
       </Animated.ScrollView>
+
+      {viewerAt !== null ? (
+        <ReelViewer reels={thumbReels} start={viewerAt} handle={v.instagram_handle} onClose={() => setViewerAt(null)} />
+      ) : null}
     </View>
   );
 }
@@ -354,8 +442,23 @@ const s = StyleSheet.create({
   addr: { color: C.ivory, fontSize: 15 },
   link: { color: C.champ, fontSize: 15, fontWeight: '600' },
   initial: { color: C.muted, fontSize: 28, fontWeight: '600', textAlign: 'center', marginTop: '22%' },
-  cardEyebrow: { color: C.champ, fontSize: 11, fontWeight: '600', letterSpacing: 1.1, marginTop: 10 },
-  cardNameM: { color: C.ivory, fontSize: 18, fontWeight: '600', letterSpacing: -0.2, marginTop: 4 },
+  cardEyebrow: { color: C.champ, fontSize: 11, fontWeight: '600', letterSpacing: 1.1 },
+  cardNameM: { color: C.ivory, fontSize: 18, lineHeight: 22, fontWeight: '600', letterSpacing: -0.2, marginTop: 4 },
   cardNameS: { color: C.ivory, fontSize: 15, fontWeight: '600', marginTop: 8 },
   cardMeta: { color: C.muted, fontSize: 13, marginTop: 3 },
+  metaLine: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  shrink: { flexShrink: 1 },
+  noShrink: { flexShrink: 0 },
+  reelThumb: { width: 132, height: 176, borderRadius: 12, overflow: 'hidden', backgroundColor: C.raise },
+  thumbScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 64 },
+  playDot: {
+    position: 'absolute', left: 10, bottom: 10, width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(9,9,11,0.55)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dur: { position: 'absolute', right: 10, bottom: 13, color: C.ivory, fontSize: 12, fontWeight: '600' },
+  viewerTop: {
+    position: 'absolute', top: Platform.OS === 'ios' ? 56 : 32, left: 20, right: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
 });
