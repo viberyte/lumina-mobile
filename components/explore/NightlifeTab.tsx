@@ -432,7 +432,7 @@ export default function NightlifeTab({ filters = {} }: NightlifeTabProps) {
         }
       } catch (e) {}
     };
-    loadFlows();
+    // Flows hidden for now (VIBERYTE_PLACES_V2): request disabled
   }, []);
 
   // Activate all rows shortly after mount as a safety net, so rows below the

@@ -31,6 +31,9 @@ import personaService, { sortEventsByMusicPreference } from '../../services/pers
 import { useUserFollows } from '../../hooks/useFollow';
 import favoritesService from '../../services/favorites';
 import tasteTracker from '../../services/tasteTracker';
+import { INTENT_MAP, intentOrder, fmtDistance, distanceRange, venueMeta, qualityScore, intentHeadline, homeDayCopy, reasonLine } from '../../constants/intents';
+import type { LocStatus } from '../../constants/intents';
+import { putCollection } from '../../services/collectionStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -44,48 +47,7 @@ const SECTION_GAP = 28;
 const FLOW_CARD_WIDTH = SCREEN_WIDTH * 0.82;
 const FOLLOW_SIZE = 64;
 
-// ─── Home intent pills (VIBERYTE_HOME_PILLS_V2) ─────────────────────
-// Each pill maps to verified /api/venues queries; multiple queries are merged and de-duplicated.
-type LocStatus = 'pending' | 'granted' | 'denied' | 'unavailable';
-type IntentDef = { label: string; icon?: string; queries: Record<string, string>[]; requiresLocation?: boolean };
-const INTENT_MAP: Record<string, IntentDef> = {
-  nearMe: { label: 'Near Me', icon: 'navigate-outline', queries: [{}], requiresLocation: true },
-  dateNight: { label: 'Date Night', queries: [{ filter: 'date-night' }] },
-  dinner: { label: 'Dinner', queries: [{ category: 'restaurant' }] },
-  drinks: { label: 'Drinks', queries: [{ category: 'bar' }, { category: 'lounge' }] },
-  nightlife: { label: 'Nightlife', queries: [{ category: 'club' }, { category: 'live_music' }] },
-  brunch: { label: 'Brunch', queries: [{ filter: 'brunch' }] },
-  surprise: { label: 'Surprise Me', icon: 'shuffle-outline', queries: [{}] },
-};
-
-// Near Me first; daypart orders the rest. Order only, nothing hidden by time.
-const intentOrder = (h: number): string[] => {
-  if (h >= 5 && h < 14) return ['nearMe', 'brunch', 'dinner', 'drinks', 'dateNight', 'nightlife', 'surprise'];
-  if (h >= 14 && h < 18) return ['nearMe', 'dinner', 'drinks', 'dateNight', 'brunch', 'nightlife', 'surprise'];
-  return ['nearMe', 'dinner', 'drinks', 'nightlife', 'dateNight', 'surprise', 'brunch'];
-};
-
-const fmtNum = (d: number) => (d < 10 ? d.toFixed(1) : String(Math.round(d)));
-const fmtDistance = (d: number) => `${fmtNum(d)} mi`;
-const distanceRange = (list: any[]): string | undefined => {
-  const ds = list.map((v: any) => v?.distance_mi).filter((d: any) => typeof d === 'number') as number[];
-  if (ds.length === 0) return undefined;
-  const lo = Math.min(...ds);
-  const hi = Math.max(...ds);
-  return lo === hi ? `Closest first · ${fmtDistance(lo)}` : `Closest first · ${fmtNum(lo)}–${fmtDistance(hi)}`;
-};
-const venueMeta = (v: any): string => {
-  const cat = String(v?.standardized_category || v?.category || '').replace(/^\w/, (c: string) => c.toUpperCase());
-  return [v?.neighborhood, cat, typeof v?.distance_mi === 'number' ? fmtDistance(v.distance_mi) : null]
-    .filter(Boolean)
-    .join(' · ');
-};
-// Review-weighted rating: a 5.0 with 3 reviews should not outrank a 4.6 with 900
-const qualityScore = (v: any) => {
-  const r = Number(v?.google_rating) || 0;
-  const n = Number(v?.google_review_count) || 0;
-  return (r * n + 4.2 * 50) / (n + 50);
-};
+// Intent pills, copy and helpers live in constants/intents.ts (VIBERYTE_PLACES_V2)
 
 // ─── Helpers ───────────────────────────────────────────────────────
 const safeGetTags = (vibeTags: any): string[] => {
@@ -194,10 +156,12 @@ const CompactVenueCard = React.memo(({ venue, onPress }: { venue: any; onPress: 
       </View>
       <Text style={s.compactName} numberOfLines={1}>{venue.name}</Text>
       <Text style={s.compactMeta} numberOfLines={1}>
-        {[venue.neighborhood, category].filter(Boolean).join(' · ') || venue.city}
+        {reasonLine(venue) || [venue.neighborhood, category].filter(Boolean).join(' · ') || venue.city}
       </Text>
-      {typeof venue.distance_mi === 'number' ? (
-        <Text style={s.compactDistance}>{fmtDistance(venue.distance_mi)}</Text>
+      {reasonLine(venue) || typeof venue.distance_mi === 'number' ? (
+        <Text style={s.compactDistance} numberOfLines={1}>
+          {[reasonLine(venue) ? venue.neighborhood : null, typeof venue.distance_mi === 'number' ? fmtDistance(venue.distance_mi) : null].filter(Boolean).join(' · ')}
+        </Text>
       ) : null}
     </AnimatedPressable>
   );
@@ -353,7 +317,7 @@ export default function HomeScreen() {
         setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         setLocStatus('granted');
         const res = await fetch(
-          `https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=10&sort=distance`
+          `https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=10&sort=distance&include=highlights`
         ).then(r => r.json()).catch(() => null);
         if (res?.venues?.length) {
           setNearYouVenues(res.venues.filter((v: any) => getPhotoUrl(v)).slice(0, 8));
@@ -435,7 +399,7 @@ export default function HomeScreen() {
       const [venues, events, flowsRes, featuredRes] = await Promise.all([
         luminaApi.getVenues(activeCity || 'Manhattan'),
         luminaApi.getEvents(activeCity || 'New York'),
-        fetch('https://viberyte.com/api/flows?city=' + encodeURIComponent(activeCity || 'Manhattan')).then(r => r.json()).catch(() => ({ ok: false, flows: [] })),
+        Promise.resolve({ ok: false, flows: [] }), // Flows hidden for now (VIBERYTE_PLACES_V2)
         fetch('https://viberyte.com/api/events?city=' + encodeURIComponent(activeCity || 'New York') + '&limit=15').then(r => r.json()).catch(() => ({ events: [] })),
       ]);
 
@@ -524,7 +488,7 @@ export default function HomeScreen() {
         : { city: cityLabel };
       const limit = key === 'surprise' ? 60 : 30;
       const results = await Promise.all(
-        intent.queries.map((q) => luminaApi.queryVenues({ ...base, ...q, limit }))
+        intent.queries.map((q) => luminaApi.queryVenues({ ...base, ...q, limit, include: 'highlights', highlight_for: key }))
       );
       if (isCurrent() === false) return;
       if (results.some((r) => r.ok) === false) {
@@ -706,6 +670,38 @@ export default function HomeScreen() {
     );
   }
 
+  // ── See All → Places (exact collection or exact verified query) ──
+  const openCollection = (key: string, title: string, venues: any[]) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    putCollection(key, venues);
+    router.push({ pathname: '/places', params: { source: 'collection', key, title, city: cityLabel } } as any);
+  };
+  const openNear = () => {
+    if (coords) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push({ pathname: '/places', params: { source: 'query', title: 'Around you', intent: '', lat: String(coords.lat), lng: String(coords.lng) } } as any);
+    } else {
+      openCollection('aroundYou', 'Around you', nearYouVenues);
+    }
+  };
+  const openIntent = (key: string | null) => {
+    if (key == null) return;
+    const title = key === 'nearMe' ? 'Around you' : INTENT_MAP[key]?.label || 'Results';
+    if (key === 'surprise') {
+      openCollection('surprise', title, intentResults);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const c = locationMode ? coords : null;
+    router.push({
+      pathname: '/places',
+      params: c
+        ? { source: 'query', title, intent: key, lat: String(c.lat), lng: String(c.lng) }
+        : { source: 'query', title, intent: key, city: cityLabel },
+    } as any);
+  };
+  const dayCopy = homeDayCopy(new Date());
+
   // Hero follows the selected pill; otherwise the editorial pick
   const displayHero = activeIntent ? (intentResults[0] || null) : heroVenue;
 
@@ -719,8 +715,9 @@ export default function HomeScreen() {
         return (
           <View key="intent-results" style={s.section}>
             <SectionHeader
-              title={activeIntent === 'nearMe' ? 'Around You' : label}
+              title={intentHeadline(activeIntent, intentResults)}
               subtitle={distanceRange(rail) || `In ${cityLabel}`}
+              onSeeAll={() => openIntent(activeIntent)}
             />
             <CollectionRow
               data={rail}
@@ -737,9 +734,9 @@ export default function HomeScreen() {
         return (
           <View key="your-kind" style={s.section}>
             <SectionHeader
-              title="Your Kind of Places"
-              subtitle="Based on what you love"
-              onSeeAll={() => router.push('/explore')}
+              title="You might love these"
+              subtitle="Based on places you've saved and viewed"
+              onSeeAll={() => openCollection('yourKind', 'You might love these', yourKindVenues)}
             />
             <CollectionRow
               data={yourKindVenues}
@@ -801,8 +798,8 @@ export default function HomeScreen() {
         return (
           <View key="tonight-picks" style={s.section}>
             <SectionHeader
-              title={isLateNight ? 'Late Night Picks' : isDaytime ? 'Worth Discovering' : "Tonight's Picks"}
-              onSeeAll={() => router.push('/explore?filter=tonight')}
+              title="Worth going out for"
+              onSeeAll={() => openCollection('tonight', 'Worth going out for', pickedForYou)}
             />
             <CollectionRow
               data={pickedForYou}
@@ -818,7 +815,7 @@ export default function HomeScreen() {
         if (nearYouVenues.length === 0) return null;
         return (
           <View key="near-you" style={s.section}>
-            <SectionHeader title="Around You" subtitle={distanceRange(nearYouVenues)} onSeeAll={() => router.push('/explore?filter=nearby')} />
+            <SectionHeader title="Around You" subtitle={distanceRange(nearYouVenues)} onSeeAll={openNear} />
             <CollectionRow
               data={nearYouVenues}
               keyPrefix="ny"
@@ -876,7 +873,7 @@ export default function HomeScreen() {
         if (isLateNight && lateNightSpots.length > 0) {
           return (
             <View key="contextual" style={s.section}>
-              <SectionHeader title="Still Going" onSeeAll={() => router.push('/explore?filter=latenight')} />
+              <SectionHeader title="Still Going" onSeeAll={() => openCollection('stillGoing', 'Still going', lateNightSpots)} />
               <CollectionRow
                 data={lateNightSpots}
                 keyPrefix="ln"
@@ -890,7 +887,7 @@ export default function HomeScreen() {
         if (isEvening && dateNightPicks.length > 0) {
           return (
             <View key="contextual" style={s.section}>
-              <SectionHeader title="Date Night" onSeeAll={() => router.push('/explore?filter=datenight')} />
+              <SectionHeader title="Date Night" onSeeAll={() => openCollection('dateNightRow', 'Date night', dateNightPicks)} />
               <CollectionRow
                 data={dateNightPicks}
                 keyPrefix="dn"
@@ -923,8 +920,9 @@ export default function HomeScreen() {
           {/* ───── CONTEXTUAL HEADER ───── */}
           <View style={s.header}>
             <View style={{ flex: 1 }}>
+              <Text style={s.dayEyebrow}>{dayCopy.eyebrow}</Text>
               <View style={s.headerTopRow}>
-                <Text style={s.greeting}>{getGreeting()}</Text>
+                <Text style={[s.greeting, { flex: 1, marginRight: 12 }]} numberOfLines={2}>{dayCopy.headline}</Text>
                 <TouchableOpacity
                   style={s.locationPill}
                   onPress={() => setShowCitySelector(true)}
@@ -935,7 +933,7 @@ export default function HomeScreen() {
                   <Ionicons name="chevron-down" size={10} color="#52525B" />
                 </TouchableOpacity>
               </View>
-              <Text style={s.contextLine}>{getContextLine()}</Text>
+              <Text style={s.contextLine}>{dayCopy.subline}</Text>
             </View>
           </View>
 
@@ -1255,6 +1253,7 @@ const s = StyleSheet.create({
   },
 
   // ── Compact Card (Apple Music style) ────────────────────────────
+  dayEyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 1.4, color: 'rgba(245,241,234,0.5)', marginBottom: 6 },
   compactDistance: { fontSize: 12, color: 'rgba(245,241,234,0.5)', marginTop: 2, fontVariant: ['tabular-nums'] },
   locNotice: {
     flexDirection: 'row',

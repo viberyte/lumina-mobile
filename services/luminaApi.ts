@@ -32,7 +32,7 @@ const luminaApi = {
   async getVenues(market: string, options: VenueQueryOptions = {}) {
     try {
       const { category, limit = 50 } = options;
-      let url = `${API_BASE}/api/venues?city=${encodeURIComponent(market)}&limit=${limit}`;
+      let url = `${API_BASE}/api/venues?city=${encodeURIComponent(market)}&limit=${limit}&include=highlights`;
       if (category) {
         url += `&category=${encodeURIComponent(category)}`;
       }
