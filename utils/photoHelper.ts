@@ -43,9 +43,14 @@ const isValidUrl = (url: string): boolean => {
   return true;
 };
 
-// Check if URL is a local path (preferred)
+// Check if URL is a trusted path (local or known CDN)
 const isLocalPath = (url: string): boolean => {
-  return url && (url.startsWith('/') || url.includes('lumina.viberyte.com'));
+  if (!url || typeof url !== 'string') return false;
+  return (
+    url.startsWith('/') ||
+    url.includes('viberyte.com') ||
+    url.includes('googleusercontent.com')
+  );
 };
 
 // Resolve relative paths to full URLs
@@ -67,11 +72,25 @@ export const getPhotoUrl = (venue: any): string | null => {
   // PRIORITY 1: google_photos (our downloaded lumina URLs - BEST SOURCE)
   if (venue.google_photos) {
     try {
-      const photos = typeof venue.google_photos === 'string'
-        ? JSON.parse(venue.google_photos)
-        : venue.google_photos;
+      const raw = venue.google_photos;
+      let photos: any[];
 
-      if (Array.isArray(photos) && photos.length > 0) {
+      if (typeof raw === 'string') {
+        // Try JSON parse first (could be JSON array)
+        try {
+          const parsed = JSON.parse(raw);
+          photos = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          // Bare URL string — treat as single photo
+          photos = [raw];
+        }
+      } else if (Array.isArray(raw)) {
+        photos = raw;
+      } else {
+        photos = [];
+      }
+
+      if (photos.length > 0) {
         const normalized = normalizeMedia(photos[0]);
         if (isLocalPath(normalized.url)) {
           return resolveUrl(normalized.url);
@@ -137,7 +156,7 @@ export const getAllPhotos = (venue: any): string[] => {
   const seen = new Set<string>();
 
   const addPhoto = (url: string) => {
-    if (!isLocalPath(url)) return; // Only add local paths
+    if (!isLocalPath(url)) return;
     const resolved = resolveUrl(url);
     if (!seen.has(resolved)) {
       seen.add(resolved);
@@ -148,14 +167,23 @@ export const getAllPhotos = (venue: any): string[] => {
   // Add google_photos first (our best source)
   if (venue.google_photos) {
     try {
-      const parsed = typeof venue.google_photos === 'string'
-        ? JSON.parse(venue.google_photos)
-        : venue.google_photos;
-      if (Array.isArray(parsed)) {
-        parsed.map(normalizeMedia).forEach(p => {
-          if (p.type === 'image') addPhoto(p.url);
-        });
+      const raw = venue.google_photos;
+      let photos: any[];
+      if (typeof raw === 'string') {
+        try {
+          const parsed = JSON.parse(raw);
+          photos = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          photos = [raw];
+        }
+      } else if (Array.isArray(raw)) {
+        photos = raw;
+      } else {
+        photos = [];
       }
+      photos.map(normalizeMedia).forEach(p => {
+        if (p.type === 'image') addPhoto(p.url);
+      });
     } catch (e) {}
   }
 
@@ -192,7 +220,7 @@ export const getAllMedia = (venue: any): MediaItem[] => {
   const seen = new Set<string>();
 
   const addMedia = (item: { type: 'image' | 'video'; url: string; thumbnail?: string }, source: MediaSource, index: number, extra?: any) => {
-    if (!isLocalPath(item.url)) return; // Only add local paths
+    if (!isLocalPath(item.url)) return;
     const resolved = resolveUrl(item.url);
     if (!seen.has(resolved)) {
       seen.add(resolved);
@@ -226,14 +254,23 @@ export const getAllMedia = (venue: any): MediaItem[] => {
   // Add google_photos
   if (venue.google_photos) {
     try {
-      const parsed = typeof venue.google_photos === 'string'
-        ? JSON.parse(venue.google_photos)
-        : venue.google_photos;
-      if (Array.isArray(parsed)) {
-        parsed.map(normalizeMedia).forEach(p => {
-          addMedia(p, 'google', googleIndex++);
-        });
+      const raw = venue.google_photos;
+      let photos: any[];
+      if (typeof raw === 'string') {
+        try {
+          const parsed = JSON.parse(raw);
+          photos = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          photos = [raw];
+        }
+      } else if (Array.isArray(raw)) {
+        photos = raw;
+      } else {
+        photos = [];
       }
+      photos.map(normalizeMedia).forEach(p => {
+        addMedia(p, 'google', googleIndex++);
+      });
     } catch (e) {}
   }
 
