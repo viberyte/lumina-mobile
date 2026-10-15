@@ -835,7 +835,13 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* ───── QUICK INTENT PILLS ───── */}
-          <View style={s.intentRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={s.intentScroll}
+            contentContainerStyle={s.intentRow}
+            decelerationRate="fast"
+          >
             {Object.keys(INTENT_MAP).map((key) => (
               <IntentPill
                 key={key}
@@ -844,7 +850,7 @@ export default function HomeScreen() {
                 onPress={() => handleIntentPress(key)}
               />
             ))}
-          </View>
+          </ScrollView>
 
           {/* ───── EDITORIAL HERO ───── */}
           {heroVenue && !activeIntent && (
@@ -977,11 +983,16 @@ const s = StyleSheet.create({
   },
 
   // ── Quick Intent Pills ──────────────────────────────────────────
+  intentScroll: {
+    flexGrow: 0,
+    marginHorizontal: -SIDE_PAD,
+    marginBottom: 24,
+  },
   intentRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingHorizontal: SIDE_PAD,
-    gap: 8,
-    marginBottom: 24,
   },
   intentPill: {
     flexDirection: 'row',
