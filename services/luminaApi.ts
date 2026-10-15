@@ -49,6 +49,22 @@ const luminaApi = {
     }
   },
 
+  // VIBERYTE_HOME_PILLS_V2: raw /api/venues query. ok=false means the request failed (not an empty result).
+  async queryVenues(params: Record<string, string | number | undefined>): Promise<{ ok: boolean; venues: any[] }> {
+    try {
+      const qs = Object.entries(params)
+        .filter(([, v]) => (v === undefined || v === '' ? false : true))
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join('&');
+      const response = await fetchWithTimeout(`${API_BASE}/api/venues?${qs}`);
+      if (response.ok === false) return { ok: false, venues: [] };
+      const data = await response.json();
+      return { ok: true, venues: Array.isArray(data?.venues) ? data.venues : [] };
+    } catch {
+      return { ok: false, venues: [] };
+    }
+  },
+
   async getEvents(market: string, options: EventQueryOptions = {}) {
     try {
       const { limit = 50 } = options;

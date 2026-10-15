@@ -44,12 +44,47 @@ const SECTION_GAP = 28;
 const FLOW_CARD_WIDTH = SCREEN_WIDTH * 0.82;
 const FOLLOW_SIZE = 64;
 
-// ─── Quick-intent → category mapping (values from MASTER_TAG_SCHEMA) ─
-const INTENT_MAP: Record<string, { label: string; icon: string; categories: string[]; tagPatterns?: RegExp }> = {
-  eat: { label: 'Eat', icon: 'restaurant-outline', categories: ['restaurant'], tagPatterns: /dining|brunch|food|bistro|cafe|diner/i },
-  drinks: { label: 'Drinks', icon: 'wine-outline', categories: ['bar'], tagPatterns: /cocktail|wine|rooftop|speakeasy|pub|beer|drinks/i },
-  goOut: { label: 'Go Out', icon: 'musical-notes-outline', categories: ['club', 'nightclub', 'lounge', 'live_music'], tagPatterns: /dance|dj|party|nightlife/i },
-  surprise: { label: 'Surprise Me', icon: 'sparkles-outline', categories: [] }, // empty = all categories, shuffled
+// ─── Home intent pills (VIBERYTE_HOME_PILLS_V2) ─────────────────────
+// Each pill maps to verified /api/venues queries; multiple queries are merged and de-duplicated.
+type LocStatus = 'pending' | 'granted' | 'denied' | 'unavailable';
+type IntentDef = { label: string; icon?: string; queries: Record<string, string>[]; requiresLocation?: boolean };
+const INTENT_MAP: Record<string, IntentDef> = {
+  nearMe: { label: 'Near Me', icon: 'navigate-outline', queries: [{}], requiresLocation: true },
+  dateNight: { label: 'Date Night', queries: [{ filter: 'date-night' }] },
+  dinner: { label: 'Dinner', queries: [{ category: 'restaurant' }] },
+  drinks: { label: 'Drinks', queries: [{ category: 'bar' }, { category: 'lounge' }] },
+  nightlife: { label: 'Nightlife', queries: [{ category: 'club' }, { category: 'live_music' }] },
+  brunch: { label: 'Brunch', queries: [{ filter: 'brunch' }] },
+  surprise: { label: 'Surprise Me', icon: 'shuffle-outline', queries: [{}] },
+};
+
+// Near Me first; daypart orders the rest. Order only, nothing hidden by time.
+const intentOrder = (h: number): string[] => {
+  if (h >= 5 && h < 14) return ['nearMe', 'brunch', 'dinner', 'drinks', 'dateNight', 'nightlife', 'surprise'];
+  if (h >= 14 && h < 18) return ['nearMe', 'dinner', 'drinks', 'dateNight', 'brunch', 'nightlife', 'surprise'];
+  return ['nearMe', 'dinner', 'drinks', 'nightlife', 'dateNight', 'surprise', 'brunch'];
+};
+
+const fmtNum = (d: number) => (d < 10 ? d.toFixed(1) : String(Math.round(d)));
+const fmtDistance = (d: number) => `${fmtNum(d)} mi`;
+const distanceRange = (list: any[]): string | undefined => {
+  const ds = list.map((v: any) => v?.distance_mi).filter((d: any) => typeof d === 'number') as number[];
+  if (ds.length === 0) return undefined;
+  const lo = Math.min(...ds);
+  const hi = Math.max(...ds);
+  return lo === hi ? `Closest first · ${fmtDistance(lo)}` : `Closest first · ${fmtNum(lo)}–${fmtDistance(hi)}`;
+};
+const venueMeta = (v: any): string => {
+  const cat = String(v?.standardized_category || v?.category || '').replace(/^\w/, (c: string) => c.toUpperCase());
+  return [v?.neighborhood, cat, typeof v?.distance_mi === 'number' ? fmtDistance(v.distance_mi) : null]
+    .filter(Boolean)
+    .join(' · ');
+};
+// Review-weighted rating: a 5.0 with 3 reviews should not outrank a 4.6 with 900
+const qualityScore = (v: any) => {
+  const r = Number(v?.google_rating) || 0;
+  const n = Number(v?.google_review_count) || 0;
+  return (r * n + 4.2 * 50) / (n + 50);
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -159,8 +194,11 @@ const CompactVenueCard = React.memo(({ venue, onPress }: { venue: any; onPress: 
       </View>
       <Text style={s.compactName} numberOfLines={1}>{venue.name}</Text>
       <Text style={s.compactMeta} numberOfLines={1}>
-        {venue.neighborhood || category || venue.city}
+        {[venue.neighborhood, category].filter(Boolean).join(' · ') || venue.city}
       </Text>
+      {typeof venue.distance_mi === 'number' ? (
+        <Text style={s.compactDistance}>{fmtDistance(venue.distance_mi)}</Text>
+      ) : null}
     </AnimatedPressable>
   );
 });
@@ -236,12 +274,14 @@ const IntentPill = React.memo(({ intentKey, active, onPress }: { intentKey: stri
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Ionicons
-        name={intent.icon as any}
-        size={16}
-        color={active ? '#FAFAFA' : '#A1A1AA'}
-        style={{ marginRight: 5 }}
-      />
+      {intent.icon ? (
+        <Ionicons
+          name={intent.icon as any}
+          size={14}
+          color={active ? '#F5F1EA' : 'rgba(245,241,234,0.55)'}
+          style={{ marginRight: 6 }}
+        />
+      ) : null}
       <Text style={[s.intentPillText, active && s.intentPillTextActive]}>
         {intent.label}
       </Text>
@@ -271,6 +311,14 @@ export default function HomeScreen() {
   const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
   const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
   const [nearYouVenues, setNearYouVenues] = useState<any[]>([]);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locStatus, setLocStatus] = useState<LocStatus>('pending');
+  const [cityChoice, setCityChoice] = useState<string | null | undefined>(undefined); // undefined = storage not read yet
+  const [intentLoading, setIntentLoading] = useState(false);
+  const [intentError, setIntentError] = useState(false);
+  const intentReqRef = useRef(0);       // bump to invalidate any in-flight pill request
+  const autoNearRef = useRef(false);    // Near Me auto-selected already
+  const userTouchedRef = useRef(false); // user tapped a pill this session
   const [allVenues, setAllVenues] = useState<any[]>([]); // cache for intent filtering
   const [hasTaste, setHasTaste] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -284,6 +332,12 @@ export default function HomeScreen() {
 
   const { follows, refresh: refreshFollows } = useUserFollows();
 
+  // Location vs city mode. Never silently swap a city in for Near Me.
+  const wantsLocation = cityChoice === null || cityChoice === 'Near Me';
+  const locationMode = wantsLocation && locStatus === 'granted' && coords != null;
+  const locationBlocked = wantsLocation && (locStatus === 'denied' || locStatus === 'unavailable');
+  const cityLabel = userCity === 'Near Me' || userCity === '' ? 'Manhattan' : userCity;
+
   // ── Lifecycle ───────────────────────────────────────────────────
   useEffect(() => {
     loadProfile();
@@ -294,15 +348,19 @@ export default function HomeScreen() {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if ((status === 'granted') === false) { setLocStatus('denied'); return; }
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        setLocStatus('granted');
         const res = await fetch(
           `https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=10&sort=distance`
         ).then(r => r.json()).catch(() => null);
         if (res?.venues?.length) {
           setNearYouVenues(res.venues.filter((v: any) => getPhotoUrl(v)).slice(0, 8));
         }
-      } catch {}
+      } catch {
+        setLocStatus((prev) => (prev === 'granted' ? prev : 'unavailable'));
+      }
     })();
   }, []);
 
@@ -314,6 +372,7 @@ export default function HomeScreen() {
     try {
       const profile = await AsyncStorage.getItem('@lumina_profile');
       const savedCity = await AsyncStorage.getItem('@lumina_selected_city');
+      setCityChoice(savedCity);
       if (profile) { const d = JSON.parse(profile); setUserName(d.name || ''); }
       if (savedCity && savedCity !== 'Near Me') setUserCity(savedCity);
     } catch {}
@@ -448,40 +507,86 @@ export default function HomeScreen() {
   };
 
   // ── Intent pill tap → filter venues from cached data ────────────
+  // Runs a pill's verified queries. Every run bumps the request id; stale results are dropped.
+  const runIntent = useCallback(async (key: string) => {
+    const intent = INTENT_MAP[key];
+    if (intent == null) return;
+    intentReqRef.current += 1;
+    const reqId = intentReqRef.current;
+    const isCurrent = () => reqId === intentReqRef.current;
+    setIntentResults([]);
+    setIntentError(false);
+    setIntentLoading(true);
+    try {
+      const c = locationMode ? coords : null;
+      const base: Record<string, string | number> = c
+        ? { lat: c.lat, lng: c.lng, sort: 'distance', radius: 15 }
+        : { city: cityLabel };
+      const limit = key === 'surprise' ? 60 : 30;
+      const results = await Promise.all(
+        intent.queries.map((q) => luminaApi.queryVenues({ ...base, ...q, limit }))
+      );
+      if (isCurrent() === false) return;
+      if (results.some((r) => r.ok) === false) {
+        setIntentError(true);
+        return;
+      }
+      const seen = new Set<string>();
+      let merged: any[] = [];
+      results.forEach((r) => r.venues.forEach((v: any) => {
+        const id = String(v.id);
+        if (seen.has(id) || getPhotoUrl(v) == null) return;
+        seen.add(id);
+        merged.push(v);
+      }));
+      if (key === 'surprise') {
+        let recent = new Set<string>();
+        try {
+          const ids = await tasteTracker.getRecentlyViewed();
+          if (Array.isArray(ids)) recent = new Set(ids.map(String));
+        } catch {}
+        if (isCurrent() === false) return;
+        merged = seededShuffle(merged.filter((v: any) => recent.has(String(v.id)) === false), Date.now());
+      } else if (c) {
+        merged.sort((a: any, b: any) => (a.distance_mi ?? 99) - (b.distance_mi ?? 99));
+      } else {
+        merged.sort((a: any, b: any) => qualityScore(b) - qualityScore(a));
+      }
+      setIntentResults(merged.slice(0, 8));
+    } catch {
+      if (isCurrent()) setIntentError(true);
+    } finally {
+      if (isCurrent()) setIntentLoading(false);
+    }
+  }, [locationMode, coords, cityLabel]);
+
+  // Pill tap. Any manual tap (select or deselect) disables the Near Me auto-default for the session.
   const handleIntentPress = useCallback((key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    userTouchedRef.current = true;
     if (activeIntent === key) {
-      // Toggle off — clear intent results
+      intentReqRef.current += 1;
       setActiveIntent(null);
       setIntentResults([]);
+      setIntentLoading(false);
+      setIntentError(false);
       return;
     }
     setActiveIntent(key);
-    const intent = INTENT_MAP[key];
-    if (!intent) return;
+    runIntent(key);
+  }, [activeIntent, runIntent]);
 
-    if (intent.categories.length === 0) {
-      // "Surprise Me" — random reshuffle from all venues
-      const shuffled = seededShuffle(allVenues, Date.now());
-      setIntentResults(shuffled.filter((v: any) => getPhotoUrl(v)).slice(0, 10));
-    } else {
-      // Filter by category match OR tagPattern match on vibe_tags
-      const catSet = new Set(intent.categories);
-      const filtered = allVenues.filter((v: any) => {
-        if (!getPhotoUrl(v)) return false;
-        const cat = (v.standardized_category || v.category || '').toLowerCase();
-        if (catSet.has(cat)) return true;
-        // Also match via tagPatterns against vibe_tags
-        if (intent.tagPatterns) {
-          const tags = safeGetTags(v.vibe_tags).join(' ');
-          const name = (v.name || '').toLowerCase();
-          if (intent.tagPatterns.test(tags) || intent.tagPatterns.test(name)) return true;
-        }
-        return false;
-      });
-      setIntentResults(filtered.slice(0, 10));
+  // Near Me becomes the default only in location mode, once, and never over a manual choice.
+  useEffect(() => {
+    if (locationMode && activeIntent === null && userTouchedRef.current === false && autoNearRef.current === false) {
+      autoNearRef.current = true;
+      setActiveIntent('nearMe');
+      runIntent('nearMe');
     }
-  }, [activeIntent, allVenues]);
+  }, [locationMode, activeIntent, runIntent]);
+
+  // Invalidate in-flight pill requests on unmount
+  useEffect(() => () => { intentReqRef.current += 1; }, []);
 
   // ── City change ─────────────────────────────────────────────────
   const handleCityChange = async (newCity: string) => {
@@ -502,6 +607,11 @@ export default function HomeScreen() {
     setLoading(true);
     await new Promise<void>(r => setTimeout(r, 50));
     setUserCity(newCity);
+    setCityChoice(newCity);
+    intentReqRef.current += 1;
+    setIntentLoading(false);
+    setIntentError(false);
+    if (newCity === 'Near Me') { userTouchedRef.current = false; autoNearRef.current = false; }
     if (newCity !== 'Near Me') await AsyncStorage.setItem('@lumina_selected_city', newCity);
     await loadContent(newCity);
     await new Promise<void>(r => setTimeout(r, 800));
@@ -516,6 +626,9 @@ export default function HomeScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newSeed = Math.floor(Math.random() * 999999);
     setRefreshSeed(newSeed);
+    intentReqRef.current += 1;
+    setIntentLoading(false);
+    setIntentError(false);
     setActiveIntent(null);
     setIntentResults([]);
     await loadContent(undefined, newSeed);
@@ -557,6 +670,9 @@ export default function HomeScreen() {
     // Intent results always first when active
     if (activeIntent && intentResults.length > 0) sections.push('intentResults');
 
+    // Around You: proximity-ranked, directly under the hero (skipped when the Near Me pill already shows it)
+    if (nearYouVenues.length > 0 && (activeIntent === 'nearMe') === false) sections.push('nearYou');
+
     // "Your Kind of Places" — when user has taste data
     if (yourKindVenues.length > 0) sections.push('yourKind');
 
@@ -575,11 +691,6 @@ export default function HomeScreen() {
       sections.push('tonightPicks', 'events');
     }
 
-    // Nearby — always shown if available
-    if (nearYouVenues.length > 0 && !sections.includes('nearYou')) {
-      sections.push('nearYou');
-    }
-
     // Flows — always present if available
     if (flowsData.length > 0) sections.push('flows');
 
@@ -595,18 +706,24 @@ export default function HomeScreen() {
     );
   }
 
+  // Hero follows the selected pill; otherwise the editorial pick
+  const displayHero = activeIntent ? (intentResults[0] || null) : heroVenue;
+
   // ── Render sections by dynamic order ────────────────────────────
   const renderSection = (key: string, index: number) => {
     switch (key) {
-      case 'intentResults':
+      case 'intentResults': {
+        const rail = intentResults.slice(1, 8);
+        if (rail.length === 0) return null;
+        const label = activeIntent ? INTENT_MAP[activeIntent]?.label || 'Results' : 'Results';
         return (
           <View key="intent-results" style={s.section}>
             <SectionHeader
-              title={INTENT_MAP[activeIntent!]?.label || 'Results'}
-              subtitle={`${intentResults.length} spots in ${userCity}`}
+              title={activeIntent === 'nearMe' ? 'Around You' : label}
+              subtitle={distanceRange(rail) || `In ${cityLabel}`}
             />
             <CollectionRow
-              data={intentResults}
+              data={rail}
               keyPrefix="ir"
               renderItem={(venue) => (
                 <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
@@ -614,6 +731,7 @@ export default function HomeScreen() {
             />
           </View>
         );
+      }
 
       case 'yourKind':
         return (
@@ -683,7 +801,7 @@ export default function HomeScreen() {
         return (
           <View key="tonight-picks" style={s.section}>
             <SectionHeader
-              title={isLateNight ? 'Late Night Picks' : isDaytime ? 'Explore Today' : "Tonight's Picks"}
+              title={isLateNight ? 'Late Night Picks' : isDaytime ? 'Worth Discovering' : "Tonight's Picks"}
               onSeeAll={() => router.push('/explore?filter=tonight')}
             />
             <CollectionRow
@@ -700,7 +818,7 @@ export default function HomeScreen() {
         if (nearYouVenues.length === 0) return null;
         return (
           <View key="near-you" style={s.section}>
-            <SectionHeader title="Nearest to You" onSeeAll={() => router.push('/explore?filter=nearby')} />
+            <SectionHeader title="Around You" subtitle={distanceRange(nearYouVenues)} onSeeAll={() => router.push('/explore?filter=nearby')} />
             <CollectionRow
               data={nearYouVenues}
               keyPrefix="ny"
@@ -842,7 +960,7 @@ export default function HomeScreen() {
             contentContainerStyle={s.intentRow}
             decelerationRate="fast"
           >
-            {Object.keys(INTENT_MAP).map((key) => (
+            {intentOrder(hour).filter((k) => (INTENT_MAP[k].requiresLocation ? locationMode : true)).map((key) => (
               <IntentPill
                 key={key}
                 intentKey={key}
@@ -852,15 +970,22 @@ export default function HomeScreen() {
             ))}
           </ScrollView>
 
+          {locationBlocked ? (
+            <TouchableOpacity style={s.locNotice} onPress={() => setShowCitySelector(true)} activeOpacity={0.7}>
+              <Text style={s.locNoticeText}>Location is off · Showing {cityLabel}</Text>
+              <Text style={s.locNoticeAction}>Choose a city</Text>
+            </TouchableOpacity>
+          ) : null}
+
           {/* ───── EDITORIAL HERO ───── */}
-          {heroVenue && !activeIntent && (
-            <AnimatedPressable
-              style={s.heroWrap}
-              onPress={() => handleVenuePress(heroVenue)}
-            >
+          {activeIntent && intentLoading ? (
+            <View style={[s.heroWrap, { height: HERO_HEIGHT, borderRadius: 14, backgroundColor: '#141417' }]} />
+          ) : null}
+          {displayHero && (activeIntent ? intentLoading === false : true) ? (
+            <AnimatedPressable style={s.heroWrap} onPress={() => handleVenuePress(displayHero)}>
               <View style={s.heroImageWrap}>
                 <Image
-                  source={{ uri: getPhotoUrl(heroVenue) }}
+                  source={{ uri: getPhotoUrl(displayHero) }}
                   style={s.heroImage}
                   contentFit="cover"
                   cachePolicy="memory-disk"
@@ -872,18 +997,31 @@ export default function HomeScreen() {
                   style={StyleSheet.absoluteFillObject}
                 />
                 <View style={s.heroOverlay}>
-                  <Text style={s.heroLabel}>FEATURED</Text>
+                  <Text style={s.heroLabel}>
+                    {activeIntent
+                      ? (activeIntent === 'nearMe' ? 'CLOSEST TO YOU' : (INTENT_MAP[activeIntent]?.label || '').toUpperCase())
+                      : 'FEATURED'}
+                  </Text>
                 </View>
               </View>
               <View style={s.heroInfo}>
-                <Text style={s.heroName}>{heroVenue.name}</Text>
-                <Text style={s.heroMeta}>
-                  {heroVenue.neighborhood}
-                  {heroVenue.category ? ` · ${heroVenue.category.charAt(0).toUpperCase() + heroVenue.category.slice(1)}` : ''}
-                </Text>
+                <Text style={s.heroName}>{displayHero.name}</Text>
+                <Text style={s.heroMeta}>{venueMeta(displayHero)}</Text>
               </View>
             </AnimatedPressable>
-          )}
+          ) : null}
+          {activeIntent && intentError && intentLoading === false ? (
+            <TouchableOpacity style={{ paddingHorizontal: SIDE_PAD, marginBottom: 24 }} onPress={() => runIntent(activeIntent)} activeOpacity={0.7}>
+              <Text style={s.sectionSubtitle}>Couldn't load {INTENT_MAP[activeIntent]?.label || 'results'}. Tap to retry.</Text>
+            </TouchableOpacity>
+          ) : null}
+          {activeIntent && intentError === false && intentLoading === false && intentResults.length === 0 ? (
+            <View style={{ paddingHorizontal: SIDE_PAD, marginBottom: 24 }}>
+              <Text style={s.sectionSubtitle}>
+                Nothing confirmed for {INTENT_MAP[activeIntent]?.label || 'this'} {locationMode ? 'near you' : `in ${cityLabel}`} yet.
+              </Text>
+            </View>
+          ) : null}
 
           {/* ───── DYNAMIC SECTIONS ───── */}
           {orderedSections.map((section, idx) => renderSection(section, idx))}
@@ -997,24 +1135,25 @@ const s = StyleSheet.create({
   intentPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: '#121216',
-    borderWidth: 1,
-    borderColor: '#1a1a1f',
+    height: 36,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    backgroundColor: '#141417',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
   intentPillActive: {
-    backgroundColor: colors.violet[600],
-    borderColor: colors.violet[500],
+    backgroundColor: '#1C1A24',
+    borderColor: 'rgba(139,92,246,0.45)',
   },
   intentPillText: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#A1A1AA',
+    color: 'rgba(245,241,234,0.65)',
+    letterSpacing: -0.1,
   },
   intentPillTextActive: {
-    color: '#FAFAFA',
+    color: '#F5F1EA',
   },
 
   // ── Editorial Hero ──────────────────────────────────────────────
@@ -1116,6 +1255,20 @@ const s = StyleSheet.create({
   },
 
   // ── Compact Card (Apple Music style) ────────────────────────────
+  compactDistance: { fontSize: 12, color: 'rgba(245,241,234,0.5)', marginTop: 2, fontVariant: ['tabular-nums'] },
+  locNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: SIDE_PAD,
+    marginBottom: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#141417',
+  },
+  locNoticeText: { fontSize: 13, color: 'rgba(245,241,234,0.65)' },
+  locNoticeAction: { fontSize: 13, fontWeight: '600', color: '#F5F1EA' },
   compactCard: {
     width: CARD_WIDTH,
   },
