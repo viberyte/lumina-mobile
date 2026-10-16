@@ -127,6 +127,7 @@ export default function PlacesScreen() {
   const title = str(p.title) || 'Places';
   const intentKey = str(p.intent);
   const cityParam = str(p.city);
+  const hoodParam = str(p.neighborhood); // VIBERYTE_MAP_STAGE1
   const lat = parseFloat(str(p.lat));
   const lng = parseFloat(str(p.lng));
   const near = Number.isFinite(lat) && Number.isFinite(lng);
@@ -135,7 +136,7 @@ export default function PlacesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [note, setNote] = useState('');
-  const [mode, setMode] = useState<'list' | 'map'>('list');
+  const [mode, setMode] = useState<'list' | 'map'>(str(p.mode) === 'map' ? 'map' : 'list');
   const [selected, setSelected] = useState(0);
   const reqRef = useRef(0);
   const mapRef = useRef<MapView | null>(null);
@@ -159,7 +160,7 @@ export default function PlacesScreen() {
       }
       const base: Record<string, string | number> = near
         ? { lat, lng, sort: 'distance', radius: 15 }
-        : { city: cityParam || 'Manhattan' };
+        : { city: cityParam || 'Manhattan', ...(hoodParam ? { neighborhood: hoodParam } : {}) };
       const def = intentKey ? INTENT_MAP[intentKey] : undefined;
       const queries = def ? def.queries : [{}];
       const results = await Promise.all(
@@ -178,6 +179,7 @@ export default function PlacesScreen() {
         seen.add(k);
         merged.push(v);
       }));
+      if (hoodParam) { for (let i = merged.length - 1; i >= 0; i--) if (merged[i]?.neighborhood !== hoodParam) merged.splice(i, 1); }
       if (near) merged.sort((a: any, b: any) => (a.distance_mi ?? 99) - (b.distance_mi ?? 99));
       else merged.sort((a: any, b: any) => qualityScore(b) - qualityScore(a));
       setVenues(merged);
@@ -186,7 +188,7 @@ export default function PlacesScreen() {
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [source, collKey, intentKey, cityParam, near, lat, lng]);
+  }, [source, collKey, intentKey, cityParam, hoodParam, near, lat, lng]);
 
   useEffect(() => {
     load();
@@ -221,8 +223,8 @@ export default function PlacesScreen() {
       return r ? `${count} · ${r}` : count;
     }
     if (note) return `${count} · ${note}`;
-    return cityParam ? `${count} · In ${cityParam}` : count;
-  }, [loading, venues, near, note, cityParam, mode, pins.length]);
+    return cityParam ? `${count} · In ${hoodParam || cityParam}` : count;
+  }, [loading, venues, near, note, cityParam, hoodParam, mode, pins.length]);
 
   const openVenue = useCallback((v: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

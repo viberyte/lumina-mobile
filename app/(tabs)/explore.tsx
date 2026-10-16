@@ -152,6 +152,20 @@ export default function ExploreScreen() {
   const chooseArea = (r: string, n: string | null) => { tap(); setRegion(r); setHood(n); setAreaOpen(false); };
   const chooseMood = (m: string | null) => { tap(); setMood(m); };
   const areaLabel = hood ? `${hood}` : region || 'Manhattan';
+  // VIBERYTE_MAP_STAGE1: open the existing Places map with the current Explore selection
+  // Only moods with an exact, verified Places filter carry over; others open the area unfiltered.
+  const MOOD_TO_INTENT: Record<string, string> = { date_night: 'dateNight', dinner: 'dinner', drinks: 'drinks' };
+  const openMap = () => {
+    tap();
+    const label = mood && MOOD_TO_INTENT[mood] ? feed?.moods.find((m) => m.key === mood)?.label : undefined;
+    const where = hood || region || 'Manhattan';
+    router.push({ pathname: '/places', params: {
+      source: 'query', mode: 'map', city: region || 'Manhattan',
+      ...(hood ? { neighborhood: hood } : {}),
+      ...(mood && MOOD_TO_INTENT[mood] ? { intent: MOOD_TO_INTENT[mood] } : {}),
+      title: label ? `${label} · ${where}` : where,
+    } });
+  };
   const hero = feed?.hero;
 
   return (
@@ -168,9 +182,15 @@ export default function ExploreScreen() {
 
         <View style={[s.pad, s.headRow]}>
           <Text style={s.title}>Explore</Text>
-          <TouchableOpacity style={s.circle} onPress={() => { tap(); router.push('/search'); }} accessibilityLabel="Search">
-            <Ionicons name="search" size={18} color={C.ivory} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity style={s.mapBtn} onPress={openMap} accessibilityLabel="Open map">
+              <Ionicons name="map-outline" size={16} color={C.champ} />
+              <Text style={s.mapBtnText}>Map</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.circle} onPress={() => { tap(); router.push('/search'); }} accessibilityLabel="Search">
+              <Ionicons name="search" size={18} color={C.ivory} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity style={[s.pad, s.areaRow]} onPress={() => { tap(); setAreaOpen(true); }} accessibilityLabel="Change area">
@@ -288,6 +308,11 @@ const s = StyleSheet.create({
   skel: { backgroundColor: C.raise, borderRadius: 8 },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: C.ivory, fontSize: 34, fontWeight: '700', letterSpacing: -0.8 },
+  mapBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 14, borderRadius: 20,
+    backgroundColor: C.raise, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.14)',
+  },
+  mapBtnText: { color: C.ivory, fontSize: 15, fontWeight: '600' },
   circle: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: C.raise, alignItems: 'center', justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.14)',
