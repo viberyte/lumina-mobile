@@ -43,6 +43,7 @@ type SearchMode = 'city' | 'near' | 'area';
 type SearchRes = {
   ok: boolean; query: string; understood: string[]; origin: string | null; area: string | null; mood: string | null;
   needs_location: boolean; unsupported?: string; time_note?: string | null; total: number; results: SearchHit[]; mode: SearchMode;
+  wider_total?: number; // VIBERYTE_MAP_STAGE3: matches across all areas when the Explore area has none
 };
 
 type Coord = { latitude: number; longitude: number };
@@ -240,7 +241,7 @@ export default function PlacesScreen() {
   })), [searchRes]);
   const venues = searchRes ? searchVenues : baseVenues;
 
-  const runSearch = useCallback(async (text: string, opts: { area?: boolean; loc?: Coord | null } = {}) => {
+  const runSearch = useCallback(async (text: string, opts: { area?: boolean; loc?: Coord | null; everywhere?: boolean } = {}) => {
     const q = text.trim().slice(0, 120);
     const params = new URLSearchParams();
     if (q) params.set('q', q);
@@ -260,7 +261,8 @@ export default function PlacesScreen() {
       if (here) { params.set('lat', here.latitude.toFixed(5)); params.set('lng', here.longitude.toFixed(5)); }
     } else {
       if (!q && !moodParam) return;
-      if (hoodParam) params.set('hood', hoodParam);
+      if (opts.everywhere) params.set('scope', 'all');
+      else if (hoodParam) params.set('hood', hoodParam);
       else if (cityParam) params.set('region', cityParam);
     }
     const key = params.toString();
@@ -395,12 +397,20 @@ export default function PlacesScreen() {
     if (c && seq === searchReq.current) runSearch(query, { loc: c }); // skip if the search changed meanwhile
   }, [locate, query, runSearch]);
 
-  const notice = useMemo((): { text: string; kind: 'info' | 'retry' | 'needs_location' } | null => {
+  const showEverywhere = useCallback(() => {
+    Haptics.selectionAsync();
+    Keyboard.dismiss();
+    setAltered(true);
+    runSearch(query, { everywhere: true });
+  }, [query, runSearch]);
+
+  const notice = useMemo((): { text: string; kind: 'info' | 'retry' | 'needs_location' | 'wider' } | null => {
     if (hint) return { text: hint, kind: 'info' };
     if (searchErr) return { text: 'Search isn’t available right now.', kind: 'retry' };
     if (!searchRes || searching) return null;
     if (searchRes.unsupported) return { text: searchRes.unsupported, kind: 'info' };
     if (searchRes.needs_location) return { text: 'Turn on location to search near you, or search the area on screen.', kind: 'needs_location' };
+    if (searchRes.total === 0 && searchRes.area && (searchRes.wider_total || 0) > 0) return { text: `No matches in ${searchRes.area}.`, kind: 'wider' };
     if (searchRes.total === 0) return { text: 'No matches. Try a neighborhood, cuisine or venue type.', kind: 'info' };
     if (searchRes.time_note) return { text: searchRes.time_note, kind: 'info' };
     return null;
@@ -594,6 +604,10 @@ export default function PlacesScreen() {
                 <View style={s.bannerActions}>
                   <TouchableOpacity onPress={locateAndSearch}><Text style={s.bannerAction}>Use my location</Text></TouchableOpacity>
                   <TouchableOpacity onPress={searchArea}><Text style={s.bannerAction}>Search this area</Text></TouchableOpacity>
+                </View>
+              ) : notice.kind === 'wider' ? (
+                <View style={s.bannerActions}>
+                  <TouchableOpacity onPress={showEverywhere}><Text style={s.bannerAction}>{`Show ${searchRes?.wider_total} across all areas`}</Text></TouchableOpacity>
                 </View>
               ) : notice.kind === 'retry' ? (
                 <View style={s.bannerActions}>
