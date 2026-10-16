@@ -153,16 +153,15 @@ export default function ExploreScreen() {
   const chooseMood = (m: string | null) => { tap(); setMood(m); };
   const areaLabel = hood ? `${hood}` : region || 'Manhattan';
   // VIBERYTE_MAP_STAGE1: open the existing Places map with the current Explore selection
-  // Only moods with an exact, verified Places filter carry over; others open the area unfiltered.
-  const MOOD_TO_INTENT: Record<string, string> = { date_night: 'dateNight', dinner: 'dinner', drinks: 'drinks' };
+  // VIBERYTE_MAP_STAGE2: every mood carries over; the map search applies the same mood rules as Explore.
   const openMap = () => {
     tap();
-    const label = mood && MOOD_TO_INTENT[mood] ? feed?.moods.find((m) => m.key === mood)?.label : undefined;
+    const label = mood ? feed?.moods.find((m) => m.key === mood)?.label : undefined;
     const where = hood || region || 'Manhattan';
     router.push({ pathname: '/places', params: {
       source: 'query', mode: 'map', city: region || 'Manhattan',
       ...(hood ? { neighborhood: hood } : {}),
-      ...(mood && MOOD_TO_INTENT[mood] ? { intent: MOOD_TO_INTENT[mood] } : {}),
+      ...(mood ? { mood } : {}),
       title: label ? `${label} · ${where}` : where,
     } });
   };
