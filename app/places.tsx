@@ -44,7 +44,10 @@ type SearchRes = {
   ok: boolean; query: string; understood: string[]; origin: string | null; area: string | null; mood: string | null;
   needs_location: boolean; unsupported?: string; time_note?: string | null; total: number; results: SearchHit[]; mode: SearchMode;
   wider_total?: number; // VIBERYTE_MAP_STAGE3: matches across all areas when the Explore area has none
+  place?: string | null; what?: string | null; elsewhere_total?: number; // VIBERYTE_MAP_STAGE4: named place with no matches
 };
+// Honest empty state: we only say what we know (nothing listed here yet), never that something is coming.
+const growing = (where: string, what?: string | null) => `We’re still growing ${where}. No ${what || 'matches'} here yet.`;
 
 type Coord = { latitude: number; longitude: number };
 const coordOf = (v: any): Coord | null => {
@@ -241,7 +244,7 @@ export default function PlacesScreen() {
   })), [searchRes]);
   const venues = searchRes ? searchVenues : baseVenues;
 
-  const runSearch = useCallback(async (text: string, opts: { area?: boolean; loc?: Coord | null; everywhere?: boolean } = {}) => {
+  const runSearch = useCallback(async (text: string, opts: { area?: boolean; loc?: Coord | null; everywhere?: boolean; ignorePlace?: boolean } = {}) => {
     const q = text.trim().slice(0, 120);
     const params = new URLSearchParams();
     if (q) params.set('q', q);
@@ -261,7 +264,8 @@ export default function PlacesScreen() {
       if (here) { params.set('lat', here.latitude.toFixed(5)); params.set('lng', here.longitude.toFixed(5)); }
     } else {
       if (!q && !moodParam) return;
-      if (opts.everywhere) params.set('scope', 'all');
+      if (opts.ignorePlace) params.set('ignore_place', '1');
+      if (opts.everywhere || opts.ignorePlace) params.set('scope', 'all');
       else if (hoodParam) params.set('hood', hoodParam);
       else if (cityParam) params.set('region', cityParam);
     }
@@ -404,13 +408,21 @@ export default function PlacesScreen() {
     runSearch(query, { everywhere: true });
   }, [query, runSearch]);
 
-  const notice = useMemo((): { text: string; kind: 'info' | 'retry' | 'needs_location' | 'wider' } | null => {
+  const showElsewhere = useCallback(() => {
+    Haptics.selectionAsync();
+    Keyboard.dismiss();
+    setAltered(true);
+    runSearch(query, { ignorePlace: true });
+  }, [query, runSearch]);
+
+  const notice = useMemo((): { text: string; kind: 'info' | 'retry' | 'needs_location' | 'wider' | 'elsewhere' } | null => {
     if (hint) return { text: hint, kind: 'info' };
     if (searchErr) return { text: 'Search isn’t available right now.', kind: 'retry' };
     if (!searchRes || searching) return null;
     if (searchRes.unsupported) return { text: searchRes.unsupported, kind: 'info' };
     if (searchRes.needs_location) return { text: 'Turn on location to search near you, or search the area on screen.', kind: 'needs_location' };
-    if (searchRes.total === 0 && searchRes.area && (searchRes.wider_total || 0) > 0) return { text: `No matches in ${searchRes.area}.`, kind: 'wider' };
+    if (searchRes.total === 0 && searchRes.place && (searchRes.elsewhere_total || 0) > 0) return { text: growing(searchRes.place, searchRes.what), kind: 'elsewhere' };
+    if (searchRes.total === 0 && searchRes.area && (searchRes.wider_total || 0) > 0) return { text: growing(searchRes.area, searchRes.what), kind: 'wider' };
     if (searchRes.total === 0) return { text: 'No matches. Try a neighborhood, cuisine or venue type.', kind: 'info' };
     if (searchRes.time_note) return { text: searchRes.time_note, kind: 'info' };
     return null;
@@ -607,7 +619,11 @@ export default function PlacesScreen() {
                 </View>
               ) : notice.kind === 'wider' ? (
                 <View style={s.bannerActions}>
-                  <TouchableOpacity onPress={showEverywhere}><Text style={s.bannerAction}>{`Show ${searchRes?.wider_total} across all areas`}</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={showEverywhere}><Text style={s.bannerAction}>{`Show ${searchRes?.wider_total} in other areas`}</Text></TouchableOpacity>
+                </View>
+              ) : notice.kind === 'elsewhere' ? (
+                <View style={s.bannerActions}>
+                  <TouchableOpacity onPress={showElsewhere}><Text style={s.bannerAction}>{`Show ${searchRes?.elsewhere_total} in other areas`}</Text></TouchableOpacity>
                 </View>
               ) : notice.kind === 'retry' ? (
                 <View style={s.bannerActions}>
