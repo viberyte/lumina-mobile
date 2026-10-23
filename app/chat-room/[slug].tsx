@@ -65,7 +65,7 @@ const ROOM_CONTEXTS: { [key: string]: string } = {
 const getMessageIcon = (messageType: string): string => {
   if (messageType === 'official_flyer') return 'image';
   if (messageType === 'official_event') return 'calendar';
-  return 'sparkles';
+  return 'compass';
 };
 
 interface MessageComponentProps {

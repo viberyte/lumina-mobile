@@ -16,6 +16,7 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { requireAuth } from '../../utils/authGate';
 import { api, trackBehavior } from '../../lib/api';
 import tasteTracker from '../../services/tasteTracker';
+import { isSaved as isSavedLocal, saveFavoriteCompat, removeFavoriteCompat } from '../../lib/saved'; // VIBERYTE_SAVED_V1
 
 const { width: W, height: H } = Dimensions.get('window');
 const HERO_H = Math.round(H * 0.64);
@@ -84,8 +85,9 @@ function RailCard({ c, size }: { c: Card; size: 'medium' | 'compact' }) {
   );
 }
 
-function InsideRail({ reels, onOpen }: { reels: Reel[]; onOpen: (i: number) => void }) {
-  if (reels.length < 2) return null;
+// VBR_MEDIA_ROW: reels and photos share one row — reels first (play badge), then photos, same tile size.
+function InsideRail({ reels, onOpen, photos = [], onPhoto }: { reels: Reel[]; onOpen: (i: number) => void; photos?: string[]; onPhoto?: (i: number) => void }) {
+  if (reels.length + photos.length < 2) return null;
   return (
     <View style={s.section}>
       <Text style={[s.h2, s.pad]}>Inside the vibe</Text>
@@ -100,8 +102,53 @@ function InsideRail({ reels, onOpen }: { reels: Reel[]; onOpen: (i: number) => v
             <Text style={s.dur}>{fmtDur(r.duration)}</Text>
           </TouchableOpacity>
         ))}
+        {photos.map((u, i) => (
+          <TouchableOpacity key={u} activeOpacity={0.85} onPress={() => { tap(); onPhoto?.(i); }}
+            accessibilityLabel={`Photo ${i + 1} of ${photos.length}`} style={s.reelThumb}>
+            <Image source={{ uri: u }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={150} />
+          </TouchableOpacity>
+        ))}
       </ScrollView>
     </View>
+  );
+}
+
+// VBR_VENUE_PHOTOS: ranked photo gallery + full-screen viewer
+function PhotoRail({ photos, onOpen }: { photos: string[]; onOpen: (i: number) => void }) {
+  if (photos.length < 2) return null;
+  return (
+    <View style={{ marginTop: 28 }}>
+      <Text style={[s.h2, s.pad]}>Photos</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10, paddingTop: 12 }}>
+        {photos.map((u, i) => (
+          <TouchableOpacity key={u} activeOpacity={0.85} onPress={() => { tap(); onOpen(i); }} accessibilityLabel={`Photo ${i + 1} of ${photos.length}`}>
+            <Image source={{ uri: u }} style={{ width: 200, height: 150, borderRadius: 12, backgroundColor: C.raise }} contentFit="cover" cachePolicy="memory-disk" transition={150} />
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function PhotoViewer({ photos, start, onClose }: { photos: string[]; start: number; onClose: () => void }) {
+  const [active, setActive] = useState(start);
+  return (
+    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+          contentOffset={{ x: start * W, y: 0 }}
+          onMomentumScrollEnd={(e) => setActive(Math.round(e.nativeEvent.contentOffset.x / W))}>
+          {photos.map((u) => (
+            <Image key={u} source={{ uri: u }} style={{ width: W, height: H * 0.8 }} contentFit="contain" cachePolicy="memory-disk" />
+          ))}
+        </ScrollView>
+        <TouchableOpacity onPress={onClose} accessibilityLabel="Close photos"
+          style={{ position: 'absolute', top: Platform.OS === 'ios' ? 58 : 30, left: 16, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,20,23,0.8)' }}>
+          <Ionicons name="close" size={22} color={C.ivory} />
+        </TouchableOpacity>
+        <Text style={{ position: 'absolute', bottom: 50, alignSelf: 'center', color: C.soft, fontSize: 14 }}>{active + 1} / {photos.length}</Text>
+      </View>
+    </Modal>
   );
 }
 
@@ -164,6 +211,8 @@ export default function VenueScreen() {
   const [heroVisible, setHeroVisible] = useState(true);
   const [saved, setSaved] = useState(false);
   const [viewerAt, setViewerAt] = useState<number | null>(null);
+  const [photoAt, setPhotoAt] = useState<number | null>(null);
+  const [mapOpen, setMapOpen] = useState(false); // VBR_VENUE_MAP_V1
   const scrollY = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<any>(null);
 
@@ -196,7 +245,7 @@ export default function VenueScreen() {
       setReelIdx(0);
       trackBehavior(Number(json.venue.id), 'view', 'detail');
       tasteTracker.recordDetailView(json.venue.id, json.venue.type || '');
-      api.isVenueSaved(Number(json.venue.id)).then(setSaved).catch(() => {});
+      isSavedLocal(Number(json.venue.id)).then(setSaved).catch(() => {});
     } catch {
       setFailed(true);
     }
@@ -251,7 +300,7 @@ export default function VenueScreen() {
   const v = data.venue;
   const reels = v.reels || [];
   const thumbReels = reels.filter((r, i, a) => !!r.poster && a.findIndex((x) => x.url === r.url) === i);
-  const reel = reels.length ? reels[reelIdx % reels.length] : null;
+  const reel = (v as any).hero?.type === 'photo' ? null : (reels.length ? reels[reelIdx % reels.length] : null); // VBR_VENUE_PHOTOS
   const photo = img(v.image_url);
   const eyebrow = [v.type, v.neighborhood].filter(Boolean).join(' · ');
   const dist = fmtMi(v.distance_from_you_mi);
@@ -265,12 +314,12 @@ export default function VenueScreen() {
   const site = () => { tap(); if (v.website) Linking.openURL(v.website.startsWith('http') ? v.website : `https://${v.website}`); };
   const share = () => { tap(); Share.share({ message: `${v.name}, ${v.neighborhood || ''}\nhttps://viberyte.com/venue/${v.id}` }).catch(() => {}); };
   const toggleSave = async () => {
-    if (!(await requireAuth('save places'))) return;
+    // VBR_GUEST_SAVE: saving works without an account
     const next = !saved;
     setSaved(next);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      next ? await api.saveFavorite(Number(v.id)) : await api.removeFavorite(Number(v.id));
+      next ? await saveFavoriteCompat(v) : await removeFavoriteCompat(Number(v.id));
       if (next) tasteTracker.recordSave(v.id, v.type || '');
     } catch { setSaved(!next); }
   };
@@ -353,43 +402,147 @@ export default function VenueScreen() {
           </View>
         ) : null}
 
-        <InsideRail reels={thumbReels} onOpen={setViewerAt} />
-        <Rail title="Nearby" items={data.rails.nearby} size="compact" />
-        <Rail title="Next stop" sub="Where the night can go from here" items={data.rails.next_stop} size="medium" />
+        <InsideRail reels={thumbReels} onOpen={setViewerAt} photos={((v as any).photos || []).map((x: any) => x.url)} onPhoto={setPhotoAt} />
+        <Rail title="Next stop" items={data.rails.next_stop} size="medium"
+          sub={/cafe|coffee|bakery|bagel|breakfast|brunch|tea/i.test(`${(v as any).type || ''} ${(v as any).cuisine || ''}`) ? 'Where to go after' : 'Where the night can go from here'} />
 
         {v.latitude != null && v.longitude != null ? (
           <View style={[s.section, s.pad]}>
             <Text style={[s.h2, { marginBottom: 12 }]}>Location</Text>
-            <TouchableOpacity activeOpacity={0.9} onPress={directions} style={s.mapCard}>
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                <MapView provider={PROVIDER_DEFAULT} style={StyleSheet.absoluteFill} userInterfaceStyle="dark"
-                  scrollEnabled={false} zoomEnabled={false} pitchEnabled={false} rotateEnabled={false} toolbarEnabled={false}
-                  initialRegion={{ latitude: Number(v.latitude), longitude: Number(v.longitude), latitudeDelta: 0.006, longitudeDelta: 0.006 }}>
-                  <Marker coordinate={{ latitude: Number(v.latitude), longitude: Number(v.longitude) }}>
-                    <View style={s.pin} />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => { tap(); setMapOpen(true); }} accessibilityLabel="Open full map">
+              <View style={vm.inline}>
+                <MapView provider={PROVIDER_DEFAULT} style={StyleSheet.absoluteFill} userInterfaceStyle="dark" pointerEvents="none"
+                  scrollEnabled={false} zoomEnabled={false} rotateEnabled={false} pitchEnabled={false} toolbarEnabled={false}
+                  initialRegion={{ latitude: v.latitude as number, longitude: v.longitude as number, latitudeDelta: 0.006, longitudeDelta: 0.006 }}>
+                  <Marker coordinate={{ latitude: v.latitude as number, longitude: v.longitude as number }} anchor={{ x: 0.5, y: 1 }}>
+                    <VenuePin name={v.name} />
                   </Marker>
                 </MapView>
+                <View style={vm.expand} pointerEvents="none">
+                  <Ionicons name="expand" size={14} color={C.ivory} />
+                  <Text style={vm.expandText}>Explore map</Text>
+                </View>
               </View>
             </TouchableOpacity>
             <View style={s.addrRow}>
               <View style={{ flex: 1 }}>
                 <Text style={s.addr} numberOfLines={1}>{v.address?.split(',')[0] || v.name}</Text>
-                <Text style={s.meta} numberOfLines={1}>{[v.neighborhood, v.borough].filter(Boolean).join(', ')}</Text>
+                <Text style={s.meta} numberOfLines={1}>{Array.from(new Set([v.neighborhood, v.borough].filter(Boolean))).join(', ')}</Text>
               </View>
               <TouchableOpacity onPress={directions}><Text style={s.link}>Directions</Text></TouchableOpacity>
             </View>
           </View>
         ) : null}
 
-        <Rail title="Same feel" items={data.rails.same_feel} size="compact" />
+        {/* VBR_VENUE_MAP_V1: Same feel removed */}
       </Animated.ScrollView>
 
+      {mapOpen && v.latitude != null && v.longitude != null ? (
+        <VenueMapSheet v={v} nearby={data.rails.nearby} onClose={() => setMapOpen(false)} onDirections={directions} />
+      ) : null}
       {viewerAt !== null ? (
         <ReelViewer reels={thumbReels} start={viewerAt} handle={v.instagram_handle} onClose={() => setViewerAt(null)} />
+      ) : null}
+      {photoAt !== null ? (
+        <PhotoViewer photos={((v as any).photos || []).map((x: any) => x.url)} start={photoAt} onClose={() => setPhotoAt(null)} />
       ) : null}
     </View>
   );
 }
+
+// ── VBR_VENUE_MAP_V1: venue pin + full-screen map ──
+function VenuePin({ name, small }: { name?: string; small?: boolean }) {
+  if (small) return <View style={vm.dot} />;
+  return (
+    <View style={{ alignItems: 'center' }}>
+      {name ? <View style={vm.label}><Text style={vm.labelText} numberOfLines={1}>{name}</Text></View> : null}
+      <View style={vm.pin}><View style={vm.pinCore} /></View>
+    </View>
+  );
+}
+
+function etaText(mi: number | null | undefined) {
+  if (mi == null) return null;
+  if (mi <= 1) return `About ${Math.max(1, Math.round(mi * 20))} min walk`;
+  return `About ${Math.round(mi * 3 + 4)} min drive`;
+}
+
+function VenueMapSheet({ v, nearby, onClose, onDirections }: { v: any; nearby: any[]; onClose: () => void; onDirections: () => void }) {
+  const mapRef = useRef<MapView>(null);
+  const region = { latitude: v.latitude, longitude: v.longitude, latitudeDelta: 0.012, longitudeDelta: 0.012 };
+  const pins = (nearby || []).filter((c: any) => c && typeof c.latitude === 'number' && typeof c.longitude === 'number').slice(0, 12);
+  const eta = etaText(v.distance_from_you_mi);
+  const addr = v.address?.split(',')[0] || null;
+  const uber = () => {
+    tap();
+    const q = `action=setPickup&pickup=my_location&dropoff[latitude]=${v.latitude}&dropoff[longitude]=${v.longitude}&dropoff[nickname]=${encodeURIComponent(v.name)}`;
+    Linking.openURL(`https://m.uber.com/ul/?${q}`).catch(() => {});
+  };
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: C.ground }}>
+        <MapView ref={mapRef} provider={PROVIDER_DEFAULT} style={StyleSheet.absoluteFill} userInterfaceStyle="dark"
+          initialRegion={region} showsUserLocation showsCompass={false} showsPointsOfInterest>
+          {pins.map((c: any) => (
+            <Marker key={c.id} coordinate={{ latitude: c.latitude, longitude: c.longitude }} title={c.name} description={c.type}
+              onCalloutPress={() => { onClose(); router.push(`/venue/${c.id}` as any); }}>
+              <VenuePin small />
+            </Marker>
+          ))}
+          <Marker coordinate={{ latitude: v.latitude, longitude: v.longitude }} anchor={{ x: 0.5, y: 1 }} zIndex={10}>
+            <VenuePin name={v.name} />
+          </Marker>
+        </MapView>
+
+        <View style={vm.topRow}>
+          <TouchableOpacity style={vm.round} onPress={() => { tap(); onClose(); }} accessibilityLabel="Close map">
+            <Ionicons name="chevron-down" size={22} color={C.ivory} />
+          </TouchableOpacity>
+          <TouchableOpacity style={vm.round} onPress={() => { tap(); mapRef.current?.animateToRegion(region, 350); }} accessibilityLabel="Recenter">
+            <Ionicons name="locate" size={20} color={C.ivory} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={vm.bottom}>
+          <Text style={vm.bName} numberOfLines={1}>{v.name}</Text>
+          <Text style={vm.bMeta} numberOfLines={1}>{[addr, eta].filter(Boolean).join(' · ')}</Text>
+          <View style={vm.bRow}>
+            <TouchableOpacity style={vm.bPrimary} onPress={onDirections} activeOpacity={0.88}>
+              <Ionicons name="navigate" size={16} color={C.ink} />
+              <Text style={vm.bPrimaryText}>Directions</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={vm.bGhost} onPress={uber} activeOpacity={0.88}>
+              <Ionicons name="car" size={16} color={C.ivory} />
+              <Text style={vm.bGhostText}>Uber</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const vm = StyleSheet.create({
+  inline: { height: 190, borderRadius: 18, overflow: 'hidden', backgroundColor: C.raise },
+  expand: { position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(9,9,11,0.78)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.2)' },
+  expandText: { color: C.ivory, fontSize: 12, fontWeight: '600' },
+  label: { maxWidth: 180, paddingHorizontal: 10, height: 26, borderRadius: 13, justifyContent: 'center', backgroundColor: C.ivory, marginBottom: 4 },
+  labelText: { color: C.ink, fontSize: 12, fontWeight: '700' },
+  pin: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.champ, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.ivory },
+  pinCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ink },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: 'rgba(243,240,233,0.9)', borderWidth: 2, borderColor: '#000' },
+  topRow: { position: 'absolute', top: Platform.OS === 'ios' ? 58 : 30, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,20,23,0.92)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.18)' },
+  bottom: { position: 'absolute', left: 16, right: 16, bottom: Platform.OS === 'ios' ? 40 : 20, padding: 16, borderRadius: 20, backgroundColor: 'rgba(20,20,23,0.96)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.12)' },
+  bName: { color: C.ivory, fontSize: 19, fontWeight: '700', letterSpacing: -0.2 },
+  bMeta: { color: C.muted, fontSize: 14, marginTop: 3 },
+  bRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  bPrimary: { flex: 1, height: 46, borderRadius: 23, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ivory },
+  bPrimaryText: { color: C.ink, fontSize: 15, fontWeight: '700' },
+  bGhost: { width: 110, height: 46, borderRadius: 23, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.35)' },
+  bGhostText: { color: C.ivory, fontSize: 15, fontWeight: '600' },
+});
+
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.ground },

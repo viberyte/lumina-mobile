@@ -178,7 +178,7 @@ export default function PartnerCommandCenter() {
             <CommandCard icon="calendar" title="Bookings" subtitle="Tonight" gradient={['#142A20', '#0C1A14']} glowColor="rgba(34, 197, 94, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/bookings') : handleLockedFeature('Bookings', 'Viberyte Elite')} />
           </View>
           <View style={styles.cardRow}>
-            <CommandCard icon="sparkles" title="Events" subtitle="Manage" gradient={['#2A1428', '#1A0C1A']} glowColor="rgba(168, 85, 247, 0.1)" onPress={() => router.push('/partner/events')} />
+            <CommandCard icon="compass" title="Events" subtitle="Manage" gradient={['#2A1428', '#1A0C1A']} glowColor="rgba(168, 85, 247, 0.1)" onPress={() => router.push('/partner/events')} />
             <CommandCard icon="stats-chart" title="Stats" subtitle="Analytics" gradient={['#2A2414', '#1A180C']} glowColor="rgba(234, 179, 8, 0.1)" locked={!isElite} lockLabel="ELITE" onPress={() => isElite ? router.push('/partner/analytics') : handleLockedFeature('Analytics', 'Viberyte Elite')} />
           </View>
         </View>

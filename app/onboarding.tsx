@@ -1,787 +1,140 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-  Animated,
-  StatusBar,
-  BackHandler,
-  Platform,
-  ScrollView,
-} from 'react-native';
+// app/onboarding.tsx — Viberyte Welcome V1
+// One screen, one ask: location. No questionnaire. Taste is learned from what people save and open.
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, AccessibilityInfo, Linking, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useToast } from '../contexts/ToastContext';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const API_BASE = 'https://viberyte.com';
+const C = { bg: '#09090B', ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.6)', faint: 'rgba(243,240,233,0.35)', gold: '#C5A36B' };
 
-// Types
-type Gender = 'male' | 'female' | 'other';
-type AgeRange = '21-25' | '26-34' | '35-44' | '45+';
-type MusicGenre = 'hiphop' | 'latin' | 'afrobeats' | 'edm' | 'rnb' | 'house' | 'pop' | 'live' | 'reggae';
-type SceneType = 'straight' | 'lgbtq' | 'mixed';
-
-interface UserProfile {
-  user_id: number;
-  gender: Gender;
-  age_range: AgeRange;
-  music_preferences: MusicGenre[];
-  allowed_scenes: SceneType[];
-  voice_key: string;
-  onboarded_at: string;
+async function finish(router: ReturnType<typeof useRouter>) {
+  await AsyncStorage.multiSet([['@lumina_persona', 'completed'], ['@lumina_onboarded_at', new Date().toISOString()]]).catch(() => {});
+  router.replace('/(tabs)' as any);
 }
 
-const questions = [
-  {
-    id: 'gender',
-    title: 'First things first',
-    subtitle: 'Optional — helps us personalize your experience',
-    type: 'single',
-    options: [
-      { value: 'male', label: 'Man', emoji: '' },
-      { value: 'female', label: 'Woman', emoji: '' },
-      { value: 'other', label: 'Other', emoji: '' },
-    ],
-  },
-
-  {
-    id: 'music',
-    title: 'Your soundtrack',
-    subtitle: 'Pick a few — we\'ll find your scene',
-    type: 'multi',
-    options: [
-      { value: 'hiphop', label: 'Hip-Hop', icon: 'mic', color: '#f59e0b' },
-      { value: 'latin', label: 'Latin', icon: 'flame', color: '#ef4444' },
-      { value: 'afrobeats', label: 'Afrobeats', icon: 'globe', color: '#22c55e' },
-      { value: 'edm', label: 'EDM', icon: 'flash', color: '#3b82f6' },
-      { value: 'rnb', label: 'R&B', icon: 'heart', color: '#ec4899' },
-      { value: 'house', label: 'House', icon: 'radio', color: '#c5a36b' },
-      { value: 'pop', label: 'Pop', icon: 'star', color: '#f472b6' },
-      { value: 'live', label: 'Live / Jazz', icon: 'musical-notes', color: '#14b8a6' },
-      { value: 'reggae', label: 'Reggae', icon: 'musical-note', color: '#16a34a' },
-    ],
-  },
-
-
-  {
-    id: 'location',
-    title: "Find what's near you",
-    subtitle: "We'll show you the best spots close to you tonight",
-    type: 'location',
-    options: [],
-  },
-];
-
-export default function OnboardingScreen() {
+export default function Welcome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { showToast } = useToast();
-  const [step, setStep] = useState(0);
-  const [isBuilding, setIsBuilding] = useState(false);
-  const [buildingStage, setBuildingStage] = useState(0);
-  const isMounted = useRef(true);
-  
-  // Form state
-  const [gender, setGender] = useState<Gender | null>(null);
-  const [ageRange, setAgeRange] = useState<AgeRange | null>(null);
-  const [music, setMusic] = useState<MusicGenre[]>([]);
-  const [userLocation, setUserLocation] = useState<{city: string; lat: number; lng: number} | null>(null);
-  const [locationStatus, setLocationStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
-  const [scenes, setScenes] = useState<SceneType[]>([]);
-  
-  // Animations
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const buildingAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-
-  const buildingMessages = [
-    'Analyzing your vibe...',
-    'Finding your scenes...',
-    'Curating your nights...',
-    'Almost ready...',
-  ];
+  const [state, setState] = useState<'ask' | 'asking' | 'found' | 'denied'>('ask');
+  const [place, setPlace] = useState<string | null>(null);
+  const pulse = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    isMounted.current = true;
-    restoreProgress();
-    return () => { isMounted.current = false; };
+    Animated.timing(fade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+    AccessibilityInfo.isReduceMotionEnabled().then(reduce => {
+      if (reduce) return;
+      Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true })).start();
+    });
+    // Already allowed (reinstall, or asked elsewhere)? Don't ask twice.
+    Location.getForegroundPermissionsAsync().then(p => { if (p.granted) locate(); }).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (step > 0 && !isBuilding) {
-          handleGoBack();
-          return true;
-        }
-        return false;
-      });
-      return () => backHandler.remove();
-    }
-  }, [step, isBuilding]);
-
-  useEffect(() => {
-    if (!isBuilding) saveProgress();
-  }, [step, gender, ageRange, music, scenes]);
-
-  const restoreProgress = async () => {
+  const locate = async () => {
     try {
-      // Clear old progress if question count changed
-      const saved = await AsyncStorage.getItem('@lumina_onboarding_v3');
-      if (saved) {
-        const progress = JSON.parse(saved);
-        const startedAt = new Date(progress.started_at).getTime();
-        const hourAgo = Date.now() - (60 * 60 * 1000);
-        
-        if (startedAt > hourAgo) {
-          // Reset to 0 if saved step is out of bounds
-          const savedStep = progress.step || 0;
-          setStep(savedStep >= questions.length ? 0 : savedStep);
-          setGender(progress.gender);
-          setAgeRange(progress.age_range);
-          setMusic(progress.music || []);
-          setScenes(progress.scenes || []);
-        } else {
-          await AsyncStorage.removeItem('@lumina_onboarding_v3');
-        }
-      }
-    } catch (error) {
-      console.log('Could not restore progress');
-    }
+      // VBR_LOC_TIMEOUT: never hang the welcome screen — 8s max, then last known position, then just continue
+      const pos: any = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise(resolve => setTimeout(() => resolve(null), 8000)),
+      ]) || await Location.getLastKnownPositionAsync().catch(() => null);
+      if (!pos) return finish(router);
+      const { latitude: lat, longitude: lng } = pos.coords;
+      let city = '';
+      try {
+        const g = (await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }))[0];
+        city = g?.district || g?.city || g?.subregion || '';
+      } catch {}
+      await AsyncStorage.setItem('@lumina_location', JSON.stringify({ city, lat, lng })).catch(() => {});
+      setPlace(city || null); setState('found');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => finish(router), 1100);
+    } catch { finish(router); }
   };
 
-  const saveProgress = async () => {
-    try {
-      await AsyncStorage.setItem('@lumina_onboarding_v3', JSON.stringify({
-        step,
-        gender,
-        age_range: ageRange,
-        music,
-        scenes,
-        started_at: new Date().toISOString(),
-      }));
-    } catch (error) {
-      console.log('Could not save progress');
-    }
-  };
-
-  const handleRequestLocation = async () => {
-    setLocationStatus('requesting');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationStatus('denied');
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = loc.coords;
-      // Reverse geocode to get city
-      const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
-      const city = geo[0]?.city || geo[0]?.subregion || 'your city';
-      setUserLocation({ city, lat: latitude, lng: longitude });
-      setLocationStatus('granted');
-      await AsyncStorage.setItem('@lumina_location', JSON.stringify({ city, lat: latitude, lng: longitude }));
-      // Auto advance after short delay
-      setTimeout(() => {
-        if (step < questions.length - 1) {
-          animateToNextStep(step + 1);
-        } else {
-          finishOnboarding();
-        }
-      }, 800);
-    } catch (e) {
-      setLocationStatus('denied');
-    }
-  };
-
-  const animateToNextStep = (nextStep: number) => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: -30, duration: 150, useNativeDriver: true }),
-    ]).start(() => {
-      if (!isMounted.current) return;
-      setStep(nextStep);
-      slideAnim.setValue(30);
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, friction: 10, tension: 50, useNativeDriver: true }),
-      ]).start();
-    });
-  };
-
-  const animateToPreviousStep = (prevStep: number) => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 30, duration: 150, useNativeDriver: true }),
-    ]).start(() => {
-      if (!isMounted.current) return;
-      setStep(prevStep);
-      slideAnim.setValue(-30);
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, friction: 10, tension: 50, useNativeDriver: true }),
-      ]).start();
-    });
-  };
-
-  const handleGoBack = () => {
-    if (step > 0 && !isBuilding) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      animateToPreviousStep(step - 1);
-    }
-  };
-
-  const handleSingleSelect = async (questionId: string, value: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    if (questionId === 'gender') setGender(value as Gender);
-    else if (questionId === 'age') setAgeRange(value as AgeRange);
-    
-    await new Promise(r => setTimeout(r, 200));
-    
-    if (step < questions.length - 1) {
-      animateToNextStep(step + 1);
-    } else {
-      await finishOnboarding();
-    }
-  };
-
-  const handleMultiToggle = (questionId: string, value: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    if (questionId === 'music') {
-      setMusic(prev => 
-        prev.includes(value as MusicGenre) 
-          ? prev.filter(m => m !== value) 
-          : [...prev, value as MusicGenre]
-      );
-    } else if (questionId === 'scenes') {
-      setScenes(prev => 
-        prev.includes(value as SceneType) 
-          ? prev.filter(s => s !== value) 
-          : [...prev, value as SceneType]
-      );
-    }
-  };
-
-  const handleMultiContinue = async () => {
+  const allow = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    if (step < questions.length - 1) {
-      animateToNextStep(step + 1);
-    } else {
-      await finishOnboarding();
-    }
-  };
-
-  const handleSkip = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    if (step < questions.length - 1) {
-      animateToNextStep(step + 1);
-    } else {
-      await finishOnboarding();
-    }
-  };
-
-  const finishOnboarding = async () => {
-    setIsBuilding(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    Animated.timing(buildingAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-
-    const stageInterval = setInterval(() => {
-      setBuildingStage(prev => {
-        if (prev >= buildingMessages.length - 1) {
-          clearInterval(stageInterval);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 600);
-
-    const pulse = () => {
-      if (!isMounted.current) return;
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ]).start(() => isMounted.current && pulse());
-    };
-    pulse();
-
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: 2500,
-      useNativeDriver: false,
-    }).start();
-
+    setState('asking');
     try {
-      let userId = await AsyncStorage.getItem('@lumina_user_id');
-      if (!userId) {
-        userId = String(Date.now());
-        await AsyncStorage.setItem('@lumina_user_id', userId);
-      }
-
-      const finalGender = gender || 'other';
-      const finalAge = ageRange || '26-34';
-      const finalScenes: SceneType[] = scenes.length > 0 ? scenes : ['mixed'];
-
-      const response = await fetch(`${API_BASE}/api/onboarding`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: Number(userId),
-          gender: finalGender,
-          age_range: finalAge,
-          preferred_scenes: music.length > 0 ? music : null,
-          allowed_scenes: finalScenes,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success && data.profile) {
-        const profile: UserProfile = {
-          user_id: Number(userId),
-          gender: finalGender,
-          age_range: finalAge,
-          music_preferences: music,
-          allowed_scenes: finalScenes,
-          voice_key: data.profile.voice_key,
-          onboarded_at: new Date().toISOString(),
-        };
-        
-        await AsyncStorage.setItem('@lumina_profile', JSON.stringify(profile));
-        await AsyncStorage.setItem('@lumina_persona', 'completed');
-        await AsyncStorage.setItem('@lumina_voice_key', data.profile.voice_key);
-        await AsyncStorage.removeItem('@lumina_onboarding_v3');
-        
-        console.log('✅ Profile saved:', profile);
-      } else {
-        console.log('⚠️ Backend returned:', data);
-        await AsyncStorage.setItem('@lumina_user_id', userId);
-        await AsyncStorage.setItem('@lumina_persona', 'completed');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      clearInterval(stageInterval);
-
-      // CRITICAL FIX: Ensure AsyncStorage writes complete before navigation
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      if (isMounted.current) {
-        router.replace('/(tabs)');
-        setTimeout(() => {
-          showToast('Welcome to Viberyte', 'success');
-        }, 500);
-      }
-    } catch (error) {
-      console.error('Onboarding error:', error);
-      clearInterval(stageInterval);
-      
-      const userId = String(Date.now());
-      await AsyncStorage.setItem('@lumina_user_id', userId);
-      await AsyncStorage.setItem('@lumina_persona', 'completed');
-      await AsyncStorage.removeItem('@lumina_onboarding_v3');
-      
-      // CRITICAL FIX: Ensure AsyncStorage writes complete before navigation
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      if (isMounted.current) {
-        router.replace('/(tabs)');
-        showToast('Welcome to Viberyte', 'success');
-      }
-    }
+      const r = await Location.requestForegroundPermissionsAsync();
+      if (r.granted) return locate();
+      setState('denied');
+    } catch { setState('denied'); }
   };
 
-  const swipeGesture = Gesture.Pan()
-    .activeOffsetX(50)
-    .onEnd((event) => {
-      if (event.translationX > 100 && step > 0 && !isBuilding) {
-        handleGoBack();
-      }
-    });
-
-  const currentQuestion = questions[step] || questions[0];
-  
-  const getCurrentValue = () => {
-    if (currentQuestion.id === 'gender') return gender;
-    if (currentQuestion.id === 'age') return ageRange;
-    return null;
-  };
-  
-  const getCurrentMultiValue = (): string[] => {
-    if (currentQuestion.id === 'music') return music;
-    if (currentQuestion.id === 'scenes') return scenes;
-    return [];
-  };
-
-  const getMinSelection = () => {
-    if (currentQuestion.id === 'music') return 1;
-    if (currentQuestion.id === 'scenes') return 1;
-    return 0;
-  };
-
-  if (isBuilding) {
-    const progressWidth = progressAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['0%', '100%'],
-    });
-
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <LinearGradient
-          colors={['#0f0f14', '#09090b', '#0a0a10']}
-          style={StyleSheet.absoluteFill}
-        />
-        
-        <Animated.View 
-          style={[
-            styles.buildingContainer,
-            { opacity: buildingAnim, transform: [{ scale: pulseAnim }] }
-          ]}
-        >
-          <Text style={styles.buildingWordmark}>VIBERYTE</Text>
-          <Text style={styles.buildingSubtitle}>{buildingMessages[buildingStage]}</Text>
-        </Animated.View>
-      </View>
-    );
-  }
+  const ring = (delay: number) => ({
+    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
+    transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9 + delay] }) }],
+  });
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <LinearGradient
-          colors={['#0f0f14', '#09090b', '#0a0a10']}
-          style={StyleSheet.absoluteFill}
-        />
-        
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={handleGoBack}
-            disabled={step === 0}
-            activeOpacity={0.7}
-          >
-            {step > 0 && (
-              <Ionicons name="chevron-back" size={28} color="rgba(255,255,255,0.8)" />
-            )}
-          </TouchableOpacity>
-          
-          <View style={styles.progressContainer}>
-            {questions.map((_, i) => (
-              <View key={i} style={styles.progressDotWrapper}>
-                <View style={[
-                  styles.progressDot,
-                  i === step && styles.progressDotActive,
-                  i < step && styles.progressDotCompleted,
-                ]} />
-              </View>
-            ))}
-          </View>
-          
-          <View style={styles.backButton} />
+    <View style={[s.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
+      <Animated.View style={[s.center, { opacity: fade }]}>
+        <View style={s.iconWrap}>
+          <Animated.View style={[s.ring, ring(0)]} />
+          <Animated.View style={[s.ring, ring(0.5)]} />
+          <View style={s.icon}><Ionicons name={state === 'found' ? 'checkmark' : 'location'} size={30} color={C.bg} /></View>
         </View>
-        
-        <Animated.View 
-          style={[
-            styles.content,
-            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
-          ]}
-        >
-          <View style={styles.questionHeader}>
-            <Text style={styles.stepIndicator}>
-              {step + 1} of {questions.length}
-            </Text>
-            <Text style={styles.questionTitle}>{currentQuestion.title}</Text>
-            <Text style={styles.questionSubtitle}>{currentQuestion.subtitle}</Text>
-          </View>
-          
-          {currentQuestion.type === 'single' && (
-            <>
-            <View style={styles.optionsContainer}>
-              {currentQuestion.options.map((option: any) => {
-                const isSelected = getCurrentValue() === option.value;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[styles.optionButton, isSelected && styles.optionButtonSelected]}
-                    onPress={() => handleSingleSelect(currentQuestion.id, option.value)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.optionContent}>
-                      <View style={[styles.optionIcon, isSelected && styles.optionIconSelected]}>
-                        {option.emoji ? (
-                          <Text style={styles.optionEmoji}>{option.emoji}</Text>
-                        ) : (
-                          <Ionicons 
-                            name={option.icon} 
-                            size={24} 
-                            color={isSelected ? '#fff' : '#a1a1aa'} 
-                          />
-                        )}
-                      </View>
-                      <View style={styles.optionTextContainer}>
-                        <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
-                          {option.label}
-                        </Text>
-                        {option.subtitle && (
-                          <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                        )}
-                      </View>
-                      {isSelected && (
-                        <View style={styles.checkCircle}>
-                          <Ionicons name="checkmark" size={16} color="#fff" />
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {currentQuestion.id === 'gender' && (
-              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                <Text style={styles.skipText}>Skip</Text>
-              </TouchableOpacity>
-            )}
-            </>
-          )}
-          
-          {currentQuestion.type === 'multi' && (
-            <View style={styles.multiContainer}>
-              <ScrollView 
-                contentContainerStyle={styles.multiGrid}
-                showsVerticalScrollIndicator={false}
-              >
-                {currentQuestion.options.map((option: any) => {
-                  const isSelected = getCurrentMultiValue().includes(option.value);
-                  return (
-                    <TouchableOpacity
-                      key={option.value}
-                      style={[
-                        styles.multiChip,
-                        isSelected && { 
-                          borderColor: option.color, 
-                          backgroundColor: option.color + '15',
-                        },
-                      ]}
-                      onPress={() => handleMultiToggle(currentQuestion.id, option.value)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons 
-                        name={option.icon} 
-                        size={18} 
-                        color={isSelected ? option.color : '#6b7280'} 
-                      />
-                      <Text style={[
-                        styles.multiChipText,
-                        isSelected && { color: option.color, fontWeight: '600' },
-                      ]}>
-                        {option.label}
-                      </Text>
-                      {isSelected && (
-                        <View style={[styles.multiCheck, { backgroundColor: option.color }]}>
-                          <Ionicons name="checkmark" size={10} color="#fff" />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-              
-              <TouchableOpacity
-                style={[
-                  styles.continueButton, 
-                  getCurrentMultiValue().length < getMinSelection() && styles.continueButtonDisabled
-                ]}
-                onPress={handleMultiContinue}
-                disabled={getCurrentMultiValue().length < getMinSelection()}
-                activeOpacity={0.9}
-              >
-                <LinearGradient
-                  colors={getCurrentMultiValue().length >= getMinSelection() 
-                    ? ['#ffffff', '#f0f0f0'] 
-                    : ['#1f1f1f', '#161616']}
-                  style={styles.continueGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={[
-                    styles.continueText, 
-                    getCurrentMultiValue().length < getMinSelection() && { opacity: 0.3 },
-                    getCurrentMultiValue().length >= getMinSelection() && { color: '#000' }
-                  ]}>
-                    {getCurrentMultiValue().length < getMinSelection() 
-                      ? 'Select at least one' 
-                      : 'Continue'}
-                  </Text>
-                  {getCurrentMultiValue().length >= getMinSelection() && (
-                    <Ionicons name="arrow-forward" size={20} color="#fff" />
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                <Text style={styles.skipText}>Skip for now</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {currentQuestion.type === 'location' && (
-            <View style={styles.locationContainer}>
-              {locationStatus === 'idle' && (
-                <>
-                  <View style={styles.locationIconWrap}>
-                    <Ionicons name="location" size={48} color="#c5a36b" />
-                  </View>
-                  <Text style={styles.locationHint}>
-                    We use your location to surface the best venues and events happening near you right now.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.locationButton}
-                    onPress={handleRequestLocation}
-                    activeOpacity={0.9}
-                  >
-                    <LinearGradient
-                      colors={['#8c6d3f', '#7a5e34']}
-                      style={styles.continueGradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Ionicons name="location-outline" size={20} color="#fff" />
-                      <Text style={styles.continueText}>Continue</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </>
-              )}
-              {locationStatus === 'requesting' && (
-                <View style={styles.locationIconWrap}>
-                  <Ionicons name="location" size={48} color="#c5a36b" />
-                  <Text style={styles.locationHint}>Finding your location...</Text>
-                </View>
-              )}
-              {locationStatus === 'granted' && userLocation && (
-                <View style={styles.locationGranted}>
-                  <Ionicons name="checkmark-circle" size={56} color="#22c55e" />
-                  <Text style={styles.locationCity}>{userLocation.city}</Text>
-                  <Text style={styles.locationHint}>We've got you covered</Text>
-                </View>
-              )}
-              {locationStatus === 'denied' && (
-                <>
-                  <Text style={styles.locationHint}>No worries — you can enable this later in Settings.</Text>
-                  <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                    <Text style={styles.skipText}>Continue anyway</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-        </Animated.View>
+
+        {state === 'found' ? (
+          <>
+            <Text style={s.title}>{place ? `Tonight in ${place}` : 'You’re all set'}</Text>
+            <Text style={s.body}>Pulling up what’s good around you…</Text>
+          </>
+        ) : state === 'denied' ? (
+          <>
+            <Text style={s.title}>No problem</Text>
+            <Text style={s.body}>You can still explore every neighborhood on the map. Turn on location anytime in Settings to see what’s closest.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.kicker}>VIBERYTE</Text>
+            <Text style={s.title}>See what’s good{'\n'}near you</Text>
+            <Text style={s.body}>We use your location only to show the spots, reels and nights closest to you. We never sell it or share it with venues.</Text>
+          </>
+        )}
+      </Animated.View>
+
+      <View style={s.actions}>
+        {state === 'denied' ? (
+          <>
+            <TouchableOpacity style={s.primary} onPress={() => finish(router)} activeOpacity={0.85}>
+              <Text style={s.primaryText}>Start exploring</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.secondary} onPress={() => Linking.openSettings()} hitSlop={10}>
+              <Text style={s.secondaryText}>Open Settings</Text>
+            </TouchableOpacity>
+          </>
+        ) : state === 'found' ? null : (
+          <>
+            <TouchableOpacity style={s.primary} onPress={allow} disabled={state === 'asking'} activeOpacity={0.85} accessibilityLabel="Allow location">
+              {state === 'asking' ? <ActivityIndicator color={C.bg} /> : <Text style={s.primaryText}>Allow location</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={s.secondary} onPress={() => { Haptics.selectionAsync(); finish(router); }} hitSlop={10}>
+              <Text style={s.secondaryText}>Not now</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
-    </GestureDetector>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
-  backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  progressContainer: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  progressDotWrapper: { padding: 4 },
-  progressDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)' },
-  progressDotActive: { width: 22, height: 6, borderRadius: 3, backgroundColor: '#fff' },
-  progressDotCompleted: { backgroundColor: 'rgba(255,255,255,0.35)' },
-  content: { flex: 1, paddingHorizontal: 28, paddingTop: 12 },
-  questionHeader: { marginBottom: 44 },
-  stepIndicator: { fontSize: 12, fontWeight: '400', color: 'rgba(255,255,255,0.25)', letterSpacing: 1, marginBottom: 16 },
-  questionTitle: { fontSize: 38, fontWeight: '700', color: '#fff', marginBottom: 10, letterSpacing: -1, lineHeight: 44 },
-  questionSubtitle: { fontSize: 16, color: 'rgba(255,255,255,0.4)', lineHeight: 22, fontWeight: '400' },
-  optionsContainer: { gap: 12 },
-  optionButton: { borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
-  optionButtonSelected: { borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.08)' },
-  optionContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
-  optionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
-  optionIconSelected: { backgroundColor: '#8c6d3f' },
-  optionEmoji: { fontSize: 24 },
-  optionTextContainer: { flex: 1 },
-  optionLabel: { fontSize: 17, fontWeight: '600', color: '#a1a1aa' },
-  optionLabelSelected: { color: '#fff' },
-  optionSubtitle: { fontSize: 13, color: '#52525b', marginTop: 2 },
-  checkCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#8c6d3f', justifyContent: 'center', alignItems: 'center' },
-  multiContainer: { flex: 1 },
-  multiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20 },
-  multiChip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)', gap: 8 },
-  multiChipText: { fontSize: 14, fontWeight: '500', color: '#6b7280' },
-  multiCheck: { width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginLeft: 2 },
-  continueButton: { marginTop: 20, borderRadius: 14, overflow: 'hidden' },
-  continueButtonDisabled: { opacity: 0.7 },
-  continueGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
-  continueText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  skipButton: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  locationContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 24,
-  },
-  locationIcon: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  locationButton: {
-    width: '100%',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  locationHint: {
-    fontSize: 15,
-    color: '#71717a',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  locationCity: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
-  locationGranted: {
-    alignItems: 'center',
-    gap: 12,
-  },
-  skipText: { fontSize: 14, color: '#52525b', fontWeight: '500' },
-  buildingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  orbContainer: { position: 'relative', marginBottom: 32 },
-  buildingOrb: { width: 100, height: 100, borderRadius: 50 },
-  orbGlow: { position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, borderRadius: 70, backgroundColor: '#c5a36b', opacity: 0.15 },
-  buildingWordmark: {
-    fontSize: 28,
-    fontWeight: '300',
-    color: '#ffffff',
-    letterSpacing: 8,
-    marginBottom: 16,
-  },
-  buildingTitle: { fontSize: 26, fontWeight: '700', color: '#fff', letterSpacing: -0.5, marginBottom: 8 },
-  buildingSubtitle: { fontSize: 16, color: '#71717a', marginBottom: 32 },
-  progressBarContainer: { width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: 2 },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 28, justifyContent: 'space-between' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  iconWrap: { width: 120, height: 120, alignItems: 'center', justifyContent: 'center', marginBottom: 36 },
+  ring: { position: 'absolute', width: 72, height: 72, borderRadius: 36, borderWidth: 1.5, borderColor: C.gold },
+  icon: { width: 72, height: 72, borderRadius: 36, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
+  kicker: { color: C.gold, fontSize: 12, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
+  title: { color: C.ivory, fontSize: 32, fontWeight: '700', letterSpacing: -0.6, textAlign: 'center', lineHeight: 38, marginBottom: 14 },
+  body: { color: C.dim, fontSize: 16, lineHeight: 23, textAlign: 'center', maxWidth: 320 },
+  actions: { gap: 8 },
+  primary: { height: 56, borderRadius: 28, backgroundColor: C.ivory, alignItems: 'center', justifyContent: 'center' },
+  primaryText: { color: C.bg, fontSize: 17, fontWeight: '600' },
+  secondary: { height: 48, alignItems: 'center', justifyContent: 'center' },
+  secondaryText: { color: C.faint, fontSize: 15, fontWeight: '500' },
 });

@@ -441,11 +441,11 @@ export default function EventDetailScreen() {
           )}
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleShare(); }}
             activeOpacity={0.8}
           >
-            <Ionicons name="add" size={18} color="#c5a36b" />
-            <Text style={styles.secondaryButtonText}>Add to Plan</Text>
+            <Ionicons name="share-outline" size={18} color="#c5a36b" />
+            <Text style={styles.secondaryButtonText}>Share</Text>
           </TouchableOpacity>
         </View>
 
@@ -604,11 +604,11 @@ export default function EventDetailScreen() {
         ) : (
           <TouchableOpacity
             style={styles.bottomPrimary}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAddToPlan(true); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleShare(); }}
             activeOpacity={0.9}
           >
             <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={styles.bottomPrimaryText}>Add to Plan</Text>
+              <Text style={styles.bottomPrimaryText}>Share Event</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}

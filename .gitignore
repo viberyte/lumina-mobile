@@ -44,3 +44,4 @@ app-example
 
 # Local Netlify folder
 .netlify
+.vbr_backups/

@@ -253,7 +253,7 @@ export default function PlanDetailScreen() {
 
       {item.origin === 'ai' && (
         <View style={styles.aiBadge}>
-          <Ionicons name="sparkles" size={12} color={colors.accent} />
+          <Ionicons name="compass" size={12} color={colors.accent} />
         </View>
       )}
 

@@ -163,7 +163,7 @@ export default function MultiStopModal({
           {/* Reasoning */}
           <View style={styles.reasoningContainer}>
             <View style={styles.reasoningHeader}>
-              <Ionicons name="sparkles" size={14} color={colors.violet[400]} />
+              <Ionicons name="compass" size={14} color={colors.violet[400]} />
               <Text style={styles.reasoningTitle}>Why This Works</Text>
             </View>
             <Text style={styles.reasoningText}>{option.reasoning}</Text>
@@ -242,7 +242,7 @@ export default function MultiStopModal({
               {renderVibeCard(
                 'elevated',
                 elevated,
-                'sparkles',
+                'compass',
                 ' ELEVATED',
                 'Fun but refined, good vibes',
                 [colors.violet[600] + '40', colors.violet[700] + '20']

@@ -560,7 +560,7 @@ export default function PlanScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.ctaGradient}
             >
-              <Ionicons name="sparkles" size={22} color="#fff" />
+              <Ionicons name="compass" size={22} color="#fff" />
               <Text style={styles.ctaText}>Start The Night</Text>
             </LinearGradient>
           </TouchableOpacity>

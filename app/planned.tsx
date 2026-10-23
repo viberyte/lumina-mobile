@@ -116,7 +116,7 @@ export default function PlannedScreen() {
           onPressOut={handlePressOut}
           activeOpacity={1}
         >
-          <Ionicons name="sparkles" size={16} color="#fff" />
+          <Ionicons name="compass" size={16} color="#fff" />
         </TouchableOpacity>
       </Animated.View>
     );
@@ -236,7 +236,7 @@ export default function PlannedScreen() {
                   });
                 }}
               >
-                <Ionicons name="sparkles" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="compass" size={20} color="#fff" style={{ marginRight: 8 }} />
                 <Text style={styles.buildNightText}>Build My Night</Text>
               </TouchableOpacity>
             )}

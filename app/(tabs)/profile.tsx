@@ -54,7 +54,7 @@ export default function ProfileScreen() {
     try {
       // Token is the ONLY source of truth for auth
       const token = await AsyncStorage.getItem('@lumina_auth_token');
-      setIsLoggedIn(!!token);
+      setIsLoggedIn(!!token && token !== 'guest_token' && (await AsyncStorage.getItem('@lumina_is_guest')) !== 'true');
       
       // No token = no partner access, ever
       if (!token) {
@@ -146,7 +146,7 @@ export default function ProfileScreen() {
 
   const loadFavoritesCount = async () => {
     try {
-      const favorites = await AsyncStorage.getItem('lumina_favorites');
+      const favorites = await AsyncStorage.getItem('@lumina_favorites');
       if (favorites) {
         const parsed = JSON.parse(favorites);
         setSavedVenuesCount(Array.isArray(parsed) ? parsed.length : 0);
@@ -314,12 +314,13 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/trips'); }} activeOpacity={0.7}>
+          {/* VBR_HIDE_PLANS: My Plans hidden until the plans server is rebuilt */}
+          {false && <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/trips'); }} activeOpacity={0.7}>
             <Ionicons name="airplane-outline" size={20} color={colors.zinc[500]} />
             <Text style={styles.rowText}>My Plans</Text>
             {tripsCount > 0 && <Text style={styles.rowCount}>{tripsCount}</Text>}
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
-          </TouchableOpacity>
+          </TouchableOpacity>}
         </View>
 
         {/* Preferences */}
@@ -332,13 +333,14 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/my-vibe"); }} activeOpacity={0.7}>
-            <Ionicons name="sparkles-outline" size={20} color={colors.lux.champagne} />
+          {/* VBR_HIDE_MYVIBE: hidden until preferences are saved + used for real */}
+          {false && <TouchableOpacity style={styles.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/my-vibe"); }} activeOpacity={0.7}>
+            <Ionicons name="pulse-outline" size={20} color={colors.lux.champagne} />
             <Text style={styles.rowText}>My Vibe</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
-          </TouchableOpacity>
+          </TouchableOpacity>}
 
-          <TouchableOpacity style={styles.row} onPress={async () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); try { await Share.share({ message: 'Check out Viberyte - the nightlife concierge.\n\nhttps://apps.apple.com/app/lumina' }); } catch (error) {} }} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.row} onPress={async () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); try { await Share.share({ message: 'Find your next spot on Viberyte.\n\nhttps://viberyte.com' }); } catch (error) {} }} activeOpacity={0.7}>
             <Ionicons name="paper-plane-outline" size={20} color={colors.zinc[600]} />
             <Text style={styles.rowTextMuted}>Share Viberyte</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.zinc[700]} />
@@ -346,7 +348,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Partner Section - Only show if IS a partner AND logged in */}
-        {isPartner && (
+        {false /* VBR_NO_PARTNER: consumer-only */ && isPartner && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Partner Tools</Text>
             

@@ -1,133 +1,185 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
+// app/settings.tsx — Viberyte Settings V1
+// Consumer-only. Guest-aware. Every row does something real; permissions open iOS Settings.
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Share, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Linking } from 'react-native';
-import { colors, typography } from '../theme';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
+
+const C = {
+  bg: '#09090B', card: 'rgba(243,240,233,0.04)', line: 'rgba(243,240,233,0.08)',
+  ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.55)', faint: 'rgba(243,240,233,0.32)',
+  gold: '#C5A36B', red: '#E5484D',
+};
+const SITE = 'https://viberyte.com';
+const SUPPORT = 'info@viberyte.com';
+const AUTH_KEYS = ['@lumina_auth_token', '@lumina_user', '@lumina_user_id', '@lumina_is_guest', '@lumina_profile', 'lumina_partner_session'];
+
+type Perm = 'on' | 'off' | 'ask' | '…';
+const permLabel = (p: Perm) => (p === 'on' ? 'On' : p === 'off' ? 'Off' : p === 'ask' ? 'Not set' : '…');
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [signedIn, setSignedIn] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
+  const [loc, setLoc] = useState<Perm>('…');
+  const [notif, setNotif] = useState<Perm>('…');
+  const [busy, setBusy] = useState(false);
+  const version = Constants.expoConfig?.version || '';
 
-  const handleDeleteAccount = async () => {
-    Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const token = await AsyncStorage.getItem('@lumina_auth_token');
-              if (token) {
-                await fetch('https://viberyte.com/api/user/delete-account', {
-                  method: 'DELETE',
-                  headers: { 'Authorization': `Bearer ${token}` },
-                });
-              }
-              await AsyncStorage.clear();
-              router.replace('/login');
-            } catch (e) {
-              Alert.alert('Error', 'Failed to delete account. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+  const load = useCallback(async () => {
+    try {
+      const [token, guest, userRaw, profRaw] = await Promise.all([
+        AsyncStorage.getItem('@lumina_auth_token'), AsyncStorage.getItem('@lumina_is_guest'),
+        AsyncStorage.getItem('@lumina_user'), AsyncStorage.getItem('@lumina_profile'),
+      ]);
+      const isIn = !!token && token !== 'guest_token' && guest !== 'true';
+      setSignedIn(isIn);
+      let e: string | null = null;
+      for (const raw of [userRaw, profRaw]) { try { const o = JSON.parse(raw || 'null'); if (o?.email) { e = o.email; break; } } catch {} }
+      setEmail(isIn ? e : null);
+    } catch {}
+    try {
+      const l = await Location.getForegroundPermissionsAsync();
+      setLoc(l.granted ? 'on' : l.canAskAgain && l.status === 'undetermined' ? 'ask' : 'off');
+    } catch { setLoc('off'); }
+    try {
+      const n = await Notifications.getPermissionsAsync();
+      setNotif(n.granted ? 'on' : n.canAskAgain && n.status === 'undetermined' ? 'ask' : 'off');
+    } catch { setNotif('off'); }
+  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const tap = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const open = (url: string) => { tap(); Linking.openURL(url).catch(() => Alert.alert('Could not open link', url)); };
+
+  const handleLocation = async () => {
+    tap();
+    if (loc === 'ask') {
+      const r = await Location.requestForegroundPermissionsAsync().catch(() => null);
+      setLoc(r?.granted ? 'on' : 'off');
+    } else Linking.openSettings();
+  };
+  const handleNotifications = async () => {
+    tap();
+    if (notif === 'ask') {
+      const r = await Notifications.requestPermissionsAsync().catch(() => null);
+      setNotif(r?.granted ? 'on' : 'off');
+    } else Linking.openSettings();
   };
 
-  const handleSignOut = async () => {
-    Alert.alert('Sign Out', 'Are you sure?', [
+  const signOut = () => {
+    Alert.alert('Sign out?', 'Your saved spots stay on this phone.', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove([
-            '@lumina_auth_token',
-            '@lumina_refresh_token',
-            '@lumina_user_profile',
-          ]);
-          router.replace('/login');
-        },
-      },
+      { text: 'Sign Out', style: 'destructive', onPress: async () => {
+        await AsyncStorage.multiRemove(AUTH_KEYS).catch(() => {});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.replace('/(tabs)' as any);
+      } },
     ]);
   };
 
-  const Row = ({ icon, label, onPress, destructive, value }: any) => (
-    <TouchableOpacity style={s.row} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress?.(); }} activeOpacity={0.7}>
-      <Ionicons name={icon} size={20} color={destructive ? '#ef4444' : colors.zinc[400]} />
-      <Text style={[s.rowLabel, destructive && { color: '#ef4444' }]}>{label}</Text>
-      {value ? <Text style={s.rowValue}>{value}</Text> : <Ionicons name="chevron-forward" size={16} color={colors.zinc[600]} />}
+  const deleteAccount = () => {
+    Alert.alert('Delete account?', 'This permanently deletes your Viberyte account and profile. This can’t be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        setBusy(true);
+        try {
+          const token = await AsyncStorage.getItem('@lumina_auth_token');
+          const res = await fetch(`${SITE}/api/user/delete-account`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+          if (!res.ok) throw new Error(String(res.status));
+          await AsyncStorage.clear();
+          router.replace('/(tabs)' as any);
+        } catch {
+          Alert.alert('Couldn’t delete right now', `Please try again, or email ${SUPPORT} and we’ll delete it for you.`);
+        } finally { setBusy(false); }
+      } },
+    ]);
+  };
+
+  const Row = ({ icon, label, value, onPress, danger, last }: { icon: any; label: string; value?: string; onPress?: () => void; danger?: boolean; last?: boolean }) => (
+    <TouchableOpacity style={[s.row, !last && s.rowLine]} onPress={onPress} disabled={!onPress} activeOpacity={0.7} accessibilityRole={onPress ? 'button' : 'text'}>
+      <Ionicons name={icon} size={19} color={danger ? C.red : C.gold} style={{ width: 26 }} />
+      <Text style={[s.rowLabel, danger && { color: C.red }]} numberOfLines={1}>{label}</Text>
+      {!!value && <Text style={s.rowValue} numberOfLines={1}>{value}</Text>}
+      {onPress && !danger && <Ionicons name="chevron-forward" size={15} color={C.faint} />}
     </TouchableOpacity>
+  );
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      <View style={s.card}>{children}</View>
+    </View>
   );
 
   return (
-    <View style={[s.container, { paddingTop: insets.top }]}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
+    <View style={s.container}>
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)' as any))} hitSlop={12} style={s.back} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={24} color={C.ivory} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Settings</Text>
-        <View style={{ width: 40 }} />
+        <Text style={s.title}>Settings</Text>
+        <View style={s.back} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={s.sectionLabel}>ACCOUNT</Text>
-        <View style={s.section}>
-          <Row icon="mail-outline" label="Email" onPress={() => {}} />
-          <View style={s.divider} />
-          <Row icon="lock-closed-outline" label="Change Password" onPress={() => {}} />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+        <Section title="Account">
+          {signedIn ? (
+            <>
+              <Row icon="mail-outline" label="Email" value={email || 'Signed in'} />
+              <Row icon="log-out-outline" label="Sign Out" onPress={signOut} last />
+            </>
+          ) : (
+            <Row icon="person-add-outline" label="Create a profile" value="Keep your spots on any device" onPress={() => { tap(); router.push('/login' as any); }} last />
+          )}
+        </Section>
 
-        <Text style={s.sectionLabel}>PREFERENCES</Text>
-        <View style={s.section}>
-          <Row icon="notifications-outline" label="Notifications" onPress={() => router.push('/notifications' as any)} />
-          <View style={s.divider} />
-          <Row icon="sparkles-outline" label="My Vibe" onPress={() => router.push('/my-vibe' as any)} />
-        </View>
+        <Section title="Preferences">
+          {/* VBR_HIDE_MYVIBE */}
+          <Row icon="location-outline" label="Location" value={permLabel(loc)} onPress={handleLocation} />
+          <Row icon="notifications-outline" label="Notifications" value={permLabel(notif)} onPress={handleNotifications} last />
+        </Section>
 
-        <Text style={s.sectionLabel}>PRIVACY & LEGAL</Text>
-        <View style={s.section}>
-          <Row icon="shield-outline" label="Privacy Policy" onPress={() => Linking.openURL('https://viberyte.com/privacy')} />
-          <View style={s.divider} />
-          <Row icon="document-text-outline" label="Terms of Service" onPress={() => Linking.openURL('https://viberyte.com/terms')} />
-        </View>
+        <Section title="Support">
+          <Row icon="chatbubble-ellipses-outline" label="Contact us" value={SUPPORT} onPress={() => open(`mailto:${SUPPORT}?subject=Viberyte%20app%20${version}`)} />
+          <Row icon="paper-plane-outline" label="Share Viberyte" onPress={async () => { tap(); try { await Share.share({ message: `Find your next spot on Viberyte\n${SITE}` }); } catch {} }} last />
+        </Section>
 
-        <Text style={s.sectionLabel}>DANGER ZONE</Text>
-        <View style={s.section}>
-          <Row icon="log-out-outline" label="Sign Out" onPress={handleSignOut} destructive />
-          <View style={s.divider} />
-          <Row icon="trash-outline" label="Delete Account" onPress={handleDeleteAccount} destructive />
-        </View>
+        <Section title="Legal">
+          <Row icon="shield-checkmark-outline" label="Privacy Policy" onPress={() => open(`${SITE}/privacy`)} />
+          <Row icon="document-text-outline" label="Terms of Service" onPress={() => open(`${SITE}/terms`)} last />
+        </Section>
 
-        <View style={{ height: 60 }} />
+        {signedIn && (
+          <Section title="Danger zone">
+            {busy ? <View style={[s.row, { justifyContent: 'center' }]}><ActivityIndicator color={C.red} /></View>
+                  : <Row icon="trash-outline" label="Delete Account" onPress={deleteAccount} danger last />}
+          </Section>
+        )}
+
+        <Text style={s.footer}>Viberyte{version ? ` · v${version}` : ''}</Text>
       </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090b' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
-  backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  sectionLabel: { color: colors.zinc[500], fontSize: 11, fontWeight: '600', letterSpacing: 0.8, paddingHorizontal: 16, paddingTop: 24, paddingBottom: 8 },
-  section: { backgroundColor: '#18181b', marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  rowLabel: { flex: 1, color: '#fff', fontSize: 15 },
-  rowValue: { color: colors.zinc[500], fontSize: 14 },
-  divider: { height: 0.5, backgroundColor: colors.zinc[800], marginLeft: 48 },
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8 },
+  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { color: C.ivory, fontSize: 17, fontWeight: '600', letterSpacing: 0.3 },
+  section: { marginTop: 22 },
+  sectionTitle: { color: C.gold, fontSize: 12, fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
+  card: { borderRadius: 14, backgroundColor: C.card, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, minHeight: 52 },
+  rowLine: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  rowLabel: { color: C.ivory, fontSize: 15, fontWeight: '500', flexShrink: 0 },
+  rowValue: { color: C.dim, fontSize: 14, flex: 1, textAlign: 'right' },
+  footer: { color: C.faint, fontSize: 12, textAlign: 'center', marginTop: 28 },
 });

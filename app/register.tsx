@@ -1,455 +1,116 @@
-import React, { useState, useEffect, useRef } from 'react';
+// VBR_REGISTER_V2: black & white, matches the sign-in sheet. One path (create account); partners get a quiet link.
+// No promises the app doesn't keep. iOS suggests a strong password + autofills name/email.
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
-  Animated,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Animated, ScrollView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import authService from '../services/auth';
-import { colors, spacing } from '../theme';
 
-type UserRole = 'member' | 'partner';
+const C = { bg: '#050508', field: '#141416', line: 'rgba(255,255,255,0.08)', focus: 'rgba(255,255,255,0.35)', ivory: '#F3F0E9', muted: 'rgba(243,240,233,0.55)', faint: 'rgba(243,240,233,0.32)', err: '#fb7185' };
+const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
 export default function RegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [role, setRole] = useState<UserRole>('member');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [show, setShow] = useState(false);
+  const [focus, setFocus] = useState<string | null>(null);
+  const [tried, setTried] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  
-  // Partner-specific fields
-  const [businessName, setBusinessName] = useState('');
-  const [instagramHandle, setInstagramHandle] = useState('');
-  const [partnerRole, setPartnerRole] = useState<'venue_owner' | 'promoter' | 'staff'>('promoter');
-  
-  // Inline validation errors
-  const [nameError, setNameError] = useState('');
-  const [emailError, setEmailError] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [confirmError, setConfirmError] = useState('');
-  const [businessError, setBusinessError] = useState('');
+  const emailRef = useRef<TextInput>(null);
+  const passRef = useRef<TextInput>(null);
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => { Animated.timing(fade, { toValue: 1, duration: 450, useNativeDriver: true }).start(); }, []);
 
-  // Animations - quieter, more confident
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const glowAnim = useRef(new Animated.Value(0.1)).current;
-  const toggleAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, damping: 20, stiffness: 90, useNativeDriver: true }),
-    ]).start();
-
-    // Quieter glow: 0.1 → 0.18 → settle at 0.12
-    Animated.sequence([
-      Animated.timing(glowAnim, { toValue: 0.18, duration: 800, useNativeDriver: true }),
-      Animated.timing(glowAnim, { toValue: 0.12, duration: 1200, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
-  // Calmer toggle animation - less bouncy, more confident
-  useEffect(() => {
-    Animated.spring(toggleAnim, {
-      toValue: role === 'member' ? 0 : 1,
-      damping: 25,
-      stiffness: 160,
-      useNativeDriver: false,
-    }).start();
-  }, [role]);
-
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const errs = {
+    name: !name.trim() ? 'Add your name' : '',
+    email: !validEmail(email) ? 'Enter a valid email' : '',
+    password: password.length < 8 ? 'Use at least 8 characters' : '',
   };
+  const valid = !errs.name && !errs.email && !errs.password;
 
-  // Real-time validation
-  const isMemberValid = 
-    name.trim().length > 0 && 
-    validateEmail(email) && 
-    password.length >= 8 && 
-    password === confirmPassword;
-
-  const isPartnerValid = 
-    isMemberValid && 
-    businessName.trim().length > 0;
-
-  const isValid = role === 'member' ? isMemberValid : isPartnerValid;
-
-  // Clear errors as user types
-  useEffect(() => { if (name.trim()) setNameError(''); }, [name]);
-  useEffect(() => { if (validateEmail(email) || email === '') setEmailError(''); }, [email]);
-  useEffect(() => { if (password.length >= 8 || password === '') setPasswordError(''); }, [password]);
-  useEffect(() => { if (password === confirmPassword || confirmPassword === '') setConfirmError(''); }, [password, confirmPassword]);
-  useEffect(() => { if (businessName.trim()) setBusinessError(''); }, [businessName]);
-
-  // Dynamic "listening line" based on context
-  const getListeningLine = () => {
-    if (role === 'member') {
-      return "We'll personalize recommendations just for you";
-    }
-    switch (partnerRole) {
-      case 'venue_owner':
-        return "We'll help bring the right crowd to your venue";
-      case 'promoter':
-        return "We'll help you promote events to the right audience";
-      case 'staff':
-        return "We'll help you manage your presence";
-      default:
-        return "We'll help grow your business";
-    }
-  };
-
-  // Partner role context hint
-  const getRoleHint = () => {
-    switch (partnerRole) {
-      case 'venue_owner':
-        return 'Manage your venue profile and bookings';
-      case 'promoter':
-        return 'Post events and reach new guests';
-      case 'staff':
-        return 'Help manage listings and requests';
-      default:
-        return '';
-    }
-  };
-
-  const handleRegister = async () => {
-    let hasError = false;
-
-    if (!name.trim()) { setNameError('Please enter your name'); hasError = true; }
-    if (!validateEmail(email)) { setEmailError('Please enter a valid email'); hasError = true; }
-    if (password.length < 8) { setPasswordError('Password needs 8+ characters'); hasError = true; }
-    if (password !== confirmPassword) { setConfirmError('Passwords don\'t match'); hasError = true; }
-    if (role === 'partner' && !businessName.trim()) { setBusinessError('Please enter your business name'); hasError = true; }
-
-    if (hasError) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
-    }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const submit = async () => {
+    setTried(true);
+    if (!valid) { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); return; }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setLoading(true);
-
     try {
-      await authService.signUpWithEmail(email, password, name, {
-        role,
-        ...(role === 'partner' && {
-          businessName,
-          instagramHandle: instagramHandle.replace('@', ''),
-          partnerRole,
-        }),
-      });
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      // Thoughtful pause before navigation
-      setTimeout(() => {
-        if (role === 'partner') {
-          router.replace('/partner');
-        } else {
-          router.replace('/onboarding');
-        }
-      }, 400);
-    } catch (error: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Something went wrong', error.message);
-    } finally {
-      setLoading(false);
-    }
+      await authService.signUpWithEmail(email.trim(), password, name.trim(), { role: 'member' });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      router.replace('/onboarding');
+    } catch (e: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('Couldn’t create your account', e?.message || 'Please try again.');
+    } finally { setLoading(false); }
   };
 
-  const handleRoleChange = (newRole: UserRole) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (newRole === 'partner') {
-      router.push('/partner');
-      return;
-    }
-    setRole(newRole);
-  };
-
-  const toggleSlide = toggleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['2%', '50%'],
-  });
+  const field = (key: 'name' | 'email' | 'password', el: React.ReactNode) => (
+    <View>
+      <View style={[s.field, focus === key && s.fieldFocus, tried && errs[key] ? s.fieldErr : null]}>{el}</View>
+      {tried && errs[key] ? <Text style={s.err}>{errs[key]}</Text> : null}
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#0a0a0f', '#0f0a1a', '#0a0a0f']}
-        style={StyleSheet.absoluteFill}
-      />
-
-      <Animated.View style={[styles.glowOrb, { opacity: glowAnim }]} />
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Animated.View
-            style={[
-              styles.content,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            {/* Back Button */}
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.back();
-              }}
-            >
-              <Ionicons name="chevron-back" size={24} color={colors.zinc[400]} />
+    <View style={s.root}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={[s.scroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Animated.View style={{ flex: 1, opacity: fade }}>
+            <TouchableOpacity style={s.back} onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={24} color={C.ivory} />
             </TouchableOpacity>
 
-            {/* Segmented Toggle */}
-            <View style={styles.toggleContainer}>
-              <Animated.View style={[styles.toggleSlider, { left: toggleSlide }]} />
-              <TouchableOpacity
-                style={styles.toggleOption}
-                onPress={() => handleRoleChange('member')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.toggleText, role === 'member' && styles.toggleTextActive]}>
-                  Discover
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.toggleOption}
-                onPress={() => handleRoleChange('partner')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.toggleText, role === 'partner' && styles.toggleTextActive]}>
-                  Partner
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={s.brand}>VIBERYTE</Text>
+            <Text style={s.title}>Create your account</Text>
+            <Text style={s.sub}>Save the spots you love and keep your nights in one place.</Text>
 
-            {/* Header with Listening Line */}
-            <View style={styles.header}>
-              <Text style={styles.title}>
-                {role === 'member' ? 'Join Viberyte' : 'Partner with Viberyte'}
-              </Text>
-              <Text style={styles.listening}>{getListeningLine()}</Text>
-              <Text style={styles.reassurance}>Takes less than a minute</Text>
-            </View>
-
-            {/* Form */}
-            <View style={styles.form}>
-              {/* Name */}
-              <View style={[styles.inputContainer, nameError && styles.inputError]}>
-                <Ionicons name="person-outline" size={18} color={nameError ? '#fb7185' : colors.zinc[500]} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Full name"
-                  placeholderTextColor={colors.zinc[600]}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                  editable={!loading}
-                />
-                {name.trim().length > 0 && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
-                )}
-              </View>
-              {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
-
-              {/* Email */}
-              <View style={[styles.inputContainer, emailError && styles.inputError]}>
-                <Ionicons name="mail-outline" size={18} color={emailError ? '#fb7185' : colors.zinc[500]} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor={colors.zinc[600]}
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  editable={!loading}
-                />
-                {validateEmail(email) && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
-                )}
-              </View>
-              {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-
-              {/* Partner-specific fields */}
-              {role === 'partner' && (
+            <View style={s.form}>
+              {field('name', (
+                <TextInput style={s.input} placeholder="Name" placeholderTextColor={C.faint} value={name} onChangeText={setName}
+                  autoCapitalize="words" textContentType="name" autoComplete="name" returnKeyType="next" editable={!loading}
+                  onFocus={() => setFocus('name')} onBlur={() => setFocus(null)} onSubmitEditing={() => emailRef.current?.focus()} />
+              ))}
+              {field('email', (
+                <TextInput ref={emailRef} style={s.input} placeholder="Email" placeholderTextColor={C.faint} value={email} onChangeText={setEmail}
+                  autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="emailAddress" autoComplete="email"
+                  returnKeyType="next" editable={!loading} onFocus={() => setFocus('email')} onBlur={() => setFocus(null)} onSubmitEditing={() => passRef.current?.focus()} />
+              ))}
+              {field('password', (
                 <>
-                  {/* Business Name */}
-                  <View style={[styles.inputContainer, businessError && styles.inputError]}>
-                    <Ionicons name="business-outline" size={18} color={businessError ? '#fb7185' : colors.zinc[500]} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Business or brand name"
-                      placeholderTextColor={colors.zinc[600]}
-                      value={businessName}
-                      onChangeText={setBusinessName}
-                      autoCapitalize="words"
-                      editable={!loading}
-                    />
-                    {businessName.trim().length > 0 && (
-                      <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
-                    )}
-                  </View>
-                  {businessError ? <Text style={styles.errorText}>{businessError}</Text> : null}
-
-                  {/* Partner Role Pills */}
-                  <View style={styles.roleSection}>
-                    <Text style={styles.roleLabel}>I am a...</Text>
-                    <View style={styles.rolePills}>
-                      {(['promoter', 'venue_owner', 'staff'] as const).map((r) => (
-                        <TouchableOpacity
-                          key={r}
-                          style={[styles.rolePill, partnerRole === r && styles.rolePillActive]}
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            setPartnerRole(r);
-                          }}
-                        >
-                          <Text style={[styles.rolePillText, partnerRole === r && styles.rolePillTextActive]}>
-                            {r === 'venue_owner' ? 'Venue Owner' : r === 'promoter' ? 'Promoter' : 'Staff'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <Text style={styles.roleHint}>{getRoleHint()}</Text>
-                  </View>
-
-                  {/* Instagram Handle */}
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="logo-instagram" size={18} color={colors.zinc[500]} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Instagram handle (optional)"
-                      placeholderTextColor={colors.zinc[600]}
-                      value={instagramHandle}
-                      onChangeText={setInstagramHandle}
-                      autoCapitalize="none"
-                      editable={!loading}
-                    />
-                  </View>
-                  <Text style={styles.hint}>Used for verification & promotion</Text>
+                  <TextInput ref={passRef} style={s.input} placeholder="Password" placeholderTextColor={C.faint} value={password} onChangeText={setPassword}
+                    secureTextEntry={!show} textContentType="newPassword" autoComplete="new-password" passwordRules="minlength: 8;"
+                    returnKeyType="go" editable={!loading} onFocus={() => setFocus('password')} onBlur={() => setFocus(null)} onSubmitEditing={submit} />
+                  <TouchableOpacity onPress={() => setShow((x) => !x)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={show ? 'Hide password' : 'Show password'}>
+                    <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={19} color={C.muted} />
+                  </TouchableOpacity>
                 </>
-              )}
+              ))}
+              {!(tried && errs.password) ? (
+                <Text style={[s.hint, password.length >= 8 && { color: C.ivory }]}>{password.length >= 8 ? '✓ ' : ''}At least 8 characters</Text>
+              ) : null}
 
-              {/* Password */}
-              <View style={[styles.inputContainer, passwordError && styles.inputError]}>
-                <Ionicons name="lock-closed-outline" size={18} color={passwordError ? '#fb7185' : colors.zinc[500]} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor={colors.zinc[600]}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color={colors.zinc[500]}
-                  />
-                </TouchableOpacity>
-              </View>
-              {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
-              
-              <Text style={[styles.hint, password.length >= 8 && styles.hintSuccess]}>
-                {password.length >= 8 ? '✓ ' : ''}At least 8 characters
-              </Text>
-
-              {/* Confirm Password */}
-              <View style={[styles.inputContainer, confirmError && styles.inputError]}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={confirmError ? '#fb7185' : colors.zinc[500]} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm password"
-                  placeholderTextColor={colors.zinc[600]}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-                {confirmPassword.length > 0 && password === confirmPassword && (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.lux.champagne} />
-                )}
-              </View>
-              {confirmError ? <Text style={styles.errorText}>{confirmError}</Text> : null}
-
-              {/* Register Button */}
-              <TouchableOpacity
-                style={[styles.registerButton, loading && styles.buttonDisabled]}
-                onPress={handleRegister}
-                disabled={loading}
-                activeOpacity={0.9}
-              >
-                <LinearGradient
-                  colors={isValid 
-                    ? ['#8c6d3f', '#7a5e34', '#7a5e34']
-                    : ['#3f3f46', '#3f3f46', '#3f3f46']
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.registerButtonGradient}
-                >
-                  {loading ? (
-                    <View style={styles.loadingRow}>
-                      <ActivityIndicator color="white" size="small" />
-                      <Text style={styles.registerButtonText}>Setting things up…</Text>
-                    </View>
-                  ) : (
-                    <Text style={[
-                      styles.registerButtonText,
-                      !isValid && styles.registerButtonTextDisabled
-                    ]}>
-                      Continue
-                    </Text>
-                  )}
-                </LinearGradient>
+              <TouchableOpacity style={[s.cta, !valid && s.ctaOff]} onPress={submit} disabled={loading} activeOpacity={0.88} accessibilityRole="button">
+                {loading ? <ActivityIndicator color="#000" /> : <Text style={[s.ctaText, !valid && s.ctaTextOff]}>Create account</Text>}
               </TouchableOpacity>
 
-              {/* Sign In Link */}
-              <View style={styles.signInRow}>
-                <Text style={styles.signInText}>Already have an account?</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.back();
-                  }}
-                >
-                  <Text style={styles.signInLink}>Sign In</Text>
-                </TouchableOpacity>
+              <View style={s.row}>
+                <Text style={s.rowText}>Already have an account?</Text>
+                <TouchableOpacity onPress={() => router.back()}><Text style={s.rowLink}>Sign in</Text></TouchableOpacity>
               </View>
             </View>
 
-            {/* Footer */}
-            <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
-              <Text style={styles.footerText}>
-                By continuing, you agree to our Terms & Privacy Policy
-              </Text>
-            </View>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity style={s.partner} onPress={() => router.push('/partner')} activeOpacity={0.8}>
+              <Text style={s.partnerText}>Own a venue or throw events?</Text>
+              <Text style={s.partnerLink}>Partner with Viberyte →</Text>
+            </TouchableOpacity>
+            <Text style={s.legal}>By creating an account you agree to our Terms and Privacy Policy.</Text>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -457,226 +118,29 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0f',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-  },
-  glowOrb: {
-    position: 'absolute',
-    width: 350,
-    height: 350,
-    borderRadius: 175,
-    backgroundColor: colors.lux.champagne,
-    top: -50,
-    right: -100,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    marginTop: 12,
-    marginLeft: -8,
-  },
-  // Segmented Toggle
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 12,
-    padding: 4,
-    marginTop: spacing.md,
-    marginBottom: spacing.lg,
-    position: 'relative',
-  },
-  toggleSlider: {
-    position: 'absolute',
-    width: '48%',
-    height: '100%',
-    backgroundColor: colors.lux.bronzeDeep,
-    borderRadius: 10,
-    top: 4,
-  },
-  toggleOption: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  toggleText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.zinc[500],
-  },
-  toggleTextActive: {
-    color: colors.white,
-  },
-  // Header
-  header: {
-    marginBottom: spacing.xl,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.white,
-    marginBottom: 6,
-  },
-  listening: {
-    fontSize: 14,
-    color: colors.zinc[400],
-    lineHeight: 20,
-  },
-  reassurance: {
-    fontSize: 13,
-    color: colors.zinc[600],
-    marginTop: 8,
-  },
-  // Form
-  form: {
-    gap: spacing.sm,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.zinc[800],
-  },
-  inputError: {
-    borderColor: '#fb7185',
-  },
-  inputIcon: {
-    marginRight: spacing.sm,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.white,
-    paddingVertical: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#fb7185',
-    marginTop: 4,
-    marginLeft: 4,
-    marginBottom: 4,
-  },
-  hint: {
-    fontSize: 12,
-    color: colors.zinc[600],
-    marginLeft: 4,
-    marginBottom: 4,
-  },
-  hintSuccess: {
-    color: colors.lux.champagne,
-  },
-  // Partner Role Section
-  roleSection: {
-    marginVertical: spacing.sm,
-  },
-  roleLabel: {
-    fontSize: 13,
-    color: colors.zinc[400],
-    marginBottom: spacing.sm,
-    marginLeft: 4,
-  },
-  rolePills: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  rolePill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: colors.zinc[800],
-  },
-  rolePillActive: {
-    backgroundColor: colors.lux.bronzeDeep,
-    borderColor: colors.lux.champagne,
-  },
-  rolePillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.zinc[500],
-  },
-  rolePillTextActive: {
-    color: colors.white,
-  },
-  roleHint: {
-    fontSize: 12,
-    color: colors.zinc[600],
-    marginTop: 8,
-    marginLeft: 4,
-  },
-  // Button
-  registerButton: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginTop: spacing.lg,
-    shadowColor: colors.lux.champagne,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  registerButtonGradient: {
-    paddingVertical: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  registerButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  registerButtonTextDisabled: {
-    color: colors.zinc[500],
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  signInRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: spacing.lg,
-  },
-  signInText: {
-    fontSize: 14,
-    color: colors.zinc[500],
-  },
-  signInLink: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.lux.champagne,
-  },
-  footer: {
-    marginTop: 'auto',
-    paddingTop: spacing.xl,
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 11,
-    color: colors.zinc[700],
-    textAlign: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.9,
-  },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: 24 },
+  back: { width: 44, height: 44, justifyContent: 'center', marginLeft: -8 },
+  brand: { color: C.muted, fontSize: 12, fontWeight: '700', letterSpacing: 4, marginTop: 18 },
+  title: { color: C.ivory, fontSize: 32, fontWeight: '700', letterSpacing: -0.5, marginTop: 10 },
+  sub: { color: C.muted, fontSize: 15, lineHeight: 21, marginTop: 8 },
+  form: { marginTop: 32, gap: 12 },
+  field: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, borderRadius: 14, backgroundColor: C.field, borderWidth: 1, borderColor: C.line },
+  fieldFocus: { borderColor: C.focus },
+  fieldErr: { borderColor: C.err },
+  input: { flex: 1, color: C.ivory, fontSize: 16 },
+  err: { color: C.err, fontSize: 12, marginTop: 6, marginLeft: 4 },
+  hint: { color: C.faint, fontSize: 12, marginLeft: 4, marginTop: -2 },
+  cta: { height: 54, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  ctaOff: { backgroundColor: 'rgba(255,255,255,0.14)' },
+  ctaText: { color: '#000', fontSize: 16, fontWeight: '600' },
+  ctaTextOff: { color: 'rgba(255,255,255,0.45)' },
+  row: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 14 },
+  rowText: { color: C.muted, fontSize: 14 },
+  rowLink: { color: C.ivory, fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
+  partner: { alignItems: 'center', paddingVertical: 14, marginTop: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  partnerText: { color: C.faint, fontSize: 13 },
+  partnerLink: { color: C.ivory, fontSize: 14, fontWeight: '600', marginTop: 3 },
+  legal: { color: C.faint, fontSize: 11, textAlign: 'center', marginTop: 8 },
 });

@@ -148,7 +148,7 @@ export default function BudgetMealScreen() {
             <Ionicons name="chevron-back" size={26} color="#a1a1aa" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Ionicons name="sparkles" size={20} color="#4ade80" />
+            <Ionicons name="compass" size={20} color="#4ade80" />
             <View>
               <Text style={styles.headerTitle}>Viberyte Picks</Text>
               <Text style={styles.headerSubtitle}>Within Your Budget</Text>

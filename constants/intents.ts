@@ -9,15 +9,17 @@ export const INTENT_MAP: Record<string, IntentDef> = {
   dinner: { label: 'Dinner', queries: [{ category: 'restaurant' }] },
   drinks: { label: 'Drinks', queries: [{ category: 'bar' }, { category: 'lounge' }] },
   nightlife: { label: 'Nightlife', queries: [{ category: 'club' }, { category: 'live_music' }] },
+  events: { label: 'Events', queries: [{}] }, // VBR_HOME_SHORTCUTS: opens Explore → Events
   brunch: { label: 'Brunch', queries: [{ filter: 'brunch' }] },
   surprise: { label: 'Surprise Me', icon: 'shuffle-outline', queries: [{}] },
 };
 
 // Near Me first; daypart orders the rest. Order only, nothing hidden by time.
 export const intentOrder = (h: number): string[] => {
-  if (h >= 5 && h < 14) return ['nearMe', 'brunch', 'dinner', 'drinks', 'dateNight', 'nightlife', 'surprise'];
-  if (h >= 14 && h < 18) return ['nearMe', 'dinner', 'drinks', 'dateNight', 'brunch', 'nightlife', 'surprise'];
-  return ['nearMe', 'dinner', 'drinks', 'nightlife', 'dateNight', 'surprise', 'brunch'];
+  if (h >= 5 && h < 14) return ['nearMe', 'brunch', 'dinner', 'events', 'drinks', 'dateNight', 'nightlife', 'surprise'];
+  if (h >= 14 && h < 18) return ['nearMe', 'dinner', 'drinks', 'events', 'dateNight', 'brunch', 'nightlife', 'surprise'];
+  if (h >= 17 && h < 21) return ['dateNight', 'dinner', 'drinks', 'events', 'nightlife', 'nearMe', 'surprise', 'brunch'];
+  return ['drinks', 'nightlife', 'events', 'dateNight', 'dinner', 'nearMe', 'surprise', 'brunch'];
 };
 
 // Expressive headers. "dressy" is used only when the results actually carry dress-up signals.
@@ -47,8 +49,8 @@ export const homeDayCopy = (d: Date) => {
   const day = DAYS[d.getDay()];
   if (h >= 5 && h < 11) return { eyebrow: `${day} MORNING`, headline: 'Start the day right.', subline: 'Brunch, coffee, or somewhere new to wander.' };
   if (h >= 11 && h < 17) return { eyebrow: `${day} AFTERNOON`, headline: 'Plan something worth leaving for.', subline: 'A long lunch, early drinks, or a plan for tonight.' };
-  if (h >= 17 && h < 22) return { eyebrow: `${day} EVENING`, headline: 'Your night starts here.', subline: 'A great dinner, a cocktail spot, or something unexpected?' };
-  return { eyebrow: `${day} NIGHT`, headline: "The night's still going.", subline: 'Late kitchens, live music, and dance floors.' };
+  if (h >= 17 && h < 22) return { eyebrow: `YOUR ${day} NIGHT`, headline: 'Make tonight count.', subline: 'Dinner, drinks, or somewhere new.' };
+  return { eyebrow: `YOUR ${day} NIGHT`, headline: 'Make tonight count.', subline: 'Lounges, late kitchens, and dance floors.' };
 };
 
 // Reason it fits: confirmed attribute labels from the server (include=highlights). Empty when none.

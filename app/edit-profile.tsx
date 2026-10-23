@@ -407,7 +407,7 @@ export default function EditProfile() {
           <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={styles.sectionTitleRow}>
-                <Ionicons name="sparkles-outline" size={18} color="#71717a" />
+                <Ionicons name="pulse-outline" size={18} color="#71717a" />
                 <Text style={styles.cardTitle}>Events</Text>
                 <Text style={styles.sectionCount}>{events.length}</Text>
               </View>
@@ -445,7 +445,7 @@ export default function EditProfile() {
                             />
                           ) : (
                             <View style={styles.eventThumbPlaceholder}>
-                              <Ionicons name="sparkles" size={16} color="#52525b" />
+                              <Ionicons name="pulse" size={16} color="#52525b" />
                             </View>
                           )}
                         </View>
@@ -482,7 +482,7 @@ export default function EditProfile() {
                             />
                           ) : (
                             <View style={styles.eventThumbPlaceholder}>
-                              <Ionicons name="sparkles" size={16} color="#52525b" />
+                              <Ionicons name="pulse" size={16} color="#52525b" />
                             </View>
                           )}
                         </View>

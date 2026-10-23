@@ -1,18 +1,11 @@
+// app/login.tsx — Viberyte Welcome V2 (VBR_WELCOME_V2)
+// One primary action (Start Exploring, guest). Apple / Google / email live in a single "Sign in" sheet.
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
-  Alert,
-  ActivityIndicator,
-  Dimensions,
-  Animated,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, ScrollView, Platform,
+  Alert, ActivityIndicator, Dimensions, Animated, Modal, Pressable, Linking, AccessibilityInfo,
 } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -21,16 +14,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
 
 const { width, height } = Dimensions.get('window');
+const GOLD = '#C5A36B';
+const TERMS_URL = 'https://viberyte.com/terms';
+const PRIVACY_URL = 'https://viberyte.com/privacy';
 
-// Shooting star component
 function ShootingStar({ delay, startX, startY, angle }: { delay: number; startX: number; startY: number; angle: number }) {
   const progress = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
+    let alive = true;
     const animate = () => {
-      progress.setValue(0);
-      opacity.setValue(0);
+      if (!alive) return;
+      progress.setValue(0); opacity.setValue(0);
       Animated.sequence([
         Animated.delay(delay),
         Animated.parallel([
@@ -44,54 +39,17 @@ function ShootingStar({ delay, startX, startY, angle }: { delay: number; startX:
       ]).start(() => animate());
     };
     animate();
+    return () => { alive = false; };
   }, []);
-
-  const length = 120;
-  const rad = (angle * Math.PI) / 180;
-  const dx = Math.cos(rad) * length;
-  const dy = Math.sin(rad) * length;
-
+  const length = 120, rad = (angle * Math.PI) / 180;
+  const dx = Math.cos(rad) * length, dy = Math.sin(rad) * length;
   return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        left: startX,
-        top: startY,
-        opacity,
-        transform: [
-          {
-            translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }),
-          },
-          {
-            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }),
-          },
-        ],
-      }}
-    >
-      <View
-        style={{
-          width: length * 0.6,
-          height: 1.5,
-          borderRadius: 1,
-          transform: [{ rotate: `${angle}deg` }],
-          background: 'transparent',
-          overflow: 'visible',
-        }}
-      >
-        <View style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          width: length * 0.6,
-          height: 1.5,
-          borderRadius: 2,
-          backgroundColor: 'rgba(255,255,255,0.9)',
-          shadowColor: '#fff',
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 3,
-        }} />
-      </View>
+    <Animated.View style={{ position: 'absolute', left: startX, top: startY, opacity, transform: [
+      { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }) },
+      { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }) },
+    ] }}>
+      <View style={{ width: length * 0.6, height: 1.5, borderRadius: 2, transform: [{ rotate: `${angle}deg` }],
+        backgroundColor: 'rgba(255,255,255,0.9)', shadowColor: '#fff', shadowOpacity: 0.8, shadowRadius: 3, shadowOffset: { width: 0, height: 0 } }} />
     </Animated.View>
   );
 }
@@ -106,15 +64,38 @@ const STARS = [
   { delay: 4000, startX: width * 0.5,  startY: height * 0.01, angle: 35 },
 ];
 
+// VBR_WELCOME_VIDEO: bundled, muted, looping; fades in when ready; paused when leaving or with Reduce Motion
+const WELCOME_VIDEO = require('../assets/video/welcome.mp4');
+function WelcomeVideo({ playing }: { playing: boolean }) {
+  const player = useVideoPlayer(WELCOME_VIDEO, (pl) => { pl.loop = true; pl.muted = true; });
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const sub = player.addListener('statusChange', (e: any) => {
+      if (e?.status === 'readyToPlay') Animated.timing(fade, { toValue: 1, duration: 700, useNativeDriver: true }).start();
+    });
+    return () => { try { sub.remove(); } catch {} };
+  }, [player]);
+  useEffect(() => { try { playing ? player.play() : player.pause(); } catch {} }, [playing, player]);
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]} pointerEvents="none">
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+    </Animated.View>
+  );
+}
+
+type Busy = null | 'guest' | 'apple' | 'google' | 'email';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [showEmailLogin, setShowEmailLogin] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isPartnerLogin, setIsPartnerLogin] = useState(false);
+  const [busy, setBusy] = useState<Busy>(null);
+  const loading = busy !== null;
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => { AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {}); }, []);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const slideUp = useRef(new Animated.Value(30)).current;
@@ -125,22 +106,18 @@ export default function LoginScreen() {
       Animated.timing(fadeIn, { toValue: 1, duration: 1200, useNativeDriver: true }),
       Animated.timing(slideUp, { toValue: 0, duration: 900, useNativeDriver: true }),
     ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1, duration: 4000, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0.7, duration: 4000, useNativeDriver: true }),
-      ])
-    ).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(glowPulse, { toValue: 1, duration: 4000, useNativeDriver: true }),
+      Animated.timing(glowPulse, { toValue: 0.7, duration: 4000, useNativeDriver: true }),
+    ])).start();
   }, []);
 
   const { request, response, promptAsync } = authService.useGoogleAuth();
-
   useEffect(() => {
     if (response?.type === 'success') {
       const { authentication } = response;
       if (authentication?.accessToken) handleGoogleSignInWithToken(authentication.accessToken);
-    }
+    } else if (response) setBusy(null);
   }, [response]);
 
   const checkOnboardingComplete = async (): Promise<boolean> => {
@@ -150,408 +127,168 @@ export default function LoginScreen() {
       return !!(persona || preferences);
     } catch { return false; }
   };
+  const goNext = async () => {
+    setSheet(false);
+    const done = await checkOnboardingComplete();
+    router.replace(done ? '/(tabs)' : '/onboarding');
+  };
 
   const handleGoogleSignInWithToken = async (accessToken: string) => {
-    setLoading(true);
-    try {
-      await authService.signInWithGoogle(accessToken);
-      const done = await checkOnboardingComplete();
-      router.replace(done ? '/(tabs)' : '/onboarding');
-    } catch (e: any) { Alert.alert('Sign In Failed', e.message); }
-    finally { setLoading(false); }
-  };
-
-  const handleGuestContinue = async () => {
-    setLoading(true);
-    try {
-      await authService.continueAsGuest();
-      const done = await checkOnboardingComplete();
-      router.replace(done ? '/(tabs)' : '/onboarding');
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setLoading(false); }
-  };
-
-  const handleAppleSignIn = async () => {
-    setLoading(true);
-    try {
-      await authService.signInWithApple();
-      const done = await checkOnboardingComplete();
-      router.replace(done ? '/(tabs)' : '/onboarding');
-    } catch (e: any) {
-      if (e.message !== 'Sign in cancelled') Alert.alert('Sign In Failed', e.message);
-    } finally { setLoading(false); }
-  };
-
-  const handleGoogleSignIn = async () => {
-    try { await promptAsync(); }
+    setBusy('google');
+    try { await authService.signInWithGoogle(accessToken); await goNext(); }
     catch (e: any) { Alert.alert('Sign In Failed', e.message); }
+    finally { setBusy(null); }
   };
-
+  const handleGuestContinue = async () => {
+    setBusy('guest');
+    try { await authService.continueAsGuest(); await goNext(); }
+    catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setBusy(null); }
+  };
+  const handleAppleSignIn = async () => {
+    setBusy('apple');
+    try { await authService.signInWithApple(); await goNext(); }
+    catch (e: any) { if (e.message !== 'Sign in cancelled') Alert.alert('Sign In Failed', e.message); }
+    finally { setBusy(null); }
+  };
+  const handleGoogleSignIn = async () => {
+    try { setBusy('google'); const r = await promptAsync(); if (r?.type !== 'success') setBusy(null); }
+    catch (e: any) { setBusy(null); Alert.alert('Sign In Failed', e.message); }
+  };
   const handleEmailSignIn = async () => {
     if (!email || !password) { Alert.alert('Error', 'Please enter email and password'); return; }
-    setLoading(true);
-    try {
-      await authService.signInWithEmail(email, password, isPartnerLogin);
-      const done = await checkOnboardingComplete();
-      router.replace(done ? '/(tabs)' : '/onboarding');
-    } catch (e: any) { Alert.alert('Sign In Failed', e.message); }
-    finally { setLoading(false); }
+    setBusy('email');
+    try { await authService.signInWithEmail(email, password, false); await goNext(); }
+    catch (e: any) { Alert.alert('Sign In Failed', e.message); }
+    finally { setBusy(null); }
   };
+  const openRegister = () => { setSheet(false); router.push('/register'); };
 
   return (
     <View style={styles.root}>
-
-      {/* Jet black base */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: '#050508' }]} />
-
-      {/* Single ambient glow — centered, top third */}
-      <Animated.View style={[styles.ambientGlow, { opacity: glowPulse }]}>
-        <LinearGradient
-          colors={['rgba(197, 163, 107, 0.16)', 'rgba(197, 163, 107, 0.05)', 'transparent']}
-          locations={[0, 0.4, 1]}
-          style={StyleSheet.absoluteFill}
-        />
+      {!reduceMotion ? <WelcomeVideo playing={busy === null && !sheet} /> : null}
+      <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
+        colors={['rgba(5,5,8,0.45)', 'rgba(5,5,8,0.55)', 'rgba(5,5,8,0.94)']} locations={[0, 0.4, 0.8]} />
+      <Animated.View style={[styles.ambientGlow, { opacity: glowPulse }]} pointerEvents="none">
+        <LinearGradient colors={['rgba(197, 163, 107, 0.16)', 'rgba(197, 163, 107, 0.05)', 'transparent']} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFill} />
       </Animated.View>
+      {reduceMotion ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {STARS.map((s, i) => <ShootingStar key={i} {...s} />)}
+        </View>
+      ) : null}
 
-      {/* Shooting stars */}
-      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-        {STARS.map((s, i) => (
-          <ShootingStar key={i} delay={s.delay} startX={s.startX} startY={s.startY} angle={s.angle} />
-        ))}
-      </View>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }]}
+        bounces={false} showsVerticalScrollIndicator={false}
+      >
+        <Animated.View style={{ flex: 1, opacity: fadeIn, transform: [{ translateY: slideUp }] }}>
+          <View style={styles.brand}>
+            <Text style={styles.brandName}>VIBERYTE</Text>
+            <Text style={styles.brandSub}>DINING · LOUNGES · NIGHTLIFE</Text>
+          </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 32 }]}
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Animated.View style={{ opacity: fadeIn, transform: [{ translateY: slideUp }] }}>
+          <View style={styles.hero}>
+            <Text style={styles.heroLight}>The night</Text>
+            <Text style={styles.heroBold}>starts here.</Text>
+            <Text style={styles.heroSub}>Discover restaurants, lounges, and nightlife worth going out for.</Text>
+          </View>
 
-            {/* Brand */}
-            <View style={styles.brand}>
-              <Text style={styles.brandName}>VIBERYTE</Text>
-              <Text style={styles.brandSub}>NIGHTLIFE INTELLIGENCE</Text>
-            </View>
+          <TouchableOpacity style={[styles.primaryBtn, loading && styles.dim]} onPress={handleGuestContinue} disabled={loading} activeOpacity={0.88} accessibilityRole="button">
+            {busy === 'guest' ? <ActivityIndicator color="#0A0A0C" /> : <Text style={styles.primaryBtnText}>Start Exploring</Text>}
+          </TouchableOpacity>
+          <Text style={styles.noCta}>No account required</Text>
 
-            {/* Hero */}
-            <View style={styles.hero}>
-              <Text style={styles.heroLight}>The night</Text>
-              <Text style={styles.heroBold}>starts here.</Text>
-              <Text style={styles.heroSub}>
-                Curated venues, flows & events{'\n'}built for how you move.
-              </Text>
-            </View>
+          <View style={{ flex: 1, minHeight: 40 }} />
 
-            {/* Primary CTA */}
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleGuestContinue}
-              disabled={loading}
-              activeOpacity={0.88}
-            >
-              <View style={styles.primaryBtnGrad}>
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Start Exploring</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-            <Text style={styles.noCta}>No account needed</Text>
+          <TouchableOpacity style={styles.signInRow} onPress={() => setSheet(true)} disabled={loading} hitSlop={12} accessibilityRole="button">
+            <Text style={styles.signInText}>Already have an account? <Text style={styles.signInLink}>Sign in</Text></Text>
+          </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.divRow}>
-              <View style={styles.divLine} />
-              <Text style={styles.divText}>or sign in</Text>
-              <View style={styles.divLine} />
-            </View>
+          <View style={styles.legalRow}>
+            <Text style={styles.legalLink} onPress={() => Linking.openURL(TERMS_URL)} accessibilityRole="link">Terms of Service</Text>
+            <Text style={styles.legalDot}>·</Text>
+            <Text style={styles.legalLink} onPress={() => Linking.openURL(PRIVACY_URL)} accessibilityRole="link">Privacy Policy</Text>
+          </View>
+        </Animated.View>
+      </ScrollView>
 
-            {/* Apple */}
-            <TouchableOpacity style={styles.appleBtn} onPress={handleAppleSignIn} disabled={loading} activeOpacity={0.88}>
-              <Ionicons name="logo-apple" size={20} color="#000" />
-              <Text style={styles.appleBtnText}>Continue with Apple</Text>
+      <Modal visible={sheet} transparent animationType="slide" onRequestClose={() => setSheet(false)}>
+        <Pressable style={styles.backdrop} onPress={() => !loading && setSheet(false)} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.grabber} />
+            <Text style={styles.sheetTitle}>Sign in</Text>
+            <Text style={styles.sheetSub}>Your saved spots follow you to any device.</Text>
+
+            <TouchableOpacity style={[styles.appleBtn, loading && styles.dim]} onPress={handleAppleSignIn} disabled={loading} activeOpacity={0.88}>
+              {busy === 'apple' ? <ActivityIndicator color="#000" /> : (<><Ionicons name="logo-apple" size={20} color="#000" /><Text style={styles.appleBtnText}>Continue with Apple</Text></>)}
             </TouchableOpacity>
 
-            {/* Google */}
-            <TouchableOpacity style={styles.ghostBtn} onPress={handleGoogleSignIn} disabled={loading || !request} activeOpacity={0.88}>
-              <Ionicons name="logo-google" size={16} color="rgba(255,255,255,0.4)" />
-              <Text style={styles.ghostBtnText}>Continue with Google</Text>
+            <TouchableOpacity style={[styles.googleBtn, (loading || !request) && styles.dim]} onPress={handleGoogleSignIn} disabled={loading || !request} activeOpacity={0.88}>
+              {busy === 'google' ? <ActivityIndicator color="#fff" /> : (<><Ionicons name="logo-google" size={17} color="#fff" /><Text style={styles.googleBtnText}>Continue with Google</Text></>)}
             </TouchableOpacity>
 
-            {/* Email */}
-            {!showEmailLogin ? (
-              <TouchableOpacity style={styles.textLink} onPress={() => setShowEmailLogin(true)}>
-                <Text style={styles.textLinkText}>Sign in with email</Text>
+            {!showEmail ? (
+              <TouchableOpacity style={styles.textLink} onPress={() => setShowEmail(true)} disabled={loading}>
+                <Text style={styles.textLinkText}>Use email instead</Text>
               </TouchableOpacity>
             ) : (
               <View style={styles.emailForm}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor="rgba(255,255,255,0.18)"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  editable={!loading}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="rgba(255,255,255,0.18)"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  editable={!loading}
-                />
-                <TouchableOpacity style={styles.partnerRow} onPress={() => setIsPartnerLogin(!isPartnerLogin)}>
-                  <View style={[styles.track, isPartnerLogin && styles.trackOn]}>
-                    <View style={[styles.thumb, isPartnerLogin && styles.thumbOn]} />
-                  </View>
-                  <Text style={[styles.partnerLabel, isPartnerLogin && styles.partnerLabelOn]}>Partner Login</Text>
+                <TextInput style={styles.input} placeholder="Email" placeholderTextColor="rgba(255,255,255,0.35)" value={email}
+                  onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" editable={!loading} />
+                <TextInput style={styles.input} placeholder="Password" placeholderTextColor="rgba(255,255,255,0.35)" value={password}
+                  onChangeText={setPassword} secureTextEntry textContentType="password" editable={!loading} onSubmitEditing={handleEmailSignIn} returnKeyType="go" />
+                <TouchableOpacity style={[styles.emailSubmit, loading && styles.dim]} onPress={handleEmailSignIn} disabled={loading}>
+                  {busy === 'email' ? <ActivityIndicator color="#000" /> : <Text style={styles.emailSubmitText}>Sign In</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.emailSubmit} onPress={handleEmailSignIn} disabled={loading}>
-                  <Text style={styles.emailSubmitText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.textLink} onPress={() => setShowEmailLogin(false)}>
-                  <Text style={styles.textLinkText}>Hide</Text>
+                <TouchableOpacity style={styles.textLink} onPress={openRegister} disabled={loading}>
+                  <Text style={styles.textLinkText}>New with email? <Text style={styles.signInLink}>Create an account</Text></Text>
                 </TouchableOpacity>
               </View>
             )}
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              <Text style={styles.legal}>By continuing, you agree to our Terms & Privacy Policy</Text>
-              <TouchableOpacity onPress={() => router.push('/register')}>
-                <Text style={styles.signupRow}>
-                  New here? <Text style={styles.signupLink}>Create account</Text>
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#050508' },
-  ambientGlow: {
-    position: 'absolute',
-    top: -height * 0.15,
-    left: -width * 0.25,
-    width: width * 1.5,
-    height: height * 0.65,
-    borderRadius: width,
-  },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 28,
-  },
-  brand: {
-    alignItems: 'center',
-    marginBottom: 52,
-  },
-  brandName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 7,
-    marginBottom: 7,
-  },
-  brandSub: {
-    fontSize: 9,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.2)',
-    letterSpacing: 3.5,
-  },
-  hero: {
-    marginBottom: 44,
-  },
-  heroLight: {
-    fontSize: 48,
-    fontWeight: '200',
-    color: 'rgba(255,255,255,0.55)',
-    letterSpacing: -1.5,
-    lineHeight: 54,
-  },
-  heroBold: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: -1.5,
-    lineHeight: 54,
-    marginBottom: 18,
-  },
-  heroSub: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.32)',
-    lineHeight: 23,
-    fontWeight: '400',
-  },
-  primaryBtn: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  primaryBtnGrad: {
-    paddingVertical: 18,
-    paddingHorizontal: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#7a5e34',
-  },
-  primaryBtnText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
-    letterSpacing: -0.2,
-  },
-  arrowCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  noCta: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.18)',
-    textAlign: 'center',
-    marginBottom: 32,
-    letterSpacing: 0.3,
-  },
-  divRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 20,
-  },
-  divLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  divText: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.18)',
-    letterSpacing: 0.5,
-  },
-  appleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#fff',
-    borderRadius: 13,
-    paddingVertical: 16,
-    marginBottom: 10,
-  },
-  appleBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  ghostBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 13,
-    paddingVertical: 15,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 14,
-  },
-  ghostBtnText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.35)',
-  },
-  textLink: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  textLinkText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.25)',
-    fontWeight: '500',
-  },
-  emailForm: { gap: 10 },
-  input: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  partnerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  track: {
-    width: 38,
-    height: 21,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-  },
-  trackOn: { backgroundColor: '#c5a36b' },
-  thumb: {
-    width: 17,
-    height: 17,
-    borderRadius: 9,
-    backgroundColor: '#fff',
-    alignSelf: 'flex-start',
-  },
-  thumbOn: { alignSelf: 'flex-end' },
-  partnerLabel: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.25)',
-    fontWeight: '500',
-  },
-  partnerLabelOn: { color: '#c5a36b' },
-  emailSubmit: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  emailSubmitText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#000',
-    letterSpacing: -0.2,
-  },
-  footer: {
-    paddingTop: 28,
-    alignItems: 'center',
-    gap: 10,
-  },
-  legal: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.12)',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  signupRow: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.25)',
-  },
-  signupLink: {
-    color: '#c5a36b',
-    fontWeight: '600',
-  },
+  ambientGlow: { position: 'absolute', top: -height * 0.15, left: -width * 0.25, width: width * 1.5, height: height * 0.65, borderRadius: width },
+  scroll: { flexGrow: 1, paddingHorizontal: 28 },
+  brand: { alignItems: 'center', marginBottom: 52 },
+  brandName: { fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 7, marginBottom: 8 },
+  brandSub: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.45)', letterSpacing: 3 },
+  hero: { marginBottom: 40 },
+  heroLight: { fontSize: 48, fontWeight: '200', color: 'rgba(255,255,255,0.72)', letterSpacing: -1.5, lineHeight: 54 },
+  heroBold: { fontSize: 48, fontWeight: '700', color: '#fff', letterSpacing: -1.5, lineHeight: 54, marginBottom: 18 },
+  heroSub: { fontSize: 16, color: 'rgba(255,255,255,0.68)', lineHeight: 24, fontWeight: '400', maxWidth: 320 },
+  primaryBtn: { height: 58, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: GOLD, marginBottom: 12 },
+  primaryBtnText: { fontSize: 17, fontWeight: '700', color: '#0A0A0C', letterSpacing: -0.2 },
+  noCta: { fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', letterSpacing: 0.2 },
+  signInRow: { alignItems: 'center', paddingVertical: 12 },
+  signInText: { fontSize: 15, color: 'rgba(255,255,255,0.6)' },
+  signInLink: { color: GOLD, fontWeight: '600' },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingTop: 6 },
+  legalLink: { fontSize: 12, color: 'rgba(255,255,255,0.5)', textDecorationLine: 'underline', paddingVertical: 6 },
+  legalDot: { fontSize: 12, color: 'rgba(255,255,255,0.35)' },
+  dim: { opacity: 0.55 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: { backgroundColor: '#141416', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingTop: 10 },
+  grabber: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 18 },
+  sheetTitle: { color: '#fff', fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
+  sheetSub: { color: 'rgba(255,255,255,0.6)', fontSize: 14, marginTop: 4, marginBottom: 20 },
+  appleBtn: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#fff', borderRadius: 14, marginBottom: 10 },
+  appleBtnText: { fontSize: 16, fontWeight: '600', color: '#000' },
+  googleBtn: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', marginBottom: 4 },
+  googleBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  textLink: { alignItems: 'center', paddingVertical: 14 },
+  textLinkText: { fontSize: 14, color: 'rgba(255,255,255,0.6)', fontWeight: '500' },
+  emailForm: { gap: 10, marginTop: 6 },
+  input: { height: 52, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
+  emailSubmit: { height: 52, backgroundColor: '#fff', borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  emailSubmitText: { fontSize: 16, fontWeight: '600', color: '#000' },
 });

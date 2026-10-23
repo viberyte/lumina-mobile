@@ -171,7 +171,7 @@ const FeaturedResultCard = ({ item, onPress }: { item: Venue; onPress: () => voi
           
           <View style={styles.featuredInfo}>
             <View style={styles.topMatchBadge}>
-              <Ionicons name="sparkles" size={10} color={colors.lux.champagne} />
+              <Ionicons name="compass" size={10} color={colors.lux.champagne} />
               <Text style={styles.topMatchText}>TOP MATCH</Text>
             </View>
             
@@ -435,7 +435,7 @@ export default function SearchScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Ionicons name="sparkles" size={14} color={colors.lux.champagne} />
+              <Ionicons name="compass" size={14} color={colors.lux.champagne} />
               <Text style={styles.intentText}>{intent.reasoning}</Text>
               {aiPowered && (
                 <View style={styles.aiPill}>

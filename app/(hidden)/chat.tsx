@@ -417,7 +417,7 @@ export default function ChatScreen() {
 
       <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.previewCard}>
         <View style={styles.previewHeader}>
-          <Ionicons name="sparkles" size={16} color={colors.lux.champagne} />
+          <Ionicons name="compass" size={16} color={colors.lux.champagne} />
           <Text style={styles.previewTitle}>Your Night</Text>
         </View>
         <Text style={styles.previewText}>{getPreviewText()}</Text>
@@ -434,7 +434,7 @@ export default function ChatScreen() {
               <ActivityIndicator color={colors.white} size="small" />
             ) : (
               <>
-                <Ionicons name="sparkles" size={20} color={canSubmit ? colors.white : '#666'} style={{ marginRight: 8 }} />
+                <Ionicons name="compass" size={20} color={canSubmit ? colors.white : '#666'} style={{ marginRight: 8 }} />
                 <Text style={[styles.ctaTextFinal, !canSubmit && styles.ctaTextDisabled]}>{getCTAText()}</Text>
               </>
             )}
@@ -464,7 +464,7 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <LinearGradient colors={[colors.lux.bronze, colors.lux.bronzeDeep]} style={styles.headerIcon}>
-            <Ionicons name="sparkles" size={20} color={colors.white} />
+            <Ionicons name="compass" size={20} color={colors.white} />
           </LinearGradient>
           <View>
             <Text style={styles.headerTitle}>Viberyte</Text>

@@ -12,6 +12,7 @@ import {
   Pressable,
   Modal,
   TextInput,
+  AccessibilityInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useIsFocused } from '@react-navigation/native';
 import { colors, spacing } from '../../theme';
 import luminaApi from '../../services/luminaApi';
 import FlowCard from '../../components/FlowCard';
@@ -42,7 +45,7 @@ const SIDE_PAD = 16;
 const CARD_GAP = 10;
 const CARD_WIDTH = (SCREEN_WIDTH - SIDE_PAD * 2 - CARD_GAP) / 2.15;
 const CARD_IMAGE_HEIGHT = CARD_WIDTH;
-const HERO_HEIGHT = 220;
+const HERO_HEIGHT = 260;
 const SECTION_GAP = 28;
 const FLOW_CARD_WIDTH = SCREEN_WIDTH * 0.82;
 const FOLLOW_SIZE = 64;
@@ -98,6 +101,36 @@ const getContextLine = () => {
   return 'Still going strong';
 };
 
+// ─── VBR_HOME_V3: Tonight's pick ──────────────────────────────────
+// Fits the hour (dinner → drinks/lounges → late), quality first, distance ignored. Same pick all day.
+const CASUAL = /fast food|hot ?dog|hamburger|burger|deli|sandwich|pizza|coffee|cafe|bakery|bagel|donut|ice cream|dessert|juice|grocery|market/i;
+const catText = (v: any) => `${v?.standardized_category || ''} ${v?.category || ''} ${v?.type || ''}`.toLowerCase();
+const pickTonight = (list: any[], h: number): any | null => {
+  const fit = (v: any) => {
+    const c = catText(v);
+    if (h >= 21 || h < 4) {
+      if (/lounge|cocktail|speakeasy|wine|rooftop|bar|club|live/.test(c)) return 3;
+      if (h < 4 && /pizza|diner|taco|burger/.test(c)) return 1.5;
+      return /restaurant/.test(c) ? 0.5 : 0;
+    }
+    if (h >= 17) {
+      if (/restaurant|steak|bistro|sushi|italian|dining/.test(c)) return 3;
+      if (/lounge|cocktail|wine|bar/.test(c)) return 2;
+      return 0;
+    }
+    return /brunch|restaurant|cafe|bakery|coffee/.test(c) ? 2 : 0.5;
+  };
+  const noCasual = h >= 17;
+  const scored = (list || [])
+    .filter((v: any) => getPhotoUrl(v) && Number(v?.google_rating || v?.rating || 0) >= 4.2 && !(noCasual && CASUAL.test(catText(v))))
+    .map((v: any) => ({ v, sc: fit(v) * 2 + qualityScore(v) + (v?.reel || v?.reel_count || v?.has_reels ? 1 : 0) }))
+    .sort((a: any, b: any) => b.sc - a.sc)
+    .slice(0, 5);
+  if (scored.length === 0) return null;
+  return scored[getDailySeed() % scored.length].v;
+};
+const AUTO_NEAR = false; // Home opens on Tonight's pick, not "closest"
+
 // ─── Animated press wrapper ────────────────────────────────────────
 const AnimatedPressable = ({ children, style, onPress }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
@@ -113,6 +146,95 @@ const AnimatedPressable = ({ children, style, onPress }: any) => {
     </Pressable>
   );
 };
+
+// ─── VBR_HOME_V4: /api/home helpers ───────────────────────────────
+const HOME_API = 'https://viberyte.com/api/home';
+const homeToVenue = (x: any) => ({
+  id: x.id, name: x.name, neighborhood: x.neighborhood, distance_mi: x.distance_mi,
+  standardized_category: x.label, google_photos: x.image ? [x.image] : [], image_url: x.image,
+  highlights: x.reason ? String(x.reason).split(' · ') : [],
+});
+const EV_LABEL: Record<string, string> = {
+  hiphop: 'Hip-Hop', rnb: 'R&B', house: 'House', afrobeats: 'Afrobeats', amapiano: 'Amapiano', reggaeton: 'Reggaeton', latin: 'Latin',
+  dancehall: 'Dancehall', techno: 'Techno', edm: 'EDM', disco: 'Disco', pop: 'Pop', jazz: 'Jazz', open_format: 'Open Format', live_music: 'Live',
+  dj_set: 'DJ Set', party: 'Party', concert: 'Live', karaoke: 'Karaoke', drag: 'Drag', comedy: 'Comedy', screening: 'Screening',
+  market: 'Market', cruise: 'Boat Party', crawl: 'Bar Crawl', trivia: 'Trivia', skate: 'Skate', festival: 'Festival', dance_class: 'Dance Class',
+};
+const fmtClock = (t?: string | null) => {
+  if (!t) return '';
+  const [h, m] = String(t).split(':').map(Number);
+  if (Number.isNaN(h)) return '';
+  const hr = h % 12 === 0 ? 12 : h % 12;
+  return `${hr}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h >= 12 ? 'PM' : 'AM'}`;
+};
+const shortDay = (d?: string | null) => {
+  if (!d) return '';
+  const dt = new Date(`${String(d).slice(0, 10)}T12:00:00`);
+  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+type EvDay = 'tonight' | 'tomorrow' | 'weekend';
+const EV_TABS: { key: EvDay; label: string }[] = [
+  { key: 'tonight', label: 'Tonight' }, { key: 'tomorrow', label: 'Tomorrow' }, { key: 'weekend', label: 'This Weekend' },
+];
+
+// Hero reel: one player, muted, fades in only when ready; still image stays underneath.
+function HomeReel({ uri, playing }: { uri: string; playing: boolean }) {
+  const player = useVideoPlayer(uri, (pl) => { pl.loop = true; pl.muted = true; });
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const sub = player.addListener('statusChange', (e: any) => { if (e?.status === 'readyToPlay') setReady(true); });
+    return () => { try { sub.remove(); } catch {} };
+  }, [player]);
+  useEffect(() => { try { playing ? player.play() : player.pause(); } catch {} }, [playing, player]);
+  return <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: ready ? 1 : 0 }]} contentFit="cover" nativeControls={false} />;
+}
+
+// VBR_HERO_CAROUSEL: up to 3 picks, swipe between them; only the front card plays its reel.
+const HERO_CARD_W = SCREEN_WIDTH - SIDE_PAD * 2;
+function HeroCarousel({ picks, playing, onOpen }: { picks: any[]; playing: boolean; onOpen: (p: any) => void }) {
+  const [active, setActive] = useState(0);
+  return (
+    <View style={{ marginBottom: SECTION_GAP }}>
+      <FlatList
+        data={picks}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={HERO_CARD_W + 10}
+        decelerationRate="fast"
+        contentContainerStyle={{ paddingHorizontal: SIDE_PAD, gap: 10 }}
+        keyExtractor={(p) => `hp-${p.id}`}
+        onMomentumScrollEnd={(e) => {
+          const i = Math.round(e.nativeEvent.contentOffset.x / (HERO_CARD_W + 10));
+          if (i !== active) { setActive(i); Haptics.selectionAsync(); }
+        }}
+        renderItem={({ item, index }) => (
+          <AnimatedPressable style={{ width: HERO_CARD_W }} onPress={() => onOpen(item)}>
+            <View style={s.heroImageWrap}>
+              <Image source={{ uri: item.still || item.image }} style={s.heroImage} contentFit="cover" cachePolicy="memory-disk" transition={300} />
+              {index === active && item.video ? <HomeReel key={item.video} uri={item.video} playing={playing} /> : null}
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.75)']} locations={[0.35, 0.6, 1]} style={StyleSheet.absoluteFillObject} />
+              <View style={s.heroOverlay}><Text style={s.heroLabel}>{index === 0 ? "TONIGHT'S PICK" : 'ALSO TONIGHT'}</Text></View>
+            </View>
+            <View style={s.heroInfo}>
+              {item.headline ? <Text style={s.heroHeadline}>{item.headline}</Text> : null}
+              <Text style={s.heroName} numberOfLines={1}>{item.name}</Text>
+              <Text style={s.heroMeta} numberOfLines={1}>
+                {[item.neighborhood, item.label, typeof item.distance_mi === 'number' ? fmtDistance(item.distance_mi) : null].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+          </AnimatedPressable>
+        )}
+      />
+      {picks.length > 1 ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 12 }}>
+          {picks.map((p, i) => (
+            <View key={p.id} style={{ width: i === active ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: i === active ? '#F5F1EA' : 'rgba(245,241,234,0.3)' }} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 // ─── Skeleton ──────────────────────────────────────────────────────
 const SkeletonHome = () => (
@@ -256,6 +378,9 @@ const IntentPill = React.memo(({ intentKey, active, onPress }: { intentKey: stri
 // ═══════════════════════════════════════════════════════════════════
 // HOME SCREEN
 // ═══════════════════════════════════════════════════════════════════
+// VBR_AUTO_NEAR_ME: Home opens on the curated picks; Near Me is one tap away (it always showed the single closest venue).
+const VBR_AUTO_NEAR_ME = false;
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -275,6 +400,12 @@ export default function HomeScreen() {
   const [dateNightPicks, setDateNightPicks] = useState<any[]>([]);
   const [lateNightSpots, setLateNightSpots] = useState<any[]>([]);
   const [nearYouVenues, setNearYouVenues] = useState<any[]>([]);
+  const [nearPool, setNearPool] = useState<any[]>([]); // VBR_HOME_V3
+  const [placeName, setPlaceName] = useState<string | null>(null);
+  const [home, setHome] = useState<any>(null); // VBR_HOME_V4
+  const [evDay, setEvDay] = useState<EvDay>('tonight');
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const isFocused = useIsFocused();
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>('pending');
   const [cityChoice, setCityChoice] = useState<string | null | undefined>(undefined); // undefined = storage not read yet
@@ -321,6 +452,11 @@ export default function HomeScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         setLocStatus('granted');
+        Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude })
+          .then((g) => { const pl = g?.[0]; setPlaceName(pl?.city || pl?.district || pl?.subregion || null); })
+          .catch(() => {});
+        fetch(`https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=80&sort=distance&radius=12&include=highlights`)
+          .then(r => r.json()).then(r => { if (r?.venues?.length) setNearPool(r.venues); }).catch(() => {});
         const res = await fetch(
           `https://viberyte.com/api/venues?lat=${loc.coords.latitude}&lng=${loc.coords.longitude}&limit=10&sort=distance&include=highlights`
         ).then(r => r.json()).catch(() => null);
@@ -417,7 +553,7 @@ export default function HomeScreen() {
       setAllVenues(sortedVenues);
 
       // Hero — single standout venue
-      const hero = sortedVenues.find((v: any) => (v.google_rating || v.rating) >= 4.3 && getPhotoUrl(v));
+      const hero = pickTonight(sortedVenues, new Date().getHours()) || sortedVenues.find((v: any) => (v.google_rating || v.rating) >= 4.3 && getPhotoUrl(v));
       setHeroVenue(hero || null);
 
       // Tonight's picks (skip hero)
@@ -532,6 +668,9 @@ export default function HomeScreen() {
   // Pill tap. Any manual tap (select or deselect) disables the Near Me auto-default for the session.
   const handleIntentPress = useCallback((key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // VBR_HOME_SHORTCUTS: these pills jump straight into Explore with that mood (Events → Explore Events)
+    const EXPLORE_MOOD: Record<string, string> = { dinner: 'dinner', drinks: 'drinks', nightlife: 'late_night', dateNight: 'date_night', events: 'events' };
+    if (EXPLORE_MOOD[key]) { router.push(`/explore?mood=${EXPLORE_MOOD[key]}&t=${Date.now()}` as any); return; }
     userTouchedRef.current = true;
     if (activeIntent === key) {
       intentReqRef.current += 1;
@@ -547,12 +686,27 @@ export default function HomeScreen() {
 
   // Near Me becomes the default only in location mode, once, and never over a manual choice.
   useEffect(() => {
-    if (locationMode && activeIntent === null && userTouchedRef.current === false && autoNearRef.current === false) {
+    if (VBR_AUTO_NEAR_ME && AUTO_NEAR && locationMode && activeIntent === null && userTouchedRef.current === false && autoNearRef.current === false) {
       autoNearRef.current = true;
       setActiveIntent('nearMe');
       runIntent('nearMe');
     }
   }, [locationMode, activeIntent, runIntent]);
+
+  useEffect(() => { AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {}); }, []);
+  const homeKey = locationMode && coords ? `lat=${coords.lat.toFixed(3)}&lng=${coords.lng.toFixed(3)}` : `region=${encodeURIComponent(cityLabel)}`;
+  useEffect(() => {
+    if (cityChoice === undefined) return;
+    if (wantsLocation && locStatus === 'pending') return;
+    let alive = true;
+    let tz = 'America/New_York';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch {}
+    fetch(`${HOME_API}?${homeKey}&hour=${new Date().getHours()}&tz=${encodeURIComponent(tz)}&seed=${refreshSeed || 0}`)
+      .then((r) => r.json())
+      .then((d) => { if (alive) setHome(d?.ok ? { ...d, __key: homeKey } : null); })
+      .catch(() => { if (alive) setHome(null); });
+    return () => { alive = false; };
+  }, [cityChoice, wantsLocation, locStatus, homeKey, refreshSeed]);
 
   // Invalidate in-flight pill requests on unmount
   useEffect(() => () => { intentReqRef.current += 1; }, []);
@@ -666,6 +820,14 @@ export default function HomeScreen() {
     return sections;
   }, [activeIntent, intentResults, yourKindVenues, follows, nearYouVenues, flowsData, isLateNight, isEvening, hour]);
 
+  const localPick = useMemo(() => (locationMode && nearPool.length > 0 ? pickTonight(nearPool, hour) : null), [locationMode, nearPool, hour]);
+  const localRail = useMemo(() => (locationMode && nearPool.length > 0
+    ? nearPool.filter((v: any) => v.id !== localPick?.id && getPhotoUrl(v)).sort((a: any, b: any) => qualityScore(b) - qualityScore(a)).slice(0, 10)
+    : null), [locationMode, nearPool, localPick]);
+  const localLate = useMemo(() => (locationMode && nearPool.length > 0
+    ? nearPool.filter((v: any) => v.id !== localPick?.id && getPhotoUrl(v) && /lounge|cocktail|bar|club|live/.test(catText(v))).slice(0, 8)
+    : null), [locationMode, nearPool, localPick]);
+
   // ── Loading state ───────────────────────────────────────────────
   if (personaLoading || (loading && !heroVenue && pickedForYou.length === 0)) {
     return (
@@ -708,7 +870,18 @@ export default function HomeScreen() {
   const dayCopy = homeDayCopy(new Date());
 
   // Hero follows the selected pill; otherwise the editorial pick
-  const displayHero = activeIntent ? (intentResults[0] || null) : heroVenue;
+  const homeLive = home && home.__key === homeKey ? home : null; // never show another market's results
+  const homePick = homeLive?.pick ? { ...homeLive.pick, __home: true } : null;
+  const heroPicks: any[] = !activeIntent && Array.isArray(homeLive?.picks) ? homeLive.picks.slice(0, 3) : [];
+  const heroCarousel = heroPicks.length > 1;
+  const displayHero = activeIntent ? (intentResults[0] || null) : (homeLive ? homePick : (localPick || heroVenue));
+  const noCoverage = !!homeLive && !homeLive.pick && !(homeLive.aroundYou || []).length && !(homeLive.worthGoing || []).length;
+  const homeWorth = homeLive?.worthGoing?.length ? homeLive.worthGoing.map(homeToVenue) : null;
+  const homeAround = homeLive?.aroundYou?.length ? homeLive.aroundYou.map(homeToVenue) : null;
+  const aroundData = homeLive ? (homeAround || []) : nearYouVenues;
+  const picksData = homeLive ? (homeWorth || []) : (localRail || pickedForYou);
+  const lateData = localLate || lateNightSpots;
+  const placeLabel = locationMode ? (placeName || 'Near you') : cityLabel;
 
   // ── Render sections by dynamic order ────────────────────────────
   const renderSection = (key: string, index: number) => {
@@ -799,15 +972,15 @@ export default function HomeScreen() {
         );
 
       case 'tonightPicks':
-        if (pickedForYou.length === 0) return null;
+        if (picksData.length === 0) return null;
         return (
           <View key="tonight-picks" style={s.section}>
             <SectionHeader
               title="Worth going out for"
-              onSeeAll={() => openCollection('tonight', 'Worth going out for', pickedForYou)}
+              onSeeAll={() => openCollection('tonight', 'Worth going out for', picksData)}
             />
             <CollectionRow
-              data={pickedForYou}
+              data={picksData}
               keyPrefix="tp"
               renderItem={(venue) => (
                 <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
@@ -820,9 +993,9 @@ export default function HomeScreen() {
         if (nearYouVenues.length === 0 || locationMode === false) return null; // Around you only in Near Me mode (VIBERYTE_TRUST_V1)
         return (
           <View key="near-you" style={s.section}>
-            <SectionHeader title="Around You" subtitle={distanceRange(nearYouVenues)} onSeeAll={openNear} />
+            <SectionHeader title="Around You" subtitle={distanceRange(aroundData)} onSeeAll={openNear} />
             <CollectionRow
-              data={nearYouVenues}
+              data={aroundData}
               keyPrefix="ny"
               renderItem={(venue) => (
                 <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
@@ -855,7 +1028,41 @@ export default function HomeScreen() {
           </View>
         );
 
-      case 'events':
+      case 'events': {
+        const he = homeLive?.events;
+        if (he) {
+          const tabs = EV_TABS;
+          const day: EvDay = evDay;
+          const weekEmpty = EV_TABS.every((t) => (he[t.key] || []).length === 0);
+          const list = (he[day] || []).map((e: any) => ({
+            id: e.id, title: e.name, image_url: e.image,
+            genre: e.recurrence || EV_LABEL[e.genre] || EV_LABEL[e.type] || '',
+            venue_name: [day === 'tonight' ? fmtClock(e.time) : shortDay(e.date), e.venue].filter(Boolean).join(' · '),
+          }));
+          return (
+            <View key="events" style={s.section}>
+              <SectionHeader title="Happening Soon" onSeeAll={() => router.push(`/explore?filter=events&when=${day}` as any)} />
+              <View style={s.dayRow}>
+                {tabs.map((t) => (
+                  <TouchableOpacity key={t.key} style={[s.dayChip, day === t.key && s.dayChipOn]} activeOpacity={0.8}
+                    onPress={() => { Haptics.selectionAsync(); setEvDay(t.key); }}>
+                    <Text style={[s.dayChipText, day === t.key && s.dayChipTextOn]}>{t.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {list.length === 0 ? (
+                <Text style={[s.sectionSubtitle, { paddingHorizontal: SIDE_PAD }]}>
+                  {weekEmpty ? 'No events listed nearby this week yet.' : `Nothing listed for ${day === 'tonight' ? 'tonight' : day === 'tomorrow' ? 'tomorrow' : 'this weekend'} yet.`}
+                </Text>
+              ) : null}
+              <CollectionRow
+                data={list}
+                keyPrefix={`ev-${day}`}
+                renderItem={(event) => <CompactEventCard event={event} onPress={() => handleEventPress(event)} />}
+              />
+            </View>
+          );
+        }
         if (happeningNow.length === 0 && featuredEvents.length === 0) return null;
         const eventsToShow = happeningNow.length > 0 ? happeningNow : featuredEvents.slice(0, 6);
         const eventsTitle = happeningNow.length > 0
@@ -873,14 +1080,15 @@ export default function HomeScreen() {
             />
           </View>
         );
+      }
 
       case 'contextual':
-        if (isLateNight && lateNightSpots.length > 0) {
+        if (isLateNight && lateData.length > 0) {
           return (
             <View key="contextual" style={s.section}>
-              <SectionHeader title="Still Going" onSeeAll={() => openCollection('stillGoing', 'Still going', lateNightSpots)} />
+              <SectionHeader title="Still Going" onSeeAll={() => openCollection('stillGoing', 'Still going', lateData)} />
               <CollectionRow
-                data={lateNightSpots}
+                data={lateData}
                 keyPrefix="ln"
                 renderItem={(venue) => (
                   <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
@@ -926,19 +1134,13 @@ export default function HomeScreen() {
           <View style={s.header}>
             <View style={{ flex: 1 }}>
               <Text style={s.dayEyebrow}>{dayCopy.eyebrow}</Text>
-              <View style={s.headerTopRow}>
-                <Text style={[s.greeting, { flex: 1, marginRight: 12 }]} numberOfLines={2}>{dayCopy.headline}</Text>
-                <TouchableOpacity
-                  style={s.locationPill}
-                  onPress={() => setShowCitySelector(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="location" size={11} color={colors.lux.champagne} />
-                  <Text style={s.locationText}>{userCity}</Text>
-                  <Ionicons name="chevron-down" size={10} color="#52525B" />
-                </TouchableOpacity>
-              </View>
+              <Text style={s.greeting} numberOfLines={2}>{dayCopy.headline}</Text>
               <Text style={s.contextLine}>{dayCopy.subline}</Text>
+              <TouchableOpacity style={s.locationPill} onPress={() => setShowCitySelector(true)} activeOpacity={0.7} accessibilityLabel={`Location: ${placeLabel}. Change`}>
+                <Ionicons name={locationMode ? 'navigate' : 'location'} size={12} color={colors.lux.champagne} />
+                <Text style={s.locationText}>{placeLabel}</Text>
+                <Ionicons name="chevron-down" size={12} color="rgba(245,241,234,0.5)" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -951,10 +1153,11 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="search" size={18} color="#52525B" />
-            <Text style={s.searchPlaceholder}>Search venues, events, vibes…</Text>
+            <Ionicons name="search" size={18} color="rgba(245,241,234,0.55)" />
+            <Text style={s.searchPlaceholder}>Restaurants, events, or a night out…</Text>
           </TouchableOpacity>
 
+          <Text style={s.moodLabel}>What are you in the mood for?</Text>
           {/* ───── QUICK INTENT PILLS ───── */}
           <ScrollView
             horizontal
@@ -984,16 +1187,22 @@ export default function HomeScreen() {
           {activeIntent && intentLoading ? (
             <View style={[s.heroWrap, { height: HERO_HEIGHT, borderRadius: 14, backgroundColor: '#141417' }]} />
           ) : null}
-          {displayHero && (activeIntent ? intentLoading === false : true) ? (
+          {heroCarousel ? (
+            <HeroCarousel picks={heroPicks} playing={isFocused && !showCitySelector && !reduceMotion} onOpen={(p) => handleVenuePress(p)} />
+          ) : null}
+          {!heroCarousel && displayHero && (activeIntent ? intentLoading === false : true) ? (
             <AnimatedPressable style={s.heroWrap} onPress={() => handleVenuePress(displayHero)}>
               <View style={s.heroImageWrap}>
                 <Image
-                  source={{ uri: getPhotoUrl(displayHero) }}
+                  source={{ uri: displayHero.__home ? (displayHero.still || displayHero.image) : getPhotoUrl(displayHero) }}
                   style={s.heroImage}
                   contentFit="cover"
                   cachePolicy="memory-disk"
                   transition={300}
                 />
+                {displayHero.__home && displayHero.video && !reduceMotion ? (
+                  <HomeReel key={displayHero.video} uri={displayHero.video} playing={isFocused && !showCitySelector} />
+                ) : null}
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.75)']}
                   locations={[0.35, 0.6, 1]}
@@ -1003,13 +1212,18 @@ export default function HomeScreen() {
                   <Text style={s.heroLabel}>
                     {activeIntent
                       ? (activeIntent === 'nearMe' ? 'CLOSEST TO YOU' : (INTENT_MAP[activeIntent]?.label || '').toUpperCase())
-                      : 'FEATURED'}
+                      : (hour >= 17 || hour < 4 ? "TONIGHT'S PICK" : "TODAY'S PICK")}
                   </Text>
                 </View>
               </View>
               <View style={s.heroInfo}>
+                {displayHero.__home && displayHero.headline ? <Text style={s.heroHeadline}>{displayHero.headline}</Text> : null}
                 <Text style={s.heroName}>{displayHero.name}</Text>
-                <Text style={s.heroMeta}>{venueMeta(displayHero)}</Text>
+                <Text style={s.heroMeta} numberOfLines={1}>
+                  {displayHero.__home
+                    ? [displayHero.neighborhood, displayHero.label, typeof displayHero.distance_mi === 'number' ? fmtDistance(displayHero.distance_mi) : null].filter(Boolean).join(' · ')
+                    : venueMeta(displayHero)}
+                </Text>
               </View>
             </AnimatedPressable>
           ) : null}
@@ -1026,6 +1240,16 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
+          {noCoverage && !activeIntent ? (
+            <View style={{ marginHorizontal: SIDE_PAD, marginBottom: 28, padding: 20, borderRadius: 16, backgroundColor: '#141417' }}>
+              <Text style={{ color: '#F5F1EA', fontSize: 18, fontWeight: '700' }}>Viberyte isn't in this area yet</Text>
+              <Text style={{ color: 'rgba(245,241,234,0.62)', fontSize: 14, marginTop: 6, lineHeight: 20 }}>We're curating NYC and North Jersey right now. Pick a city to explore.</Text>
+              <TouchableOpacity onPress={() => setShowCitySelector(true)} activeOpacity={0.85}
+                style={{ alignSelf: 'flex-start', marginTop: 14, height: 40, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#C5A36B', justifyContent: 'center' }}>
+                <Text style={{ color: '#0A0A0C', fontSize: 15, fontWeight: '700' }}>Choose a city</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
           {/* ───── DYNAMIC SECTIONS ───── */}
           {orderedSections.map((section, idx) => renderSection(section, idx))}
 
@@ -1081,25 +1305,28 @@ const s = StyleSheet.create({
     letterSpacing: -0.5,
   },
   contextLine: {
-    fontSize: 14,
-    color: '#71717A',
+    fontSize: 15,
+    color: 'rgba(245,241,234,0.62)',
     fontWeight: '400',
     marginTop: 2,
   },
+  moodLabel: { fontSize: 13, fontWeight: '600', color: 'rgba(245,241,234,0.6)', paddingHorizontal: SIDE_PAD, marginBottom: 10 },
   locationPill: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 6,
     backgroundColor: 'rgba(197, 163, 107, 0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(197, 163, 107, 0.12)',
+    borderColor: 'rgba(197, 163, 107, 0.28)',
   },
   locationText: {
-    fontSize: 12,
-    color: '#A1A1AA',
+    fontSize: 14,
+    color: '#F5F1EA',
     fontWeight: '500',
   },
 
@@ -1119,7 +1346,7 @@ const s = StyleSheet.create({
   },
   searchPlaceholder: {
     fontSize: 14,
-    color: '#52525B',
+    color: 'rgba(245,241,234,0.55)',
     fontWeight: '400',
   },
 
@@ -1152,7 +1379,7 @@ const s = StyleSheet.create({
   intentPillText: {
     fontSize: 15,
     fontWeight: '500',
-    color: 'rgba(245,241,234,0.65)',
+    color: 'rgba(245,241,234,0.82)',
     letterSpacing: -0.1,
   },
   intentPillTextActive: {
@@ -1177,21 +1404,31 @@ const s = StyleSheet.create({
   },
   heroOverlay: {
     position: 'absolute',
-    top: 14,
-    left: 14,
+    top: 12,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   heroLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    color: 'rgba(255,255,255,0.6)',
-    letterSpacing: 1.5,
+    color: '#F5F1EA',
+    letterSpacing: 1.4,
   },
   heroInfo: {
     paddingTop: 10,
     paddingHorizontal: 2,
   },
+  heroHeadline: { fontSize: 13, fontWeight: '600', color: '#C5A36B', letterSpacing: 0.2, marginBottom: 3 },
+  dayRow: { flexDirection: 'row', gap: 8, paddingHorizontal: SIDE_PAD, marginTop: -4, marginBottom: 14 },
+  dayChip: { height: 32, paddingHorizontal: 14, borderRadius: 16, justifyContent: 'center', backgroundColor: '#141417' },
+  dayChipOn: { backgroundColor: '#F5F1EA' },
+  dayChipText: { fontSize: 14, fontWeight: '500', color: 'rgba(245,241,234,0.7)' },
+  dayChipTextOn: { color: '#0A0A0C', fontWeight: '600' },
   heroName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#FAFAFA',
     letterSpacing: -0.3,

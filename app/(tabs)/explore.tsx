@@ -1,17 +1,20 @@
 // VIBERYTE_EXPLORE_V2: cinematic Explore. Data: GET /api/explore/feed
+// VIBERYTE_EXPLORE_R1: opens on the map (components/explore/ExploreMap); the cinematic feed is the For you list.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Modal, Pressable, RefreshControl, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import ExploreMap from '../../components/explore/ExploreMap';
 
 const { width: W } = Dimensions.get('window');
 const API = 'https://viberyte.com';
@@ -95,6 +98,17 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const [region, setRegion] = useState<string | null>(null);
   const [hood, setHood] = useState<string | null>(null);
+  // VBR_NEAR_YOU: the map searches around you by default when location is allowed; an area is an explicit choice.
+  const [nearYou, setNearYou] = useState(false);
+  useEffect(() => { (async () => { try { const p = await Location.getForegroundPermissionsAsync(); if (p.status === 'granted') setNearYou(true); } catch {} })(); }, []);
+  const chooseNearYou = async () => {
+    tap(); setAreaOpen(false);
+    try {
+      let p = await Location.getForegroundPermissionsAsync();
+      if (p.status !== 'granted' && p.canAskAgain) p = await Location.requestForegroundPermissionsAsync();
+      if (p.status === 'granted') setNearYou(true);
+    } catch {}
+  };
   const [mood, setMood] = useState<string | null>(null);
   const [feed, setFeed] = useState<Feed | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +117,15 @@ export default function ExploreScreen() {
   const [areaOpen, setAreaOpen] = useState(false);
   const [focused, setFocused] = useState(true);
   const [heroInView, setHeroInView] = useState(true);
+  const [view, setView] = useState<'map' | 'list'>('map');
+  // VBR_HOME_SHORTCUTS: /explore?mood=drinks (or ?filter=events) opens the map in that mode, every time it's tapped
+  const params = useLocalSearchParams<{ mood?: string; filter?: string; t?: string }>();
+  const [moodSignal, setMoodSignal] = useState<string | null>(null);
+  useEffect(() => {
+    const m = params.filter === 'events' ? 'events' : params.mood;
+    if (!m) return;
+    setView('map'); setMood(m); setMoodSignal(`${m}:${params.t || Date.now()}`);
+  }, [params.mood, params.filter, params.t]);
   const reqId = useRef(0);
 
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
@@ -111,6 +134,7 @@ export default function ExploreScreen() {
     (async () => {
       try {
         const saved = JSON.parse((await AsyncStorage.getItem(STORE)) || 'null');
+        // VBR_EXPLORE_MAP_FIRST: Explore always opens on the map
         if (saved?.region) { setRegion(saved.region); setHood(saved.neighborhood || null); return; }
         const city = await AsyncStorage.getItem('@lumina_selected_city');
         setRegion(city && city !== 'Near Me' ? city : 'Manhattan');
@@ -146,29 +170,21 @@ export default function ExploreScreen() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (region) AsyncStorage.setItem(STORE, JSON.stringify({ region, neighborhood: hood })).catch(() => {});
-  }, [region, hood]);
+    if (region) AsyncStorage.setItem(STORE, JSON.stringify({ region, neighborhood: hood, view })).catch(() => {});
+  }, [region, hood, view]);
 
-  const chooseArea = (r: string, n: string | null) => { tap(); setRegion(r); setHood(n); setAreaOpen(false); };
+  const chooseArea = (r: string, n: string | null) => { tap(); setNearYou(false); setRegion(r); setHood(n); setAreaOpen(false); };
   const chooseMood = (m: string | null) => { tap(); setMood(m); };
-  const areaLabel = hood ? `${hood}` : region || 'Manhattan';
-  // VIBERYTE_MAP_STAGE1: open the existing Places map with the current Explore selection
-  // VIBERYTE_MAP_STAGE2: every mood carries over; the map search applies the same mood rules as Explore.
-  const openMap = () => {
-    tap();
-    const label = mood ? feed?.moods.find((m) => m.key === mood)?.label : undefined;
-    const where = hood || region || 'Manhattan';
-    router.push({ pathname: '/places', params: {
-      source: 'query', mode: 'map', city: region || 'Manhattan',
-      ...(hood ? { neighborhood: hood } : {}),
-      ...(mood ? { mood } : {}),
-      title: label ? `${label} · ${where}` : where,
-    } });
-  };
+  const areaLabel = nearYou ? 'Near you' : hood ? `${hood}` : region || 'Manhattan';
+  // VIBERYTE_EXPLORE_R1: Map is part of Explore now (same area + mood); /places stays for Home collections.
+  const showMap = () => { tap(); setView('map'); };
   const hero = feed?.hero;
 
   return (
     <View style={s.root}>
+      {view === 'map' ? (region ? (
+        <ExploreMap region={region} hood={hood} nearYou={nearYou} initialMood={mood} moodSignal={moodSignal} onOpenArea={() => setAreaOpen(true)} onShowList={() => setView('list')} />
+      ) : null) : (
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={32}
@@ -182,7 +198,7 @@ export default function ExploreScreen() {
         <View style={[s.pad, s.headRow]}>
           <Text style={s.title}>Explore</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity style={s.mapBtn} onPress={openMap} accessibilityLabel="Open map">
+            <TouchableOpacity style={s.mapBtn} onPress={showMap} accessibilityLabel="Show map">
               <Ionicons name="map-outline" size={16} color={C.champ} />
               <Text style={s.mapBtnText}>Map</Text>
             </TouchableOpacity>
@@ -263,6 +279,7 @@ export default function ExploreScreen() {
           </View>
         )}
       </ScrollView>
+      )}
 
       <Modal visible={areaOpen} transparent animationType="slide" onRequestClose={() => setAreaOpen(false)}>
         <Pressable style={s.backdrop} onPress={() => setAreaOpen(false)} />
@@ -270,8 +287,12 @@ export default function ExploreScreen() {
           <View style={s.grabber} />
           <Text style={[s.h2, { marginBottom: 12 }]}>Where</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
+            <TouchableOpacity style={s.hoodRow} onPress={chooseNearYou} accessibilityLabel="Search near you">
+              <Text style={s.hoodText}>Near you</Text>
+              {nearYou ? <Ionicons name="checkmark" size={18} color={C.ivory} /> : <Ionicons name="navigate-outline" size={16} color={C.ivory} />}
+            </TouchableOpacity>
             {(feed?.regions || ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'North Jersey']).map((r) => {
-              const on = r === region;
+              const on = r === region && !nearYou;
               return (
                 <TouchableOpacity key={r} onPress={() => chooseArea(r, null)} style={[s.mood, on && s.moodOn]}>
                   <Text style={[s.moodText, on && s.moodTextOn]}>{r}</Text>
