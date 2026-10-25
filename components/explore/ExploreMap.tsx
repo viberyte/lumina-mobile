@@ -588,6 +588,8 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
     if (c && mapRef.current) { touchRef.current = false; progAt.current = Date.now(); mapRef.current.animateCamera({ center: c }, { duration: 300 }); }
   };
   const lastPinAt = useRef(0);
+  const progTarget = useRef<{ i: number; at: number } | null>(null);
+  const selectedRef = useRef(0); selectedRef.current = selected;
   const onPin = (key: string) => { // VBR_PIN_POOL: identity, never a list index
     if (Date.now() - lastPinAt.current < 250) return; // VBR_PIN_LIGHT: debounce machine-gun taps
     const i = indexForKey(cards, key, kid);
@@ -596,7 +598,10 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
     lastPinAt.current = Date.now();
     tap();
     setSelected(i);
-    carouselRef.current?.scrollToOffset({ offset: i * (CARD_W + GAP), animated: true });
+    // VBR_CAROUSEL_GUARD: the strip moves because of the pin, not the other way round
+    progTarget.current = { i, at: Date.now() };
+    carouselRef.current?.scrollToOffset({ offset: i * (CARD_W + GAP), animated: Math.abs(i - selectedRef.current) <= 2 });
+    selectedRef.current = i;
     focusCard(i);
   };
   const onPinRef = useRef(onPin); onPinRef.current = onPin;
@@ -609,9 +614,17 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   }), [pins, cards, evAt]);
   const onCarouselEnd = (e: any) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + GAP));
+    const p = progTarget.current;
+    if (p && Date.now() - p.at < 1500) {
+      if (__DEV__) console.log('[card swipe] ignored — pin tap', p.i, 'landed', i);
+      if (i !== p.i) carouselRef.current?.scrollToOffset({ offset: p.i * (CARD_W + GAP), animated: false });
+      progTarget.current = null; return;
+    }
+    progTarget.current = null;
     if (__DEV__) console.log('[card swipe]', i, cards[i] ? (cards[i].name || cards[i].title) : '(none)'); // VBR_CAM_LOG
-    if (i >= 0 && i < cards.length) { setSelected(i); focusCard(i); }
+    if (i >= 0 && i < cards.length && i !== selectedRef.current) { setSelected(i); focusCard(i); }
   };
+  const onCarouselDrag = () => { progTarget.current = null; }; // a finger on the strip always wins
   const openSheet = (x: any) => router.push(isEvents || isEv(x) ? `/event-sheet/${x.id}` : `/venue-sheet/${x.id}`); // VBR_SWIPE_SHEET
   const open = (x: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -874,6 +887,8 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
           decelerationRate="fast"
           keyExtractor={(x: any) => (isEvents ? `e-${x.id}` : kid(x))}
           onMomentumScrollEnd={onCarouselEnd}
+          onScrollBeginDrag={onCarouselDrag}
+          getItemLayout={(_: any, index: number) => ({ length: CARD_W + GAP, offset: 24 + index * (CARD_W + GAP), index })}
           initialNumToRender={4}
           windowSize={5}
           extraData={selected + (playable ? 1000 : 0)}
