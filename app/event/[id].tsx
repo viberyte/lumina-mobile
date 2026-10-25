@@ -25,6 +25,7 @@ import luminaApi from '../../services/lumina';
 import { colors } from '../../theme';
 import AddEventToPlanSheet from '../../components/AddEventToPlanSheet';
 import { useToast } from '../../contexts/ToastContext';
+import VenueReels from '../../components/VenueReels'; // VBR_EVENT_VENUE_REELS_V1
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = SCREEN_HEIGHT * 0.55;
@@ -471,6 +472,9 @@ export default function EventDetailScreen() {
             </View>
           </View>
         )}
+
+        {/* ── INSIDE THE VENUE — the venue's own reels (VBR_EVENT_VENUE_REELS_V1) ── */}
+        <VenueReels venueId={event.venue_id} venueName={event.venue_name} />
 
         {/* ── YOUR NIGHT TIMELINE ── */}
         {event.venue_name && (

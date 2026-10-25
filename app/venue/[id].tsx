@@ -427,7 +427,7 @@ export default function VenueScreen() {
           </View>
         ) : null}
 
-        <NotesSection venueId={v.id} venueName={v.name} /> {/* VBR_VIBE */}
+        {/* VBR_VIBE */}<NotesSection venueId={v.id} venueName={v.name} />
 
         <InsideRail reels={thumbReels} onOpen={setViewerAt} photos={((v as any).photos || []).map((x: any) => x.url)} onPhoto={setPhotoAt} />
 
