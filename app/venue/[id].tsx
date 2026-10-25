@@ -18,11 +18,12 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { requireAuth } from '../../utils/authGate';
 import NotesSection from '../../components/vibe/NotesSection'; // VBR_NOTES_V1
 import { api, trackBehavior } from '../../lib/api';
+import { typeLabel } from '../../theme/editorial'; // VBR_VENUE_EDITORIAL_V1
 import tasteTracker from '../../services/tasteTracker';
 import { isSaved as isSavedLocal, saveFavoriteCompat, removeFavoriteCompat } from '../../lib/saved'; // VIBERYTE_SAVED_V1
 
 const { width: W, height: H } = Dimensions.get('window');
-const HERO_H = Math.round(H * 0.64);
+const HERO_H = Math.round(Math.min(H * 0.6, W * 1.2)); // VBR_VENUE_EDITORIAL_V1: media at a portrait shape; title sits below
 const API = 'https://viberyte.com';
 const C = {
   ground: '#09090B', surface: '#141416', raise: '#1C1C1E', line: 'rgba(243,240,233,0.08)',
@@ -68,9 +69,9 @@ function RailCard({ c, size }: { c: Card; size: 'medium' | 'compact' }) {
       {size === 'medium' ? (
         <>
           <View style={s.metaLine}>
-            {dist ? <Text style={[s.cardEyebrow, s.noShrink]}>{dist.toUpperCase()}</Text> : null}
+            {dist ? <Text style={[s.cardEyebrow, s.noShrink]}>{dist}</Text> : null}
             {dist && (c.vibe || c.type) ? <Text style={[s.cardEyebrow, s.noShrink]}>  ·  </Text> : null}
-            <Text style={[s.cardEyebrow, s.shrink]} numberOfLines={1}>{(c.vibe || c.type || '').toUpperCase()}</Text>
+            <Text style={[s.cardEyebrow, s.shrink]} numberOfLines={1}>{c.vibe || typeLabel(c.type)}</Text>
           </View>
           <Text style={s.cardNameM} numberOfLines={2}>{c.name}</Text>
           {c.neighborhood ? <Text style={s.cardMeta} numberOfLines={1}>{c.neighborhood}</Text> : null}
@@ -356,7 +357,7 @@ export default function VenueScreen() {
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity onPress={toggleSave} style={s.circle} accessibilityLabel="Save">
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={saved ? C.champ : C.ivory} />
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={C.ivory} />
           </TouchableOpacity>
           <TouchableOpacity onPress={share} style={s.circle} accessibilityLabel="Share">
             <Ionicons name="share-outline" size={19} color={C.ivory} />
@@ -377,23 +378,20 @@ export default function VenueScreen() {
             {reel ? <HeroVideo key={reel.url} uri={reel.url} playing={heroVisible && viewerAt === null} /> : null}
           </Animated.View>
           <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
-            colors={['rgba(9,9,11,0.5)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0.85)', C.ground]}
-            locations={[0, 0.22, 0.45, 0.8, 1]} />
-          <Animated.View style={[s.heroText, { opacity: heroTextOpacity }]} pointerEvents="none">
-            {eyebrow ? <Text style={s.eyebrow}>{eyebrow.toUpperCase()}</Text> : null}
-            <Text style={s.h1}>{v.name}</Text>
-            {v.why ? <Text style={s.why}>{v.why}</Text> : null}
-            <View style={s.metaRow}>
-              {dist ? <Text style={s.meta}>{dist} from you</Text> : null}
-              {reel && v.instagram_handle ? (
-                <View style={s.credit}>
-                  <View style={s.dot} />
-                  <Text style={s.meta}>@{v.instagram_handle.replace('@', '')}{reels.length > 1 ? `  ${(reelIdx % reels.length) + 1}/${reels.length}` : ''}</Text>
-                </View>
-              ) : null}
+            colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.35)']} locations={[0, 0.25, 0.72, 1]} />
+          {reel && v.instagram_handle ? (
+            <View style={s.creditOn} pointerEvents="none">
+              <Text style={s.creditText}>@{v.instagram_handle.replace('@', '')}{reels.length > 1 ? `  ·  ${(reelIdx % reels.length) + 1}/${reels.length}` : ''}</Text>
             </View>
-          </Animated.View>
+          ) : null}
         </Pressable>
+
+        <View style={s.headBlock}>
+          <Text style={s.h1}>{v.name}</Text>
+          {[typeLabel(v.type), v.neighborhood, dist ? `${dist} away` : null].filter(Boolean).length ? (
+            <Text style={s.facts}>{[typeLabel(v.type), v.neighborhood, dist ? `${dist} away` : null].filter(Boolean).join(' · ')}</Text>
+          ) : null}
+        </View>
 
         <View style={s.actions}>
           <TouchableOpacity style={s.btnPrimary} onPress={directions} activeOpacity={0.9}>
@@ -555,7 +553,7 @@ const vm = StyleSheet.create({
   expandText: { color: C.ivory, fontSize: 12, fontWeight: '600' },
   label: { maxWidth: 180, paddingHorizontal: 10, height: 26, borderRadius: 13, justifyContent: 'center', backgroundColor: C.ivory, marginBottom: 4 },
   labelText: { color: C.ink, fontSize: 12, fontWeight: '700' },
-  pin: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.champ, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.ivory },
+  pin: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.ivory, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: C.ink },
   pinCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ink },
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: 'rgba(243,240,233,0.9)', borderWidth: 2, borderColor: '#000' },
   topRow: { position: 'absolute', top: Platform.OS === 'ios' ? 58 : 30, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
@@ -592,12 +590,16 @@ const s = StyleSheet.create({
   },
   heroText: { position: 'absolute', left: 20, right: 20, bottom: 22, gap: 8 },
   eyebrow: { color: '#C9C5BE', fontSize: 12, fontWeight: '600', letterSpacing: 1.4 },
-  h1: { color: C.ivory, fontSize: 38, lineHeight: 41, fontWeight: '700', letterSpacing: -0.9 },
+  h1: { color: C.ivory, fontSize: 34, lineHeight: 38, fontWeight: '700', letterSpacing: -0.9 },
+  headBlock: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 18 },
+  facts: { color: C.muted, fontSize: 16, lineHeight: 22, marginTop: 8 },
+  creditOn: { position: 'absolute', left: 16, bottom: 14 },
+  creditText: { color: 'rgba(243,240,233,0.85)', fontSize: 12, fontWeight: '500' },
   why: { color: C.soft, fontSize: 16, lineHeight: 22 },
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
   meta: { color: C.muted, fontSize: 13 },
   credit: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 'auto' },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.champ },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.muted },
   actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 28 },
   btnPrimary: {
     flex: 1.5, height: 50, borderRadius: 14, backgroundColor: C.ivory,
@@ -622,9 +624,9 @@ const s = StyleSheet.create({
   pin: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.ivory, borderWidth: 3, borderColor: C.ink },
   addrRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
   addr: { color: C.ivory, fontSize: 15 },
-  link: { color: C.champ, fontSize: 15, fontWeight: '600' },
+  link: { color: C.ivory, fontSize: 15, fontWeight: '600' },
   initial: { color: C.muted, fontSize: 28, fontWeight: '600', textAlign: 'center', marginTop: '22%' },
-  cardEyebrow: { color: C.champ, fontSize: 11, fontWeight: '600', letterSpacing: 1.1 },
+  cardEyebrow: { color: C.muted, fontSize: 13 },
   cardNameM: { color: C.ivory, fontSize: 18, lineHeight: 22, fontWeight: '600', letterSpacing: -0.2, marginTop: 4 },
   cardNameS: { color: C.ivory, fontSize: 15, fontWeight: '600', marginTop: 8 },
   cardMeta: { color: C.muted, fontSize: 13, marginTop: 3 },

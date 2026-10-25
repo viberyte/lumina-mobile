@@ -1,4 +1,4 @@
-// components/VenueReels.tsx — VBR_EVENT_VENUE_REELS_V1
+// components/VenueReels.tsx — VBR_EVENT_VENUE_REELS_V1 + VBR_EVENT_EDITORIAL_V1 (venue row like an organizer row)
 // On an event page: what the venue itself looks like, from the venue's own Instagram reels.
 // Labeled plainly as the venue's content — not footage of this event.
 // Data: GET /api/venues/:id/detail (same vetted reels as the venue page: owner-posted, approved venues only).
@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { ink, hair, typeLabel } from '../theme/editorial';
 
 const API = 'https://viberyte.com';
 const { width: W, height: H } = Dimensions.get('window');
@@ -70,6 +71,7 @@ export default function VenueReels({ venueId, venueName }: { venueId: number | s
   const [handle, setHandle] = useState<string | null>(null);
   const [name, setName] = useState<string>(venueName || '');
   const [at, setAt] = useState<number | null>(null);
+  const [v, setV] = useState<{ image: string | null; sub: string } | null>(null);
 
   useEffect(() => {
     if (!venueId) return;
@@ -81,6 +83,8 @@ export default function VenueReels({ venueId, venueName }: { venueId: number | s
         if (!j?.ok || !j.venue) return;
         const list: Reel[] = (j.venue.reels || []).filter((r: Reel, i: number, a: Reel[]) => !!r?.url && !!r.poster && a.findIndex((x) => x.url === r.url) === i);
         setReels(list); setHandle(j.venue.instagram_handle || null); if (j.venue.name) setName(j.venue.name);
+        const im = j.venue.image_url ? (String(j.venue.image_url).startsWith('/') ? API + j.venue.image_url : j.venue.image_url) : null;
+        setV({ image: im, sub: [j.venue.neighborhood, typeLabel(j.venue.type)].filter(Boolean).join(' · ') });
         if (__DEV__) console.log('[venue reels]', venueId, list.length);
       })
       .catch(() => {})
@@ -88,15 +92,22 @@ export default function VenueReels({ venueId, venueName }: { venueId: number | s
     return () => { clearTimeout(t); ctrl.abort(); };
   }, [venueId]);
 
-  if (!venueId || reels.length === 0) return null;
+  if (!venueId || !v) return null;
 
   return (
     <View style={s.wrap}>
+      {/* The venue, like an organizer row */}
+      <TouchableOpacity style={s.venueRow} activeOpacity={0.7} onPress={() => { tap(); router.push(`/venue/${venueId}`); }} accessibilityLabel={`Open ${name}`}>
+        <View style={s.avatar}>{v.image ? <Image source={{ uri: v.image }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" /> : null}</View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.venueName} numberOfLines={1}>{name}</Text>
+          {v.sub ? <Text style={s.venueSub} numberOfLines={1}>{v.sub}</Text> : null}
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={ink.faint} />
+      </TouchableOpacity>
+      {reels.length === 0 ? <View style={s.hairLine} /> : (<>
       <View style={s.head}>
-        <Text style={s.label}>Inside the venue</Text>
-        <TouchableOpacity onPress={() => { tap(); router.push(`/venue/${venueId}`); }} hitSlop={10} accessibilityLabel={`Open ${name}`}>
-          <Text style={s.link}>View venue</Text>
-        </TouchableOpacity>
+        <Text style={s.label}>Inside {name}</Text>
       </View>
       <Text style={s.note}>{handle ? `From @${handle.replace('@', '')}` : `From ${name}`} · the venue’s own posts, not footage of this event</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast" contentContainerStyle={s.row}>
@@ -110,15 +121,22 @@ export default function VenueReels({ venueId, venueName }: { venueId: number | s
           </TouchableOpacity>
         ))}
       </ScrollView>
+      <View style={[s.hairLine, { marginTop: 26 }]} />
+      </>)}
       {at !== null ? <Viewer reels={reels} start={at} handle={handle} venue={name} onClose={() => setAt(null)} /> : null}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  wrap: { paddingTop: 28 },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 },
-  label: { fontSize: 11, fontWeight: '700', color: '#52525b', letterSpacing: 1.2, textTransform: 'uppercase' },
+  wrap: { paddingTop: 6 },
+  venueRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 16 },
+  avatar: { width: 46, height: 46, borderRadius: 23, overflow: 'hidden', backgroundColor: ink.raise },
+  venueName: { color: ink.ivory, fontSize: 17, fontWeight: '600' },
+  venueSub: { color: ink.gray, fontSize: 14, marginTop: 2 },
+  hairLine: { height: hair, backgroundColor: ink.line, marginHorizontal: 20 },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 12 },
+  label: { color: ink.ivory, fontSize: 21, lineHeight: 26, fontWeight: '600', letterSpacing: -0.3 },
   link: { color: C.ivory, fontSize: 14, fontWeight: '600' },
   note: { color: C.muted, fontSize: 13, lineHeight: 18, paddingHorizontal: 20, marginTop: 6 },
   row: { paddingHorizontal: 20, gap: 10, paddingTop: 12 },

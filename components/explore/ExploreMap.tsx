@@ -35,8 +35,9 @@ const MAX_VENUE_PINS = 20;
 const CARD_H = 184;
 const MEDIA_W = Math.round(CARD_W * 0.42);
 const EVENT_LIMIT = 200; // server maximum per request
+import { typeLabel } from '../../theme/editorial'; // VBR_EDITORIAL_EXPLORE_V1
 const C = {
-  ground: '#09090B', glass: 'rgba(20,20,23,0.95)', raise: '#1C1C1E', line: 'rgba(243,240,233,0.14)',
+  ground: '#09090B', glass: 'rgba(10,10,11,0.95)', raise: '#1C1C1E', line: 'rgba(243,240,233,0.14)',
   ivory: '#F3F0E9', ink: '#09090B', muted: 'rgba(243,240,233,0.6)', faint: 'rgba(243,240,233,0.38)', champ: '#C5A36B',
 };
 // Fallback names when Apple's place lookup is unavailable: nearest known area to the map center.
@@ -769,9 +770,9 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
             <Ionicons name="search" size={16} color={C.muted} />
             <TextInput
               style={s.input} value={query} onChangeText={onChangeQuery} onSubmitEditing={submit}
-              placeholder={isEvents ? 'Artists, genres, venues…' : 'Jazz in Harlem, rooftops, sushi…'}
+              placeholder={isEvents ? 'Search events' : 'Search places'}
               placeholderTextColor={C.faint} returnKeyType="search" autoCorrect={false} autoCapitalize="none" maxLength={80}
-              selectionColor={C.champ} accessibilityLabel="Search the map"
+              selectionColor={C.ivory} accessibilityLabel="Search the map"
             />
             {loading ? <ActivityIndicator size="small" color={C.muted} /> : query ? (
               <TouchableOpacity onPress={clearQuery} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Clear search">
@@ -785,7 +786,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
             if (bbox) { setBbox(null); setMapPlace(null); fitNext.current = true; }
             onOpenArea();
           }} accessibilityLabel={`Area: ${bbox && mapPlace ? mapPlace : where}. Change area`}>
-            <Ionicons name={bbox ? 'navigate-circle' : 'location'} size={14} color={C.champ} />
+            <Ionicons name={bbox ? 'navigate-circle' : 'location'} size={14} color={C.ivory} />
             <Text style={s.areaBtnTopText} numberOfLines={1}>{bbox ? mapPlace || 'This area' : where}</Text>
             <Ionicons name="chevron-down" size={12} color={C.muted} />
           </TouchableOpacity>
@@ -951,8 +952,8 @@ const ListRow = React.memo(function ListRow({ x, isEvent, onPress, ev, featured,
   const u = isEvent ? img(x.image_url) : (x?.reel?.poster ? img(x.reel.poster) : getPhotoUrl(x));
   if (!isEvent) {
     const t = String(x?.type || x?.category || '').replace(/_/g, ' ');
-    const eyebrow = [t, x.neighborhood, x.distance_mi != null ? `${x.distance_mi} mi` : null].filter(Boolean).join(' · ').toUpperCase();
-    const why = [x.vibe, x.cuisine && String(x.cuisine).toLowerCase() !== t.toLowerCase() ? x.cuisine : null].filter(Boolean).join(' · ');
+    const eyebrow = [typeLabel(t), x.neighborhood, x.distance_mi != null ? `${x.distance_mi} mi` : null].filter(Boolean).join(' · ');
+    const why = x.vibe || (x.cuisine && String(x.cuisine).toLowerCase() !== t.toLowerCase() ? x.cuisine : '');
     const evText = ev ? `Event ${pinDay(ev.date)} · ${ev.title}` : null;
     if (featured) return (
       <TouchableOpacity style={s.feat} onPress={onPress} activeOpacity={0.9}>
@@ -960,8 +961,8 @@ const ListRow = React.memo(function ListRow({ x, isEvent, onPress, ev, featured,
           {u ? <Image source={{ uri: u }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={150} /> : null}
           {play && x?.reel?.video ? <ReelVideo key={x.reel.video} uri={img(x.reel.video) as string} /> : null}
         </View>
-        <Text style={[s.eyebrow, { marginTop: 12 }]} numberOfLines={1}>{eyebrow}</Text>
-        <Text style={s.featName} numberOfLines={1}>{x.name}</Text>
+        <Text style={[s.featName, { marginTop: 12 }]} numberOfLines={1}>{x.name}</Text>
+        <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text>
         {why ? <Text style={s.meta} numberOfLines={1}>{why}</Text> : null}
         {evText ? <Text style={s.evLine} numberOfLines={1}>{evText}</Text> : null}
       </TouchableOpacity>
@@ -977,8 +978,8 @@ const ListRow = React.memo(function ListRow({ x, isEvent, onPress, ev, featured,
           {u ? <Image source={{ uri: u }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={120} /> : null}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text>
           <Text style={s.name} numberOfLines={1}>{x.name}</Text>
+          <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text>
           {why ? <Text style={s.meta} numberOfLines={1}>{why}</Text> : null}
           {evText ? <Text style={s.evLine} numberOfLines={1}>{evText}</Text> : null}
         </View>
@@ -990,8 +991,8 @@ const ListRow = React.memo(function ListRow({ x, isEvent, onPress, ev, featured,
     <TouchableOpacity style={s.listRow} onPress={onPress} activeOpacity={0.8}>
       {u ? <Image source={{ uri: u }} style={s.thumb} contentFit="cover" cachePolicy="memory-disk" transition={120} /> : <View style={[s.thumb, { backgroundColor: C.raise }]} />}
       <View style={{ flex: 1 }}>
-        {isEvent ? <Text style={s.eyebrow} numberOfLines={1}>{[evDay(x.date), fmtTime(x.time)].filter(Boolean).join(' · ').toUpperCase()}</Text> : null}
         <Text style={s.name} numberOfLines={1}>{isEvent ? x.title : x.name}</Text>
+        {isEvent ? <Text style={s.eyebrow} numberOfLines={1}>{[evDay(x.date), fmtTime(x.time)].filter(Boolean).join(' · ')}</Text> : null}
         <Text style={s.meta} numberOfLines={1}>{isEvent
           ? [x.venue_name, x.genre_label, priceOf(x)].filter(Boolean).join(' · ')
           : [x.neighborhood, type ? type.replace(/^\w/, (c: string) => c.toUpperCase()) : null].filter(Boolean).join(' · ')}</Text>
@@ -1033,11 +1034,12 @@ const ReelCard = React.memo(function ReelCard({ x, isEvent, active, onOpen, onDi
     return () => clearTimeout(t);
   }, [active, video]);
   const type = String(x?.type || x?.standardized_category || x?.category || '').replace(/_/g, ' ');
-  const eyebrow = isEvent
+  // VBR_EDITORIAL_EXPLORE_V1: no eyebrow. Name, then plain facts, then at most one verified detail.
+  const sub = isEvent
     ? [evDay(x.date), fmtTime(x.time)].filter(Boolean).join(' · ')
-    : [type, x.neighborhood].filter(Boolean).join(' · ');
+    : [typeLabel(type), x.neighborhood].filter(Boolean).join(' · ');
   const known = !isEvent && x.cuisine && String(x.cuisine).toLowerCase() !== type.toLowerCase() ? x.cuisine : null;
-  const tags = isEvent ? [x.venue_name, x.genre_label, priceOf(x)].filter(Boolean).join(' · ') : [x.vibe, known].filter(Boolean).join(' · ');
+  const tags = isEvent ? [x.venue_name, x.genre_label, priceOf(x)].filter(Boolean).join(' · ') : (x.vibe || known || '');
   const located = coordOf(x) != null;
   return (
     <Animated.View style={[s.card, { transform: [{ translateY: lift }] }]} {...pan.panHandlers}>
@@ -1047,9 +1049,9 @@ const ReelCard = React.memo(function ReelCard({ x, isEvent, active, onOpen, onDi
         {live && video ? <ReelVideo key={video} uri={video} /> : null}
       </Pressable>
       <View style={s.cardBody}>
-        <Text style={s.eyebrow} numberOfLines={1}>{eyebrow.toUpperCase()}</Text>
         <Text style={s.cardName} numberOfLines={2}>{isEvent ? x.title : x.name}</Text>
-        {tags ? <Text style={s.meta} numberOfLines={2}>{tags}</Text> : null}
+        {sub ? <Text style={s.cardSub} numberOfLines={1}>{sub}</Text> : null}
+        {tags ? <Text style={s.meta} numberOfLines={1}>{tags}</Text> : null}
         {ev ? <Text style={s.evLine} numberOfLines={1}>{`Event ${pinDay(ev.date)} · ${ev.title}`}</Text> : null}
         {isEvent && !located ? <Text style={s.faint} numberOfLines={1}>Not on the map yet</Text> : null}
         <View style={s.cardActions}>
@@ -1073,12 +1075,12 @@ const s = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16 },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 14, borderRadius: 22,
-    backgroundColor: C.glass, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    backgroundColor: C.glass,
   },
   input: { flex: 1, color: C.ivory, fontSize: 15, paddingVertical: 0 },
   areaBtnTop: {
     flexDirection: 'row', alignItems: 'center', gap: 5, height: 44, paddingHorizontal: 12, borderRadius: 22, maxWidth: 150,
-    backgroundColor: C.glass, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(197,163,107,0.55)',
+    backgroundColor: C.glass,
   },
   areaBtnTopText: { color: C.ivory, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   toggle: {
@@ -1095,39 +1097,39 @@ const s = StyleSheet.create({
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(243,240,233,0.08)', marginLeft: 108 },
   pillRow: { paddingHorizontal: 16, gap: 8 },
   modeRow: { paddingHorizontal: 16 },
-  seg: { flexDirection: 'row', padding: 4, borderRadius: 22, backgroundColor: C.glass, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  seg: { flexDirection: 'row', padding: 4, borderRadius: 22, backgroundColor: C.glass },
   segBtn: { flex: 1, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   segOn: { backgroundColor: C.ivory },
   segText: { color: C.muted, fontSize: 15, fontWeight: '600' },
   segTextOn: { color: C.ink },
-  pill: { height: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: C.glass, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  pill: { height: 32, paddingHorizontal: 14, borderRadius: 16, justifyContent: 'center', backgroundColor: C.glass },
   pillOn: { backgroundColor: C.ivory, borderColor: C.ivory },
   pillText: { color: C.ivory, fontSize: 14, fontWeight: '500' },
   pillTextOn: { color: C.ink, fontWeight: '600' },
   pillCount: { color: C.muted, fontSize: 13, fontWeight: '500', fontVariant: ['tabular-nums'] },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 12, borderRadius: 15,
-    backgroundColor: 'rgba(9,9,11,0.9)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(197,163,107,0.55)',
+    backgroundColor: C.glass,
   },
-  chipOn: { backgroundColor: C.champ, borderColor: C.champ },
-  chipText: { color: C.champ, fontSize: 13, fontWeight: '600' },
+  chipOn: { backgroundColor: C.ivory },
+  chipText: { color: C.ivory, fontSize: 14, fontWeight: '500' },
   chipTextOn: { color: C.ink },
   status: {
     alignSelf: 'flex-start', marginLeft: 16, color: C.muted, fontSize: 11, fontWeight: '500', overflow: 'hidden',
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(9,9,11,0.55)', fontVariant: ['tabular-nums'],
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(10,10,11,0.88)', fontVariant: ['tabular-nums'],
   },
   banner: { marginHorizontal: 16, padding: 12, borderRadius: 14, backgroundColor: 'rgba(20,20,23,0.96)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.1)' },
   bannerText: { color: C.ivory, fontSize: 13, lineHeight: 18 },
   bannerActions: { flexDirection: 'row', gap: 18, marginTop: 8 },
-  bannerAction: { color: C.champ, fontSize: 13, fontWeight: '600' },
+  bannerAction: { color: C.ivory, fontSize: 13, fontWeight: '600' },
   recenter: {
     position: 'absolute', right: 16, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
     backgroundColor: C.glass, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
   },
   carousel: { position: 'absolute', left: 0, right: 0 },
   card: {
-    width: CARD_W, height: CARD_H, flexDirection: 'row', borderRadius: 18, overflow: 'hidden',
-    backgroundColor: 'rgba(20,20,23,0.97)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.1)',
+    width: CARD_W, height: CARD_H, flexDirection: 'row', borderRadius: 16, overflow: 'hidden',
+    backgroundColor: 'rgba(10,10,11,0.98)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.08)',
   },
   media: { width: MEDIA_W, height: '100%', backgroundColor: C.raise },
   cardGrabber: { position: 'absolute', top: 6, alignSelf: 'center', left: '50%', marginLeft: -18, width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(245,241,234,0.35)', zIndex: 5 },
@@ -1136,7 +1138,8 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(9,9,11,0.6)',
   },
   cardBody: { flex: 1, paddingHorizontal: 14, paddingVertical: 14 },
-  cardName: { color: C.ivory, fontSize: 18, lineHeight: 22, fontWeight: '700', letterSpacing: -0.2, marginTop: 4 },
+  cardName: { color: C.ivory, fontSize: 19, lineHeight: 23, fontWeight: '600', letterSpacing: -0.3, marginTop: 6 },
+  cardSub: { color: C.muted, fontSize: 14, lineHeight: 19, marginTop: 4 },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 'auto' },
   primaryBtn: { flex: 1, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ivory },
   primaryBtnText: { color: C.ink, fontSize: 14, fontWeight: '600' },
@@ -1146,21 +1149,21 @@ const s = StyleSheet.create({
   pinLabelText: { color: C.ink, fontSize: 12, fontWeight: '700' },
   thumb: { width: 78, height: 78, borderRadius: 12 },
   thumbBack: { backgroundColor: C.raise, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  thumbMon: { color: C.champ, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  thumbMon: { color: C.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1.1 },
   thumbDay: { color: C.ivory, fontSize: 26, fontWeight: '600', marginTop: -2 },
-  eyebrow: { color: C.champ, fontSize: 11, fontWeight: '600', letterSpacing: 0.9 },
+  eyebrow: { color: C.muted, fontSize: 13, marginTop: 2 }, // VBR_EDITORIAL_EXPLORE_V1: facts line (no gold caps)
   name: { color: C.ivory, fontSize: 16, fontWeight: '600', marginTop: 1 },
   meta: { color: C.muted, fontSize: 13, marginTop: 2 },
   faint: { color: C.faint, fontSize: 12, marginTop: 2 },
   pin: { width: 12, height: 12, borderRadius: 6, backgroundColor: 'rgba(243,240,233,0.88)', borderWidth: 2, borderColor: '#000' },
   pinEv: { backgroundColor: C.champ },
-  evLine: { color: C.champ, fontSize: 12, fontWeight: '600', marginTop: 4 },
+  evLine: { color: C.ivory, fontSize: 13, fontWeight: '500', marginTop: 4 },
   covTint: { backgroundColor: 'rgba(150,70,35,0.16)' },
   covBanner: { marginHorizontal: 16, padding: 12, borderRadius: 14, backgroundColor: 'rgba(20,20,23,0.96)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(197,163,107,0.45)' },
   covTitle: { color: C.ivory, fontSize: 14, fontWeight: '600' },
   covSub: { color: C.muted, fontSize: 12, marginTop: 2 },
   covLimited: { color: C.champ, fontSize: 12, paddingHorizontal: 18 },
-  pinSel: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.ivory, borderWidth: 3, borderColor: C.champ },
+  pinSel: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.ivory, borderWidth: 3, borderColor: C.ink },
   datePin: { paddingHorizontal: 8, height: 24, borderRadius: 12, justifyContent: 'center', backgroundColor: C.ground, borderWidth: 1.5, borderColor: C.champ },
   datePinSel: { backgroundColor: C.champ, borderColor: C.ivory, height: 28, borderRadius: 14, paddingHorizontal: 10 },
   datePinText: { color: C.ivory, fontSize: 11, fontWeight: '700' },

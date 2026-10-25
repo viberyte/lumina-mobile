@@ -38,7 +38,7 @@ const PinSlot = React.memo(function PinSlot({ pin, sel, onPress, styles }: { slo
       coordinate={on ? { latitude: pin!.lat, longitude: pin!.lng } : PARKED}
       opacity={on ? 1 : 0}
       onPress={on ? () => onPress(pin!.key) : undefined}
-      tracksViewChanges={track}
+      tracksViewChanges={track || sel} // VBR_SEL_PIN_TRACK: selected pin keeps drawing (label can finish layout)
       zIndex={sel ? 20 : on ? 1 : 0}
       anchor={{ x: 0.5, y: sel && pin?.kind !== 'event' ? 0.86 : 0.5 }}
     >

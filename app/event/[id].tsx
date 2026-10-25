@@ -25,6 +25,7 @@ import luminaApi from '../../services/lumina';
 import { colors } from '../../theme';
 import AddEventToPlanSheet from '../../components/AddEventToPlanSheet';
 import { useToast } from '../../contexts/ToastContext';
+import { ink, hair } from '../../theme/editorial'; // VBR_EVENT_EDITORIAL_V1
 import VenueReels from '../../components/VenueReels'; // VBR_EVENT_VENUE_REELS_V1
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -125,6 +126,7 @@ export default function EventDetailScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [showAddToPlan, setShowAddToPlan] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [artRatio, setArtRatio] = useState(1.1); // VBR_EVENT_EDITORIAL_V1: artwork shown at its own shape
 
   const safePackages = useMemo(() => {
     return (event?.packages || []).filter(
@@ -345,22 +347,29 @@ export default function EventDetailScreen() {
   }
 
   const lineup = getLineupArray();
-  const timeDisplay = event.time ? formatEventTime(event.time) : null;
-  const dateDisplay = event.date ? formatEventDate(event.date) : null;
+  // VBR_EVENT_EDITORIAL_V1: artwork first, then plain facts, the venue, the description, one clear action.
+  const d = event.date ? parseEventDate(event.date) : null;
+  const dateLine = [d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : null, event.time ? formatEventTime(event.time) : null].filter(Boolean).join(' · ');
+  const genre = event.genre ? event.genre.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) : null;
   const primaryCTA = (event.ticket_url ? 'tickets' : null) as 'tickets' | 'book' | null; // VIBERYTE_CONSUMER_ONLY_V1: no table booking
+  const artH = Math.round(SCREEN_WIDTH * Math.min(1.3, Math.max(0.8, artRatio)));
+  const tap = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  const bottomAction = primaryCTA === 'tickets'
+    ? { label: 'Get tickets', run: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); Linking.openURL(event.ticket_url!); } }
+    : event.venue_address ? { label: 'Directions', run: openDirections } : null;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* Floating nav bar — appears on scroll */}
-      <Animated.View style={[styles.floatingNav, { opacity: navOpacity, paddingTop: insets.top }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.floatingNavBtn}>
-          <Ionicons name="chevron-back" size={20} color="#fff" />
+      {/* Solid bar that appears on scroll */}
+      <Animated.View style={[styles.floatingNav, { opacity: navOpacity, paddingTop: insets.top }]} pointerEvents="box-none">
+        <TouchableOpacity onPress={() => router.back()} style={styles.navBtn} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={22} color={ink.ivory} />
         </TouchableOpacity>
         <Text style={styles.floatingNavTitle} numberOfLines={1}>{event.title}</Text>
-        <TouchableOpacity onPress={handleShare} style={styles.floatingNavBtn}>
-          <Ionicons name="share-outline" size={20} color="#fff" />
+        <TouchableOpacity onPress={handleShare} style={styles.navBtn} accessibilityLabel="Share">
+          <Ionicons name="share-outline" size={20} color={ink.ivory} />
         </TouchableOpacity>
       </Animated.View>
 
@@ -368,261 +377,124 @@ export default function EventDetailScreen() {
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: bottomAction ? 120 : 48 }}
       >
-        {/* ── HERO ── */}
-        <View style={styles.heroContainer}>
-          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: heroTranslate }] }]}>
-            <ExpoImage
-              source={{ uri: event.image_url || '' }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={300}
-            />
-          </Animated.View>
-
-          {/* Deep gradient overlay */}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.85)', '#000']}
-            locations={[0, 0.4, 0.75, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-
-          {/* Back + Share — always visible */}
-          <View style={[styles.heroTopRow, { paddingTop: insets.top + 12 }]}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.heroBtn} activeOpacity={0.8}>
-              <Ionicons name="chevron-back" size={22} color="#fff" />
+        {/* ── ARTWORK: shown whole, not cropped or darkened ── */}
+        <View style={{ width: SCREEN_WIDTH, height: artH, backgroundColor: ink.ground }}>
+          {event.image_url ? (
+            <ExpoImage source={{ uri: event.image_url }} style={StyleSheet.absoluteFill} contentFit="cover" transition={250}
+              onLoad={(e: any) => { const w = e?.source?.width, h = e?.source?.height; if (w && h) setArtRatio(h / w); }} />
+          ) : null}
+          <View style={[styles.artTop, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.artBtn} activeOpacity={0.8} accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={22} color={ink.ivory} />
             </TouchableOpacity>
-            <View style={styles.heroTopRight}>
-              <TouchableOpacity onPress={handleSaveEvent} style={styles.heroBtn} activeOpacity={0.8}>
-                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={20} color={isSaved ? '#c5a36b' : '#fff'} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={handleSaveEvent} style={styles.artBtn} activeOpacity={0.8} accessibilityLabel={isSaved ? 'Saved' : 'Save'}>
+                <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={ink.ivory} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleShare} style={styles.heroBtn} activeOpacity={0.8}>
-                <Ionicons name="share-outline" size={20} color="#fff" />
+              <TouchableOpacity onPress={handleShare} style={styles.artBtn} activeOpacity={0.8} accessibilityLabel="Share">
+                <Ionicons name="share-outline" size={19} color={ink.ivory} />
               </TouchableOpacity>
             </View>
           </View>
+        </View>
 
-          {/* Hero content */}
-          <Animated.View style={[styles.heroContent, { opacity: heroOpacity }]}>
-            {event.genre && (
-              <View style={styles.genrePill}>
-                <Ionicons name="musical-note" size={11} color="#c5a36b" />
-                <Text style={styles.genrePillText}>{event.genre}</Text>
-              </View>
-            )}
-            <Text style={styles.heroTitle}>{event.title}</Text>
-            <Text style={styles.heroMeta}>
-              {event.venue_name}{dateDisplay ? ` · ${dateDisplay}` : ''}{timeDisplay ? ` · ${timeDisplay}` : ''}
+        {/* ── TITLE + FACTS ── */}
+        <View style={styles.head}>
+          <Text style={styles.title}>{event.title}</Text>
+          {dateLine ? <Text style={styles.date}>{dateLine}</Text> : null}
+          {event.venue_name ? (
+            <Text style={styles.venueLine} numberOfLines={1}>
+              {event.venue_name}
+              {event.venue_address ? <Text style={styles.link} onPress={openDirections}>{'  ·  View location'}</Text> : null}
             </Text>
-          </Animated.View>
+          ) : null}
+          {genre ? <Text style={styles.genre}>{genre}</Text> : null}
         </View>
 
-        {/* ── PRIMARY CTA ── */}
-        <View style={styles.ctaSection}>
-          {primaryCTA === 'tickets' && (
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
-              activeOpacity={0.9}
-            >
-              <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name="ticket-outline" size={18} color="#fff" />
-                <Text style={styles.primaryButtonText}>Get Tickets</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-          {primaryCTA === 'book' && (
-            <TouchableOpacity style={styles.primaryButton} onPress={handleBookTable} activeOpacity={0.9} disabled={bookingLoading}>
-              <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.primaryButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name="wine-outline" size={18} color="#fff" />
-                <Text style={styles.primaryButtonText}>{bookingLoading ? 'Loading...' : 'Reserve a Table'}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleShare(); }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="share-outline" size={18} color="#c5a36b" />
-            <Text style={styles.secondaryButtonText}>Share</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={styles.hair} />
 
-        {/* ── ABOUT ── */}
-        {event.description && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>About</Text>
-            <Text style={styles.bodyText}>{event.description}</Text>
-          </View>
-        )}
-
-        {/* ── LINEUP ── */}
-        {lineup.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Lineup</Text>
-            <View style={styles.lineupList}>
-              {lineup.map((artist, i) => (
-                <View key={i} style={styles.lineupItem}>
-                  <View style={styles.lineupDot} />
-                  <Text style={styles.lineupName}>{artist}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ── INSIDE THE VENUE — the venue's own reels (VBR_EVENT_VENUE_REELS_V1) ── */}
+        {/* ── THE VENUE: who's hosting + its own reels ── */}
         <VenueReels venueId={event.venue_id} venueName={event.venue_name} />
 
-        {/* ── YOUR NIGHT TIMELINE ── */}
-        {event.venue_name && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Your Night</Text>
-            <View style={styles.timeline}>
-              {timeDisplay && (
-                <View style={styles.timelineRow}>
-                  <Text style={styles.timelineTime}>{timeDisplay}</Text>
-                  <View style={styles.timelineLine} />
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineTitle}>Arrive at {event.venue_name}</Text>
-                    <Text style={styles.timelineSub}>{event.venue_address?.split(',').slice(0, 2).join(',') || event.city}</Text>
-                  </View>
-                </View>
-              )}
-              {event.peak_hours && (
-                <View style={styles.timelineRow}>
-                  <Text style={styles.timelineTime}>{event.peak_hours}</Text>
-                  <View style={styles.timelineLine} />
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineTitle}>Peak energy</Text>
-                    <Text style={styles.timelineSub}>Best time to be on the floor</Text>
-                  </View>
-                </View>
-              )}
-              {!timeDisplay && !event.peak_hours && (
-                <View style={styles.timelineRow}>
-                  <Text style={styles.timelineTime}>Tonight</Text>
-                  <View style={styles.timelineLine} />
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineTitle}>{event.venue_name}</Text>
-                    <Text style={styles.timelineSub}>{event.city}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
+        {/* ── DESCRIPTION ── */}
+        {event.description ? (
+          <View style={styles.block}>
+            <Text style={styles.body}>{event.description.trim()}</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* ── LOCATION MAP CARD ── */}
-        {event.venue_address && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Location</Text>
-            <TouchableOpacity style={styles.mapCard} onPress={openDirections} activeOpacity={0.85}>
-              {/* Static map via Google Static Maps API */}
-              <ExpoImage
-                source={{ uri: `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(event.venue_address)}&zoom=15&size=600x200&scale=2&style=feature:all|element:labels.text.fill|color:0xffffff&style=feature:all|element:geometry|color:0x1a1a2e&style=feature:road|element:geometry|color:0x4a4a6a&style=feature:poi|visibility:off&markers=color:0x8b5cf6|${encodeURIComponent(event.venue_address)}&key=AIzaSyDemo` }}
-                style={styles.mapImage}
-                contentFit="cover"
-              />
-              {/* Fallback dark map placeholder */}
-              <View style={styles.mapOverlay}>
-                <View style={styles.mapInfo}>
-                  <View style={styles.mapPin}>
-                    <Ionicons name="location" size={16} color="#c5a36b" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.mapVenueName}>{event.venue_name}</Text>
-                    <Text style={styles.mapAddress} numberOfLines={1}>{event.venue_address}</Text>
-                  </View>
-                  <View style={styles.directionsChip}>
-                    <Text style={styles.directionsChipText}>Directions</Text>
-                    <Ionicons name="arrow-forward" size={12} color="#c5a36b" />
-                  </View>
+        {/* ── LINEUP ── */}
+        {lineup.length > 0 ? (
+          <View style={styles.block}>
+            <Text style={styles.h2}>Lineup</Text>
+            {lineup.map((artist, i) => (
+              <Text key={`${artist}-${i}`} style={[styles.lineupName, i > 0 && styles.lineupHair]}>{artist}</Text>
+            ))}
+          </View>
+        ) : null}
+
+        {/* ── ACTIONS ── */}
+        <View style={[styles.block, { paddingHorizontal: 16 }]}>
+          <View style={styles.group}>
+            {event.venue_address ? (
+              <TouchableOpacity style={styles.row} onPress={openDirections} activeOpacity={0.7}>
+                <Ionicons name="navigate-outline" size={20} color={ink.ivory} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowText}>Directions</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>{event.venue_address}</Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={16} color={ink.faint} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={[styles.row, !!event.venue_address && styles.rowHair]} onPress={() => { tap(); setShowAddToPlan(true); }} activeOpacity={0.7}>
+              <Ionicons name="add-circle-outline" size={20} color={ink.ivory} />
+              <Text style={[styles.rowText, { flex: 1 }]}>Add to a plan</Text>
+              <Ionicons name="chevron-forward" size={16} color={ink.faint} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.row, styles.rowHair]} onPress={handleShare} activeOpacity={0.7}>
+              <Ionicons name="share-outline" size={20} color={ink.ivory} />
+              <Text style={[styles.rowText, { flex: 1 }]}>Share</Text>
+              <Ionicons name="chevron-forward" size={16} color={ink.faint} />
             </TouchableOpacity>
           </View>
-        )}
+        </View>
 
-        {/* ── PROMOTER MESSAGE (hidden: consumer-only) ── */}
-        {false && event.partner?.id && (
-          <View style={styles.section}>
-            <TouchableOpacity style={styles.promoterRow} onPress={handleMessagePromoter} activeOpacity={0.8}>
-              <View style={styles.promoterIcon}>
-                <Ionicons name="chatbubble-outline" size={18} color="#c5a36b" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.promoterTitle}>Message the Promoter</Text>
-                <Text style={styles.promoterSub}>Ask about the night, packages, or guest list</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#52525b" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── SIMILAR EVENTS — bottom, minimal ── */}
-        {relatedEvents.length > 0 && (
-          <View style={[styles.section, { marginTop: 32 }]}>
-            <Text style={styles.sectionLabel}>More {event.genre} Events</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.relatedScroll} contentContainerStyle={{ gap: 12 }}>
-              {relatedEvents.map(rel => (
-                <TouchableOpacity
-                  key={rel.id}
-                  style={styles.relatedCard}
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/event/${rel.id}`); }}
-                  activeOpacity={0.85}
-                >
-                  <ExpoImage source={{ uri: rel.image_url || '' }} style={styles.relatedImage} contentFit="cover" />
-                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={StyleSheet.absoluteFill} />
-                  <View style={styles.relatedContent}>
-                    <Text style={styles.relatedTitle} numberOfLines={2}>{rel.title}</Text>
-                    <Text style={styles.relatedVenue} numberOfLines={1}>{rel.venue_name}</Text>
+        {/* ── MORE LIKE THIS ── */}
+        {relatedEvents.length > 0 ? (
+          <View style={styles.block}>
+            <Text style={[styles.h2, { paddingHorizontal: 20 }]}>{genre ? `More ${genre.toLowerCase()} nights` : 'More nights like this'}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 20, paddingTop: 14 }}>
+              {relatedEvents.map((rel) => (
+                <TouchableOpacity key={rel.id} style={{ width: 150 }} onPress={() => { tap(); router.push(`/event/${rel.id}`); }} activeOpacity={0.85}>
+                  <View style={styles.relArt}>
+                    {rel.image_url ? <ExpoImage source={{ uri: rel.image_url }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} /> : null}
                   </View>
+                  <Text style={styles.relTitle} numberOfLines={2}>{rel.title}</Text>
+                  {rel.venue_name ? <Text style={styles.relVenue} numberOfLines={1}>{rel.venue_name}</Text> : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
-        )}
+        ) : null}
       </Animated.ScrollView>
 
-      {/* ── BOTTOM BAR ── */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-        {primaryCTA === 'tickets' ? (
-          <TouchableOpacity
-            style={styles.bottomPrimary}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(event.ticket_url!); }}
-            activeOpacity={0.9}
-          >
-            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={styles.bottomPrimaryText}>Get Tickets</Text>
-            </LinearGradient>
+      {/* ── ONE CLEAR ACTION ── */}
+      {bottomAction ? (
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
+          <TouchableOpacity style={styles.cta} onPress={bottomAction.run} activeOpacity={0.9} accessibilityRole="button">
+            <Text style={styles.ctaText}>{bottomAction.label}</Text>
           </TouchableOpacity>
-        ) : primaryCTA === 'book' ? (
-          <TouchableOpacity style={styles.bottomPrimary} onPress={handleBookTable} activeOpacity={0.9}>
-            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={styles.bottomPrimaryText}>Reserve a Table</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.bottomPrimary}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleShare(); }}
-            activeOpacity={0.9}
-          >
-            <LinearGradient colors={['#8c6d3f', '#7a5e34']} style={styles.bottomPrimaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={styles.bottomPrimaryText}>Share Event</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      ) : null}
 
       {showAddToPlan && event && (
         <AddEventToPlanSheet
+          visible={showAddToPlan}
           event={{ id: event.id, title: event.title, date: event.date, venue_name: event.venue_name || '', image_url: event.image_url || '' }}
           onClose={() => setShowAddToPlan(false)}
-          onSuccess={() => { setShowAddToPlan(false); showToast('Added to your plan!', 'success'); }}
+          onSuccess={() => { setShowAddToPlan(false); showToast('Added to your plan', 'success'); }}
         />
       )}
     </View>
@@ -630,222 +502,39 @@ export default function EventDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  loadingContainer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  errorText: { color: '#fff', fontSize: 16, marginBottom: 16 },
+  container: { flex: 1, backgroundColor: ink.black },
+  loadingContainer: { flex: 1, backgroundColor: ink.black, alignItems: 'center', justifyContent: 'center' },
+  errorText: { color: ink.ivory, fontSize: 16, marginBottom: 16 },
   backBtn: { padding: 12 },
-
-  // Floating nav
   floatingNav: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 8, paddingBottom: 8, backgroundColor: ink.black, borderBottomWidth: hair, borderBottomColor: ink.line,
   },
-  floatingNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  floatingNavTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
-
-  // Hero
-  heroContainer: { height: HERO_HEIGHT, overflow: 'hidden' },
-  heroTopRow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    zIndex: 10,
-  },
-  heroTopRight: { flexDirection: 'row', gap: 8 },
-  heroBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-  },
-  genrePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(197, 163, 107, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(197, 163, 107, 0.4)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 10,
-  },
-  genrePillText: { fontSize: 11, fontWeight: '600', color: '#c5a36b', letterSpacing: 0.5 },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: -0.5,
-    lineHeight: 36,
-    marginBottom: 8,
-  },
-  heroMeta: { fontSize: 14, color: 'rgba(255,255,255,0.65)', fontWeight: '400', letterSpacing: 0.1 },
-
-  // CTA section
-  ctaSection: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 8,
-    gap: 10,
-  },
-  primaryButton: { borderRadius: 14, overflow: 'hidden' },
-  primaryButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-  },
-  primaryButtonText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(197, 163, 107, 0.3)',
-  },
-  secondaryButtonText: { fontSize: 15, fontWeight: '500', color: '#c5a36b' },
-
-  // Sections
-  section: { paddingHorizontal: 20, paddingTop: 28 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#52525b',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 12,
-  },
-  bodyText: { fontSize: 16, color: 'rgba(255,255,255,0.75)', lineHeight: 24, fontWeight: '400' },
-
-  // Lineup
-  lineupList: { gap: 10 },
-  lineupItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  lineupDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#c5a36b' },
-  lineupName: { fontSize: 16, color: '#e4e4e7', fontWeight: '500' },
-
-  // Timeline
-  timeline: { gap: 0 },
-  timelineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingBottom: 20 },
-  timelineTime: { width: 60, fontSize: 13, color: '#71717a', fontWeight: '500', paddingTop: 2 },
-  timelineLine: { width: 1, backgroundColor: '#27272a', alignSelf: 'stretch', marginHorizontal: 0, marginTop: 6 },
-  timelineContent: { flex: 1, paddingLeft: 14 },
-  timelineTitle: { fontSize: 16, color: '#e4e4e7', fontWeight: '600', marginBottom: 3 },
-  timelineSub: { fontSize: 13, color: '#71717a' },
-
-  // Map card
-  mapCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-    height: 160,
-  },
-  mapImage: { ...StyleSheet.absoluteFillObject },
-  mapOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 14,
-  },
-  mapInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  mapPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(197, 163, 107, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapVenueName: { fontSize: 14, fontWeight: '600', color: '#fff', marginBottom: 2 },
-  mapAddress: { fontSize: 12, color: '#a1a1aa' },
-  directionsChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(197, 163, 107, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(197, 163, 107, 0.3)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  directionsChipText: { fontSize: 12, color: '#c5a36b', fontWeight: '500' },
-
-  // Promoter
-  promoterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#1f1f1f',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1f1f1f',
-  },
-  promoterIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(197, 163, 107, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  promoterTitle: { fontSize: 15, fontWeight: '600', color: '#e4e4e7', marginBottom: 2 },
-  promoterSub: { fontSize: 13, color: '#71717a' },
-
-  // Related
-  relatedScroll: { marginHorizontal: -20, paddingHorizontal: 20 },
-  relatedCard: { width: 160, height: 200, borderRadius: 14, overflow: 'hidden', backgroundColor: '#111' },
-  relatedImage: { ...StyleSheet.absoluteFillObject },
-  relatedContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
-  relatedTitle: { fontSize: 13, fontWeight: '600', color: '#fff', lineHeight: 17, marginBottom: 3 },
-  relatedVenue: { fontSize: 11, color: 'rgba(255,255,255,0.55)' },
-
-  // Bottom bar
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  bottomPrimary: { borderRadius: 14, overflow: 'hidden' },
-  bottomPrimaryGradient: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
-  bottomPrimaryText: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: -0.2 },
+  navBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  floatingNavTitle: { flex: 1, color: ink.ivory, fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  artTop: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16 },
+  artBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+  head: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 22 },
+  title: { color: ink.ivory, fontSize: 34, lineHeight: 38, fontWeight: '700', letterSpacing: -0.9 },
+  date: { color: ink.ivory, fontSize: 17, lineHeight: 22, fontWeight: '500', marginTop: 14 },
+  venueLine: { color: ink.gray, fontSize: 16, lineHeight: 22, marginTop: 4 },
+  link: { color: ink.ivory, fontWeight: '500' },
+  genre: { color: ink.faint, fontSize: 14, marginTop: 8 },
+  hair: { height: hair, backgroundColor: ink.line, marginHorizontal: 20 },
+  block: { paddingTop: 26 },
+  body: { color: 'rgba(243,240,233,0.86)', fontSize: 16, lineHeight: 24, paddingHorizontal: 20 },
+  h2: { color: ink.ivory, fontSize: 21, lineHeight: 26, fontWeight: '600', letterSpacing: -0.3, marginBottom: 6, paddingHorizontal: 0 },
+  lineupName: { color: ink.ivory, fontSize: 17, paddingVertical: 12, marginHorizontal: 20 },
+  lineupHair: { borderTopWidth: hair, borderTopColor: ink.line },
+  group: { borderRadius: 14, backgroundColor: ink.raise, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 15 },
+  rowHair: { borderTopWidth: hair, borderTopColor: ink.line },
+  rowText: { color: ink.ivory, fontSize: 16, fontWeight: '500' },
+  rowSub: { color: ink.gray, fontSize: 13, marginTop: 2 },
+  relArt: { width: 150, height: 188, borderRadius: 10, overflow: 'hidden', backgroundColor: ink.raise },
+  relTitle: { color: ink.ivory, fontSize: 14, lineHeight: 18, fontWeight: '600', marginTop: 8 },
+  relVenue: { color: ink.gray, fontSize: 13, marginTop: 2 },
+  bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, backgroundColor: ink.black, borderTopWidth: hair, borderTopColor: ink.line },
+  cta: { height: 54, borderRadius: 27, backgroundColor: ink.ivory, alignItems: 'center', justifyContent: 'center' },
+  ctaText: { color: ink.black, fontSize: 17, fontWeight: '600', letterSpacing: -0.2 },
 });
