@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { linkApple, clearSession } from './vibe'; // VBR_PROFILE_V1
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -125,6 +126,8 @@ class AuthService {
       };
 
       await this.saveUserToBackend(user, identityToken || '');
+      // VBR_PROFILE_V1: same sign-in also creates/links your Viberyte account (notes, profile photo)
+      try { await linkApple(identityToken, fullName ? `${fullName.givenName || ''} ${fullName.familyName || ''}`.trim() : ''); } catch {}
       await AsyncStorage.setItem('@lumina_user', JSON.stringify(user));
       await AsyncStorage.setItem('@lumina_auth_token', identityToken || `apple_${Date.now()}`);
       await AsyncStorage.setItem('@lumina_user_id', user.id);
@@ -384,7 +387,9 @@ class AuthService {
       '@lumina_persona',
       '@lumina_preferences',
       '@lumina_onboarding_v3',
+      '@vbr_vibe_session',
     ]);
+    await clearSession();
     this.user = null;
   }
 

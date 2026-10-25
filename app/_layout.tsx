@@ -114,6 +114,8 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="venue/[id]" />
       <Stack.Screen name="event/[id]" />
+      <Stack.Screen name="venue-sheet/[id]" options={{ presentation: 'modal', gestureEnabled: true }} />
+      <Stack.Screen name="event-sheet/[id]" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="plan/[id]" />
       <Stack.Screen name="edit-profile" />
     </Stack>

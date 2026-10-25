@@ -189,6 +189,31 @@ function HomeReel({ uri, playing }: { uri: string; playing: boolean }) {
   return <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: ready ? 1 : 0 }]} contentFit="cover" nativeControls={false} />;
 }
 
+// VBR_CARD_REELS: venue cards play their reel. Only the lead card of a row that's on screen plays (≤1 player per row).
+const REEL_API = 'https://viberyte.com/api/reels';
+const reelCache = new Map<number, { url: string; poster: string | null } | null>();
+const reelSubs = new Set<() => void>();
+async function loadReels(ids: number[]) {
+  const need = [...new Set(ids)].filter((id) => id && !reelCache.has(id));
+  if (!need.length) return;
+  for (let i = 0; i < need.length; i += 150) {
+    const chunk = need.slice(i, i + 150);
+    chunk.forEach((id) => reelCache.set(id, null));
+    try {
+      const r = await fetch(`${REEL_API}?ids=${chunk.join(',')}`);
+      const d = await r.json();
+      for (const [k, v] of Object.entries(d?.reels || {})) reelCache.set(Number(k), v as any);
+    } catch { chunk.forEach((id) => reelCache.delete(id)); }
+  }
+  reelSubs.forEach((fn) => fn());
+}
+function useReel(id: number) {
+  const [, bump] = useState(0);
+  useEffect(() => { const fn = () => bump((x) => x + 1); reelSubs.add(fn); return () => { reelSubs.delete(fn); }; }, []);
+  return reelCache.get(Number(id)) || null;
+}
+const scrollBus = { subs: new Set<() => void>() };
+
 // VBR_HERO_CAROUSEL: up to 3 picks, swipe between them; only the front card plays its reel.
 const HERO_CARD_W = SCREEN_WIDTH - SIDE_PAD * 2;
 function HeroCarousel({ picks, playing, onOpen }: { picks: any[]; playing: boolean; onOpen: (p: any) => void }) {
@@ -257,8 +282,9 @@ const SkeletonHome = () => (
 );
 
 // ─── Compact Venue Card ────────────────────────────────────────────
-const CompactVenueCard = React.memo(({ venue, onPress }: { venue: any; onPress: () => void }) => {
-  const photoUrl = getPhotoUrl(venue);
+const CompactVenueCard = React.memo(({ venue, onPress, play }: { venue: any; onPress: () => void; play?: boolean }) => {
+  const reel = useReel(venue?.id);
+  const photoUrl = getPhotoUrl(venue) || reel?.poster || null;
   const category = (venue.standardized_category || venue.category || '').replace(/^\w/, (c: string) => c.toUpperCase());
 
   return (
@@ -275,6 +301,7 @@ const CompactVenueCard = React.memo(({ venue, onPress }: { venue: any; onPress: 
         ) : (
           <View style={[s.compactImage, { backgroundColor: '#1a1a1f' }]} />
         )}
+        {play && reel?.url ? <HomeReel key={reel.url} uri={reel.url} playing={!!play} /> : null}
       </View>
       <Text style={s.compactName} numberOfLines={1}>{venue.name}</Text>
       <Text style={s.compactMeta} numberOfLines={1}>
@@ -338,17 +365,41 @@ const SectionHeader = ({ title, subtitle, onSeeAll }: { title: string; subtitle?
 );
 
 // ─── Horizontal Collection Row ─────────────────────────────────────
-const CollectionRow = React.memo(({ data, renderItem, keyPrefix = 'v' }: { data: any[]; renderItem: (item: any) => React.ReactNode; keyPrefix?: string }) => (
-  <FlatList
-    data={data}
-    horizontal
-    showsHorizontalScrollIndicator={false}
-    contentContainerStyle={{ paddingHorizontal: SIDE_PAD, gap: CARD_GAP }}
-    decelerationRate="fast"
-    keyExtractor={(item) => `${keyPrefix}-${item.id}`}
-    renderItem={({ item }) => <>{renderItem(item)}</>}
-  />
-));
+const CollectionRow = React.memo(({ data, renderItem, keyPrefix = 'v' }: { data: any[]; renderItem: (item: any, active?: boolean) => React.ReactNode; keyPrefix?: string }) => {
+  const ref = useRef<View>(null);
+  const focused = useIsFocused();
+  const [onScreen, setOnScreen] = useState(false);
+  const [lead, setLead] = useState<number | null>(data?.[0]?.id ?? null);
+  useEffect(() => { loadReels((data || []).map((d: any) => Number(d?.id)).filter(Boolean)); }, [data]);
+  useEffect(() => {
+    const check = () => ref.current?.measureInWindow((_x, y, _w, h) => {
+      const H = Dimensions.get('window').height;
+      const vis = h > 0 && y < H - h * 0.4 && y + h * 0.6 > 0;
+      setOnScreen((p) => (p === vis ? p : vis));
+    });
+    scrollBus.subs.add(check);
+    const t = setTimeout(check, 700);
+    return () => { scrollBus.subs.delete(check); clearTimeout(t); };
+  }, []);
+  const onViewable = useRef(({ viewableItems }: any) => { const f = viewableItems.find((v: any) => v.isViewable); if (f) setLead(f.item?.id ?? null); }).current;
+  const viewCfg = useRef({ itemVisiblePercentThreshold: 70 }).current;
+  return (
+    <View ref={ref} collapsable={false}>
+      <FlatList
+        data={data}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: SIDE_PAD, gap: CARD_GAP }}
+        decelerationRate="fast"
+        keyExtractor={(item) => `${keyPrefix}-${item.id}`}
+        onViewableItemsChanged={onViewable}
+        viewabilityConfig={viewCfg}
+        extraData={`${lead}-${onScreen}-${focused}`}
+        renderItem={({ item }) => <>{renderItem(item, focused && onScreen && item.id === lead)}</>}
+      />
+    </View>
+  );
+});
 
 // ─── Quick Intent Pill ─────────────────────────────────────────────
 const IntentPill = React.memo(({ intentKey, active, onPress }: { intentKey: string; active: boolean; onPress: () => void }) => {
@@ -900,8 +951,8 @@ export default function HomeScreen() {
             <CollectionRow
               data={rail}
               keyPrefix="ir"
-              renderItem={(venue) => (
-                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              renderItem={(venue, active) => (
+                <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
               )}
             />
           </View>
@@ -919,8 +970,8 @@ export default function HomeScreen() {
             <CollectionRow
               data={yourKindVenues}
               keyPrefix="yk"
-              renderItem={(venue) => (
-                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              renderItem={(venue, active) => (
+                <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
               )}
             />
           </View>
@@ -982,8 +1033,8 @@ export default function HomeScreen() {
             <CollectionRow
               data={picksData}
               keyPrefix="tp"
-              renderItem={(venue) => (
-                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              renderItem={(venue, active) => (
+                <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
               )}
             />
           </View>
@@ -997,8 +1048,8 @@ export default function HomeScreen() {
             <CollectionRow
               data={aroundData}
               keyPrefix="ny"
-              renderItem={(venue) => (
-                <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+              renderItem={(venue, active) => (
+                <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
               )}
             />
           </View>
@@ -1090,8 +1141,8 @@ export default function HomeScreen() {
               <CollectionRow
                 data={lateData}
                 keyPrefix="ln"
-                renderItem={(venue) => (
-                  <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+                renderItem={(venue, active) => (
+                  <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
                 )}
               />
             </View>
@@ -1104,8 +1155,8 @@ export default function HomeScreen() {
               <CollectionRow
                 data={dateNightPicks}
                 keyPrefix="dn"
-                renderItem={(venue) => (
-                  <CompactVenueCard venue={venue} onPress={() => handleVenuePress(venue)} />
+                renderItem={(venue, active) => (
+                  <CompactVenueCard venue={venue} play={active} onPress={() => handleVenuePress(venue)} />
                 )}
               />
             </View>
@@ -1124,6 +1175,8 @@ export default function HomeScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
+        onScroll={() => scrollBus.subs.forEach((fn) => fn())}
+        scrollEventThrottle={120}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#71717A" />
         }

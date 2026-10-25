@@ -3,7 +3,7 @@
     "name": "Viberyte",
     "slug": "lumina-mobile",
     "scheme": "lumina",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "extra": {
       "eas": {
         "projectId": "1492b684-7c3d-4a06-a448-cd633001b45f"
@@ -11,7 +11,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.viberyte.luminamobile",
-      "buildNumber": "26",
+      "buildNumber": "27",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [

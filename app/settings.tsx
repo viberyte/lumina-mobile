@@ -1,7 +1,8 @@
 // app/settings.tsx — Viberyte Settings V1
 // Consumer-only. Guest-aware. Every row does something real; permissions open iOS Settings.
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Share, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking, Share, ActivityIndicator, Switch, Platform } from 'react-native';
+import { refreshMe, getSession, setHandle } from '../services/vibe'; // VBR_PROFILE_V3
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,7 @@ const C = {
 };
 const SITE = 'https://viberyte.com';
 const SUPPORT = 'info@viberyte.com';
-const AUTH_KEYS = ['@lumina_auth_token', '@lumina_user', '@lumina_user_id', '@lumina_is_guest', '@lumina_profile', 'lumina_partner_session'];
+const AUTH_KEYS = ['@lumina_auth_token', '@lumina_user', '@lumina_user_id', '@lumina_is_guest', '@lumina_profile', 'lumina_partner_session', '@vbr_vibe_session']; // VBR_PROFILE_V1
 
 type Perm = 'on' | 'off' | 'ask' | '…';
 const permLabel = (p: Perm) => (p === 'on' ? 'On' : p === 'off' ? 'Off' : p === 'ask' ? 'Not set' : '…');
@@ -31,6 +32,8 @@ export default function SettingsScreen() {
   const [loc, setLoc] = useState<Perm>('…');
   const [notif, setNotif] = useState<Perm>('…');
   const [busy, setBusy] = useState(false);
+  const [acct, setAcct] = useState<any>(null);
+  const [defPub, setDefPub] = useState(false);
   const version = Constants.expoConfig?.version || '';
 
   const load = useCallback(async () => {
@@ -44,6 +47,8 @@ export default function SettingsScreen() {
       let e: string | null = null;
       for (const raw of [userRaw, profRaw]) { try { const o = JSON.parse(raw || 'null'); if (o?.email) { e = o.email; break; } } catch {} }
       setEmail(isIn ? e : null);
+      try { const a = await refreshMe(); setAcct(a); if (a?.email && isIn) setEmail(a.email); } catch {}
+      setDefPub((await AsyncStorage.getItem('@vbr_notes_default_public')) === '1');
     } catch {}
     try {
       const l = await Location.getForegroundPermissionsAsync();
@@ -72,6 +77,22 @@ export default function SettingsScreen() {
       const r = await Notifications.requestPermissionsAsync().catch(() => null);
       setNotif(r?.granted ? 'on' : 'off');
     } else Linking.openSettings();
+  };
+
+  const editHandle = async () => {
+    tap();
+    const s0 = await getSession();
+    if (!s0) { router.push('/login' as any); return; }
+    if (Platform.OS !== 'ios') return;
+    Alert.prompt('Your @name', 'Shown on notes you post with your name.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Save', onPress: async (v?: string) => {
+      const h = String(v || '').trim().replace(/^@/, '').toLowerCase(); if (!h) return;
+      try { const a = await setHandle(s0.token, h); setAcct((x: any) => ({ ...(x || {}), ...a })); } catch (e: any) { Alert.alert('Couldn’t save', e?.message || 'Please try again.'); }
+    } }], 'plain-text', acct?.handle || '');
+  };
+  const toggleDefPub = async (v: boolean) => {
+    if (v && !acct?.handle) { Alert.alert('Choose your @name first', 'Notes show your @name when this is on.', [{ text: 'Not now', style: 'cancel' }, { text: 'Choose', onPress: editHandle }]); return; }
+    setDefPub(v); Haptics.selectionAsync().catch(() => {});
+    await AsyncStorage.setItem('@vbr_notes_default_public', v ? '1' : '0').catch(() => {});
   };
 
   const signOut = () => {
@@ -128,17 +149,32 @@ export default function SettingsScreen() {
         <View style={s.back} />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 90 }} showsVerticalScrollIndicator={false}>
         <Section title="Account">
           {signedIn ? (
             <>
-              <Row icon="mail-outline" label="Email" value={email || 'Signed in'} />
+              <Row icon="mail-outline" label="Email" value={email ? (/privaterelay\.appleid\.com$/i.test(email) ? 'Hidden by Apple' : email) : 'Signed in with Apple'} />
               <Row icon="log-out-outline" label="Sign Out" onPress={signOut} last />
             </>
           ) : (
             <Row icon="person-add-outline" label="Create a profile" value="Keep your spots on any device" onPress={() => { tap(); router.push('/login' as any); }} last />
           )}
         </Section>
+
+        {signedIn ? (
+          <Section title="Insider Notes">
+            <Row icon="create-outline" label="My insider notes" value={acct?.notes ? String(acct.notes) : undefined} onPress={() => { tap(); router.push('/my-notes' as any); }} />
+            <Row icon="at-outline" label="Your @name" value={acct?.handle ? `@${acct.handle}` : 'Not set'} onPress={editHandle} />
+            <View style={s.row}>
+              <Ionicons name="person-circle-outline" size={19} color={C.gold} style={{ width: 26 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowLabel}>Show my name by default</Text>
+                <Text style={{ color: C.dim, fontSize: 12.5, marginTop: 2 }}>{defPub ? 'New notes show your @name' : 'New notes post as “A Viberyte guest”'}</Text>
+              </View>
+              <Switch value={defPub} onValueChange={toggleDefPub} />
+            </View>
+          </Section>
+        ) : null}
 
         <Section title="Preferences">
           {/* VBR_HIDE_MYVIBE */}

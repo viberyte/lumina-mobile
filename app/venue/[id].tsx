@@ -2,18 +2,21 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions, Linking, Share,
-  ScrollView, StatusBar, Platform, Pressable, Modal, FlatList, ViewToken,
+  ScrollView, StatusBar, Platform, Pressable, Modal, FlatList, ViewToken, ActionSheetIOS,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur'; // VBR_STICKY_BLUR
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { requireAuth } from '../../utils/authGate';
+import NotesSection from '../../components/vibe/NotesSection'; // VBR_NOTES_V1
 import { api, trackBehavior } from '../../lib/api';
 import tasteTracker from '../../services/tasteTracker';
 import { isSaved as isSavedLocal, saveFavoriteCompat, removeFavoriteCompat } from '../../lib/saved'; // VIBERYTE_SAVED_V1
@@ -266,7 +269,8 @@ export default function VenueScreen() {
     },
   });
 
-  const barOpacity = scrollY.interpolate({ inputRange: [HERO_H * 0.55, HERO_H * 0.8], outputRange: [0, 1], extrapolate: 'clamp' });
+  const barOpacity = scrollY.interpolate({ inputRange: [HERO_H - 340, HERO_H - 280], outputRange: [0, 1], extrapolate: 'clamp' });
+  const heroTextOpacity = scrollY.interpolate({ inputRange: [HERO_H - 380, HERO_H - 300], outputRange: [1, 0], extrapolate: 'clamp' });
   const heroScale = scrollY.interpolate({ inputRange: [-120, 0], outputRange: [1.12, 1], extrapolate: 'clamp' });
 
   if (failed) {
@@ -312,7 +316,21 @@ export default function VenueScreen() {
   };
   const call = () => { tap(); if (v.phone) Linking.openURL(`tel:${v.phone.replace(/[^\d+]/g, '')}`); };
   const site = () => { tap(); if (v.website) Linking.openURL(v.website.startsWith('http') ? v.website : `https://${v.website}`); };
-  const share = () => { tap(); Share.share({ message: `${v.name}, ${v.neighborhood || ''}\nhttps://viberyte.com/venue/${v.id}` }).catch(() => {}); };
+  // VBR_CONTENT_RIGHTS: discreet ••• menu → the shared report / removal form (same one the website and mini apps use)
+  const more = () => {
+    Haptics.selectionAsync().catch(() => {});
+    const url = `https://viberyte.com/report?venue=${id}`;
+    const go = () => { WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url)); };
+    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options: ['Report or request removal', 'Cancel'], cancelButtonIndex: 1, userInterfaceStyle: 'dark' }, (i) => { if (i === 0) go(); });
+    else go();
+  };
+  // VBR_SHARE_LINK: pass the link as a URL on iOS so iMessage/WhatsApp build the rich preview (photo + name) from the venue page
+  const share = () => {
+    tap();
+    const url = `https://viberyte.com/venue/${v.id}`;
+    const line = [v.name, v.neighborhood].filter(Boolean).join(' · ');
+    Share.share(Platform.OS === 'ios' ? { message: line, url } : { message: `${line}\n${url}` }).catch(() => {});
+  };
   const toggleSave = async () => {
     // VBR_GUEST_SAVE: saving works without an account
     const next = !saved;
@@ -329,6 +347,7 @@ export default function VenueScreen() {
       <StatusBar barStyle="light-content" />
 
       <Animated.View pointerEvents="box-none" style={[s.bar, { opacity: barOpacity }]}>
+        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
         <Text style={s.barTitle} numberOfLines={1}>{v.name}</Text>
       </Animated.View>
       <View style={s.topRow} pointerEvents="box-none">
@@ -341,6 +360,9 @@ export default function VenueScreen() {
           </TouchableOpacity>
           <TouchableOpacity onPress={share} style={s.circle} accessibilityLabel="Share">
             <Ionicons name="share-outline" size={19} color={C.ivory} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={more} style={s.circle} accessibilityLabel="More options">
+            <Ionicons name="ellipsis-horizontal" size={18} color={C.ivory} />
           </TouchableOpacity>
         </View>
       </View>
@@ -357,7 +379,7 @@ export default function VenueScreen() {
           <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
             colors={['rgba(9,9,11,0.5)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0)', 'rgba(9,9,11,0.85)', C.ground]}
             locations={[0, 0.22, 0.45, 0.8, 1]} />
-          <View style={s.heroText} pointerEvents="none">
+          <Animated.View style={[s.heroText, { opacity: heroTextOpacity }]} pointerEvents="none">
             {eyebrow ? <Text style={s.eyebrow}>{eyebrow.toUpperCase()}</Text> : null}
             <Text style={s.h1}>{v.name}</Text>
             {v.why ? <Text style={s.why}>{v.why}</Text> : null}
@@ -370,7 +392,7 @@ export default function VenueScreen() {
                 </View>
               ) : null}
             </View>
-          </View>
+          </Animated.View>
         </Pressable>
 
         <View style={s.actions}>
@@ -392,19 +414,22 @@ export default function VenueScreen() {
 
         {v.feel?.length ? (
           <View style={[s.section, s.pad]}>
-            <Text style={[s.h2, { marginBottom: 6 }]}>The feel</Text>
-            {v.feel.map((f, i) => (
-              <View key={f.label} style={[s.feelRow, i < v.feel.length - 1 && s.hair]}>
-                <Text style={s.feelLabel}>{f.label}</Text>
-                <Text style={s.feelValue}>{f.value}</Text>
-              </View>
-            ))}
+            <Text style={[s.h2, { marginBottom: 12 }]}>The feel</Text>
+            {/* VBR_FEEL_COMPACT: two-column summary of verified venue info (vibes never overwrite it) */}
+            <View style={s.feelGrid}>
+              {(v.feel.length > 4 ? v.feel.filter((f) => !/known for/i.test(f.label)) : v.feel).slice(0, 4).map((f) => (
+                <View key={f.label} style={s.feelCell}>
+                  <Text style={s.feelLabel}>{f.label}</Text>
+                  <Text style={s.feelValue}>{f.value}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         ) : null}
 
+        <NotesSection venueId={v.id} venueName={v.name} /> {/* VBR_VIBE */}
+
         <InsideRail reels={thumbReels} onOpen={setViewerAt} photos={((v as any).photos || []).map((x: any) => x.url)} onPhoto={setPhotoAt} />
-        <Rail title="Next stop" items={data.rails.next_stop} size="medium"
-          sub={/cafe|coffee|bakery|bagel|breakfast|brunch|tea/i.test(`${(v as any).type || ''} ${(v as any).cuisine || ''}`) ? 'Where to go after' : 'Where the night can go from here'} />
 
         {v.latitude != null && v.longitude != null ? (
           <View style={[s.section, s.pad]}>
@@ -434,6 +459,8 @@ export default function VenueScreen() {
           </View>
         ) : null}
 
+        <Rail title="Next stop" items={data.rails.next_stop} size="medium"
+          sub={/cafe|coffee|bakery|bagel|breakfast|brunch|tea/i.test(`${(v as any).type || ''} ${(v as any).cuisine || ''}`) ? 'Where to go after' : 'Where the night can go from here'} />
         {/* VBR_VENUE_MAP_V1: Same feel removed */}
       </Animated.ScrollView>
 
@@ -550,11 +577,11 @@ const s = StyleSheet.create({
   pad: { paddingHorizontal: 20 },
   skel: { backgroundColor: C.raise, borderRadius: 6 },
   bar: {
-    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: 'rgba(9,9,11,0.94)',
-    paddingTop: Platform.OS === 'ios' ? 60 : 36, paddingBottom: 14, paddingHorizontal: 72,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, backgroundColor: 'rgba(9,9,11,0.78)', overflow: 'hidden',
+    paddingTop: Platform.OS === 'ios' ? 60 : 36, paddingBottom: 14, paddingLeft: 72, paddingRight: 168,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
-  barTitle: { color: C.ivory, fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  barTitle: { color: C.ivory, fontSize: 17, fontWeight: '600', textAlign: 'left' },
   topRow: {
     position: 'absolute', top: Platform.OS === 'ios' ? 52 : 28, left: 16, right: 16, zIndex: 11,
     flexDirection: 'row', justifyContent: 'space-between',
@@ -587,8 +614,10 @@ const s = StyleSheet.create({
   sub: { color: C.muted, fontSize: 14, marginTop: 3 },
   feelRow: { flexDirection: 'row', gap: 16, paddingVertical: 13 },
   hair: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
-  feelLabel: { width: 92, color: C.muted, fontSize: 15 },
-  feelValue: { flex: 1, color: C.ivory, fontSize: 15, lineHeight: 20 },
+  feelLabel: { color: C.muted, fontSize: 13 },
+  feelGrid: { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: C.raise, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 16 },
+  feelCell: { width: '50%', paddingVertical: 10, paddingRight: 12 },
+  feelValue: { color: C.ivory, fontSize: 16, fontWeight: '500', lineHeight: 21, marginTop: 3 },
   mapCard: { height: 150, borderRadius: 14, overflow: 'hidden', backgroundColor: C.surface },
   pin: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.ivory, borderWidth: 3, borderColor: C.ink },
   addrRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },

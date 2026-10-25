@@ -1,3 +1,5 @@
+// VBR_PIN_POOL: fixed marker slots (MapPins.tsx), identity-keyed taps, per-slot redraws.
+// VBR_DISCOVER_APP: typed Places searches → /api/map/discover (places + events ranked together, All · Places · Events).
 // VIBERYTE_EXPLORE_MAP_V1: map-first Explore. Venues: /api/venues + /api/map/search. Events: /api/map/events.
 // Honesty rules: counts shown only from the API's real totals; zero results say so plainly; nothing implies a venue is open or busy.
 // V1.1: List shows the current results; location sits top right; typing cancels in-flight requests at once;
@@ -10,7 +12,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Dimensions, ActivityIndicator, TextInput, Keyboard, ScrollView, Modal, Pressable,
-  AppState, AccessibilityInfo, Linking, Animated,
+  AppState, AccessibilityInfo, Linking, Animated, PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,7 +23,8 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { PROVIDER_DEFAULT } from 'react-native-maps';
+import { PinPool, PIN_POOL, indexForKey, type PinIn } from './MapPins'; // VBR_PIN_POOL
 import { getPhotoUrl } from '../../utils/photoHelper';
 import { API_BASE } from '../../config';
 
@@ -88,6 +91,13 @@ type VRes = {
   ok: boolean; total: number; results: any[]; needs_location: boolean; unsupported?: string; time_note?: string | null;
   area: string | null; place?: string | null; what?: string | null; wider_total?: number; elsewhere_total?: number;
 };
+// VBR_DISCOVER_APP: a typed search in Places reads music, date and place together (server /api/map/discover) and returns
+// places and events in one ranked list. All · Places · Events filters it without switching the screen to Events.
+type Mix = { order: string; notes: string[]; places: number; events: number; eventsTotal: number; items: any[] };
+type MixFilter = 'all' | 'places' | 'events';
+const MAX_MIX_EVENTS = 40;
+const isEv = (x: any) => !!x?.__ev;
+const kid = (x: any) => `${x?.__ev ? 'e' : 'v'}${x?.id}`;
 type Notice = { text: string; action?: { label: string; run: () => void }; action2?: { label: string; run: () => void } };
 
 const tap = () => Haptics.selectionAsync().catch(() => {});
@@ -110,6 +120,8 @@ function sameVenue(e: any, v: any) {
 }
 // VBR_COVERAGE: where Viberyte actually curates, from real venue density (server /api/map/coverage), never from empty results.
 type Cov = 'active' | 'limited' | 'outside';
+// VBR_PLACE_SEARCH: place names outside NYC/NJ we recognise in a search; coverage itself still decides (from real venue density).
+const PLACE_RE = new RegExp('\\b(washington d\\.c\\.|washington state|south carolina|north carolina|salt lake city|massachusetts|san francisco|washington dc|new hampshire|west virginia|pennsylvania|indianapolis|rhode island|north dakota|philadelphia|south dakota|minneapolis|mexico city|new orleans|kansas city|los angeles|mississippi|connecticut|st\\. louis|puerto rico|new mexico|pittsburgh|providence|sacramento|california|cincinnati|baltimore|milwaukee|rochester|minnesota|nashville|cleveland|tennessee|las vegas|louisiana|san diego|wisconsin|charlotte|kentucky|michigan|nebraska|arkansas|oklahoma|san juan|portland|honolulu|illinois|delaware|maryland|richmond|san jose|missouri|colorado|montreal|virginia|hartford|columbus|st louis|syracuse|montana|indiana|detroit|florida|toronto|seattle|orlando|chicago|wyoming|vermont|arizona|buffalo|houston|atlanta|alabama|phoenix|georgia|norfolk|hawaii|london|oregon|boston|albany|cancun|kansas|philly|alaska|denver|nevada|austin|dallas|paris|dubai|maine|texas|tampa|vegas|miami|idaho|iowa|utah|ohio|dc)\\b', 'i');
 const COV_ACTIVE = 12;      // venues around the view center for full coverage
 const COV_MAX_DELTA = 0.9;
 // VBR_FAST: recent answers are reused for 3 minutes, so Places ↔ Events and chip switches show instantly.
@@ -177,6 +189,8 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   const [venues, setVenues] = useState<any[]>([]);
   const [vres, setVres] = useState<VRes | null>(null);
   const [eres, setEres] = useState<EvRes | null>(null);
+  const [mix, setMix] = useState<Mix | null>(null); // VBR_DISCOVER_APP
+  const [mixFilter, setMixFilter] = useState<MixFilter>('all');
   const [elsewhere, setElsewhere] = useState(0);
   const [hint, setHint] = useState('');
   const [selected, setSelected] = useState(0);
@@ -193,6 +207,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   const carouselRef = useRef<FlatList<any> | null>(null);
   const regionRef = useRef<Region | null>(null);
   const touchRef = useRef(false);
+  const progAt = useRef(0); // VBR_PIN_STEADY: last time we moved the camera ourselves
   const fitNext = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -270,7 +285,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
           if (bbox) p.set('bbox', bbox); else if (scopeAll) p.set('scope', 'all'); else p.set('region', region);
           const d: EvRes = await get('/api/map/events', p);
           if (!live()) return;
-          setEres(d); setVres(null); setVenues([]);
+          setEres(d); setVres(null); setVenues([]); setMix(null);
           if (q && DISTANCE_RE.test(q)) setHint('For events near you, move the map there. It searches what’s on screen.');
           if (d.total === 0 && !bbox && !scopeAll) {
             p.delete('region'); p.set('scope', 'all'); p.set('limit', '1');
@@ -291,9 +306,27 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
           } else if (scopeAll) { p.set('scope', 'all'); if (vres?.place) p.set('ignore_place', '1'); }
           else if (nearYou && locRef.current) { p.set('lat', locRef.current.latitude.toFixed(5)); p.set('lng', locRef.current.longitude.toFixed(5)); } // VBR_NEAR_YOU: around you, closest first
           else if (hood) p.set('hood', hood); else p.set('region', region);
+          // VBR_DISCOVER_APP: a typed search (not "near me") goes to discover with the same scope: places + events together.
+          if (q && !DISTANCE_RE.test(q)) {
+            let dd: any = null;
+            try { dd = await get('/api/map/discover', p); } catch (e) { if (ctrl.signal.aborted) throw e; } // discover down → plain place search below
+            if (!live()) return;
+            if (dd && dd.places && dd.places.ok) {
+              const d: VRes = dd.places;
+              let ne = 0;
+              const items = (dd.items || []).flatMap((x: any) => {
+                if (x.kind === 'event') { if (ne >= MAX_MIX_EVENTS) return []; ne += 1; return [{ ...x, __ev: true }]; }
+                return [{ ...x, category: x.type }];
+              });
+              const placeN = items.filter((x: any) => !isEv(x)).length;
+              setMix({ order: String(dd.intent?.order || 'mixed'), notes: Array.isArray(dd.notes) ? dd.notes : [], places: placeN, events: ne, eventsTotal: Number(dd.counts?.events_total) || ne, items });
+              setVres(d); setVenues(items.filter((x: any) => !isEv(x))); setEres(null);
+              return;
+            }
+          }
           const d: VRes = await get('/api/map/search', p);
           if (!live()) return;
-          setVres(d); setVenues(d.results.map((x: any) => ({ ...x, category: x.type }))); setEres(null);
+          setVres(d); setVenues(d.results.map((x: any) => ({ ...x, category: x.type }))); setEres(null); setMix(null);
         }
       } catch {
         if (live()) setFailed(true);
@@ -311,15 +344,14 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   // After a pause, the new text (or no text, under 3 letters) is searched; same text as before → re-run it.
   // event-sounding searches open Events (time words become the date filter); anything else searches places.
   const routeQuery = (t: string) => {
-    const r = eventIntent(t);
-    if (r.isEvent) {
-      setCat('events');
-      if (r.day) setDay(r.day); else { setDay(null); setWhen(r.when || 'upcoming'); }
-      return r.q;
+    if (isEvents) { // Events tab: dates in the search become the date filter, as before
+      const r = eventIntent(t);
+      if (r.isEvent) { if (r.day) setDay(r.day); else { setDay(null); setWhen(r.when || 'upcoming'); } return r.q; }
+      return t;
     }
-    if (isEvents) return t; // already in Events: keep searching events
-    setCat(null); return t;
+    setCat(null); return t; // VBR_DISCOVER_APP: Places stays Places — the server reads music, dates and place, events come back mixed in
   };
+  useEffect(() => { setMixFilter('all'); }, [submitted]);
   const pickMode = (m: 'places' | 'events') => { tap(); Keyboard.dismiss(); if (m === 'events' && !isEvents) setCat('events'); if (m === 'places' && isEvents) setCat(null); };
   const onChangeQuery = (t: string) => {
     setQuery(t);
@@ -390,16 +422,27 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
       const r = eres?.results || [];
       return [...r.filter((e) => coordOf(e)), ...r.filter((e) => !coordOf(e))];
     }
+    if (mix) { // VBR_DISCOVER_APP: ranked order kept; places capped like before; events without a pin go last
+      const f = mix.items.filter((x: any) => mixFilter === 'all' || (mixFilter === 'events') === isEv(x));
+      let np = 0; const out: any[] = []; const tail: any[] = [];
+      for (const x of f) {
+        if (!coordOf(x)) { if (isEv(x)) tail.push(x); continue; }
+        if (!isEv(x)) { if (np >= MAX_VENUE_PINS) continue; np += 1; }
+        out.push(x);
+      }
+      return [...out, ...tail];
+    }
     return venues.filter((v) => coordOf(v)).slice(0, MAX_VENUE_PINS);
-  }, [isEvents, eres, venues]);
+  }, [isEvents, eres, venues, mix, mixFilter]);
   // Events at the same venue share one date pin; the pin opens the first card for that spot.
   const pins = useMemo(() => {
-    const seen = new Map<string, { c: Coord; first: number; n: number; label: string }>();
+    const seen = new Map<string, { c: Coord; first: number; n: number; label: string; ev: boolean }>();
     cards.forEach((x: any, i: number) => {
       const c = coordOf(x); if (!c) return;
       const k = `${c.latitude.toFixed(4)},${c.longitude.toFixed(4)}`;
       const g = seen.get(k);
-      if (g) g.n += 1; else seen.set(k, { c, first: i, n: 1, label: isEvents ? pinDay(x.date) : '' });
+      const ev = isEvents || isEv(x);
+      if (g) g.n += 1; else seen.set(k, { c, first: i, n: 1, label: ev ? pinDay(x.date) : '', ev });
     });
     return [...seen.values()];
   }, [cards, isEvents]);
@@ -412,10 +455,18 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
     return m;
   }, [cards, pins]);
 
-  useEffect(() => { setSelected(0); carouselRef.current?.scrollToOffset({ offset: 0, animated: false }); }, [cards]);
+  // VBR_PIN_STEADY: when results refresh, stay on the same item instead of jumping to the first one
+  const selIdRef = useRef<any>(null);
+  useEffect(() => {
+    const keep = selIdRef.current != null ? cards.findIndex((x: any) => kid(x) === selIdRef.current) : -1;
+    const i = keep >= 0 ? keep : 0;
+    setSelected(i);
+    carouselRef.current?.scrollToOffset({ offset: i * (CARD_W + GAP), animated: false });
+  }, [cards]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { selIdRef.current = cards[selected] ? kid(cards[selected]) : null; }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
   // VBR_FAST: start downloading the first cards' pictures right away
   useEffect(() => {
-    const urls = cards.slice(0, 8).map((x: any) => (isEvents ? img(x.image_url) : x?.reel?.poster ? img(x.reel.poster) : getPhotoUrl(x))).filter(Boolean) as string[];
+    const urls = cards.slice(0, 8).map((x: any) => (isEvents || isEv(x) ? img(x.image_url) : x?.reel?.poster ? img(x.reel.poster) : getPhotoUrl(x))).filter(Boolean) as string[];
     if (urls.length) (Image as any).prefetch?.(urls, 'memory-disk')?.catch?.(() => {});
   }, [cards]);
   // VBR_EVENT_PINS: this week's events around the places on screen → gold pins + an "Event Sat" line on cards
@@ -448,7 +499,12 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
     return () => { on = false; };
   }, []);
   const covFor = useCallback((r: Region | null): Cov | null => {
-    if (!covCells || !r || r.latitudeDelta > COV_MAX_DELTA) return null;
+    if (!covCells || !r) return null;
+    if (r.latitudeDelta > COV_MAX_DELTA) { // VBR_PLACE_SEARCH: zoomed out — outside only if no covered cell is on screen at all
+      const sz0 = covCells.size, la0 = r.latitude - r.latitudeDelta / 2, la1 = r.latitude + r.latitudeDelta / 2, lo0 = r.longitude - r.longitudeDelta / 2, lo1 = r.longitude + r.longitudeDelta / 2;
+      for (const k of Array.from(covCells.m.keys())) { const [a, b] = k.split(',').map(Number); const la = (a + 0.5) * sz0, lo = (b + 0.5) * sz0; if (la >= la0 && la <= la1 && lo >= lo0 && lo <= lo1) return null; }
+      return 'outside';
+    }
     const half = Math.min(0.12, Math.max(r.latitudeDelta, 0.04) / 2), sz = covCells.size;
     let n = 0;
     for (let a = Math.floor((r.latitude - half) / sz); a <= Math.floor((r.latitude + half) / sz); a++)
@@ -486,33 +542,78 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
       body: JSON.stringify({ lat: r.latitude, lng: r.longitude, place, mode: isEvents ? 'events' : 'places' }) }).catch(() => {});
   };
   useEffect(() => { if (cov !== 'outside') setSuggested(null); }, [cov]);
-  // Zoom to the results whenever a new result set arrives (not after "Search this area"), once the map exists.
+  // VBR_PLACE_SEARCH: searching "Detroit", "Maryland"… flies the map there; if we don't cover it, say so and offer to request it.
+  const [placeQ, setPlaceQ] = useState<string | null>(null);
   useEffect(() => {
-    if (!mapReady || !fitNext.current || pins.length === 0 || !mapRef.current) return;
+    const m = submitted ? submitted.match(PLACE_RE) : null;
+    if (!m) { setPlaceQ(null); return; }
+    const name = m[1].replace(/\b\w/g, (c) => c.toUpperCase());
+    let on = true;
+    Location.geocodeAsync(m[1]).then((g) => {
+      if (!on || !g?.[0] || !mapRef.current) return;
+      const r = { latitude: g[0].latitude, longitude: g[0].longitude, latitudeDelta: 0.15, longitudeDelta: 0.15 } as Region;
+      if (covFor(r) !== 'outside') { setPlaceQ(null); return; }
+      setPlaceQ(name); fitNext.current = false; touchRef.current = false; progAt.current = Date.now();
+      regionRef.current = r; mapRef.current.animateToRegion(r, 650); checkCoverage(r);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    }).catch(() => {});
+    return () => { on = false; };
+  }, [submitted, covCells]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Zoom to the results whenever a new result set arrives (not after "Search this area"), once the map exists.
+  // VBR_COVERAGE_HONEST: "Near you" outside our coverage → stay on the person and show the coverage banner,
+  // instead of flying to the closest results hundreds of miles away.
+  const outsideHere = (): Region | null => {
+    const here = locRef.current;
+    if (!nearYou || !here || !covCells) return null;
+    const r = { latitude: here.latitude, longitude: here.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 } as Region;
+    return covFor(r) === 'outside' ? r : null;
+  };
+  useEffect(() => {
+    const r = outsideHere();
+    if (!mapReady || !r || !mapRef.current) return;
+    fitNext.current = false; touchRef.current = false; progAt.current = Date.now();
+    regionRef.current = r; mapRef.current.animateToRegion(r, 450); checkCoverage(r);
+  }, [mapReady, nearYou, userLoc, covCells, pins]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!mapReady || !fitNext.current || pins.length === 0 || !mapRef.current || outsideHere() || placeQ) return;
     fitNext.current = false; touchRef.current = false;
     const edgePadding = { top: topH + 30, right: 50, bottom: tabH + (mode === 'map' ? CARD_H + 70 : 40), left: 50 };
     if (pins.length === 1) mapRef.current.animateToRegion({ ...pins[0].c, latitudeDelta: 0.02, longitudeDelta: 0.02 }, 350);
-    else mapRef.current.fitToCoordinates(pins.map((p) => p.c), { edgePadding, animated: true });
+    else mapRef.current.fitToCoordinates(pins.slice(0, PIN_POOL).map((p) => p.c), { edgePadding, animated: true });
   }, [pins, mapReady, tabH, topH, mode]);
 
   const focusCard = (i: number) => {
     const c = cards[i] ? coordOf(cards[i]) : null;
-    if (c && mapRef.current) { touchRef.current = false; mapRef.current.animateCamera({ center: c }, { duration: 300 }); }
+    if (c && mapRef.current) { touchRef.current = false; progAt.current = Date.now(); mapRef.current.animateCamera({ center: c }, { duration: 300 }); }
   };
-  const onPin = (pi: number) => {
+  const lastPinAt = useRef(0);
+  const onPin = (key: string) => { // VBR_PIN_POOL: identity, never a list index
+    if (Date.now() - lastPinAt.current < 250) return; // VBR_PIN_LIGHT: debounce machine-gun taps
+    const i = indexForKey(cards, key, kid);
+    if (__DEV__) console.log('[pin tap]', key, i, i >= 0 ? (cards[i]?.name || cards[i]?.title) : '(stale — ignored)', i >= 0 ? coordOf(cards[i]) : null);
+    if (i < 0) return;
+    lastPinAt.current = Date.now();
     tap();
-    const i = pins[pi].first;
     setSelected(i);
     carouselRef.current?.scrollToOffset({ offset: i * (CARD_W + GAP), animated: true });
     focusCard(i);
   };
+  const onPinRef = useRef(onPin); onPinRef.current = onPin;
+  const pinPress = useCallback((key: string) => onPinRef.current(key), []);
+  // What the pool shows: the first PIN_POOL pins, as plain values (so unchanged pins don't re-render).
+  const pinsIn = useMemo((): PinIn[] => pins.slice(0, PIN_POOL).map((p) => {
+    const first = cards[p.first];
+    return { key: kid(first), lat: p.c.latitude, lng: p.c.longitude, kind: p.ev ? 'event' : 'place',
+      label: p.ev ? `${p.label}${p.n > 1 ? ` +${p.n - 1}` : ''}` : '', name: String(first?.name || ''), gold: !p.ev && evAt.has(first?.id) };
+  }), [pins, cards, evAt]);
   const onCarouselEnd = (e: any) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + GAP));
     if (i >= 0 && i < cards.length) { setSelected(i); focusCard(i); }
   };
+  const openSheet = (x: any) => router.push(isEvents || isEv(x) ? `/event-sheet/${x.id}` : `/venue-sheet/${x.id}`); // VBR_SWIPE_SHEET
   const open = (x: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    router.push(isEvents ? `/event/${x.id}` : `/venue/${x.id}`);
+    router.push(isEvents || isEv(x) ? `/event/${x.id}` : `/venue/${x.id}`);
   };
 
   const windowWords = day ? `on ${shortDay(day)}` : when === 'tonight' ? 'tonight' : when === 'weekend' ? 'this weekend' : when === '7d' ? 'in the next 7 days' : 'coming up';
@@ -528,13 +629,19 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
       if (eres.results.length < eres.total) return `${base} · showing the first ${eres.results.length}`;
       return eres.list_only > 0 ? `${base} · ${eres.located} on the map` : base;
     }
+    if (mix) { // VBR_DISCOVER_APP
+      const parts = [mix.places ? plural(vres?.total || mix.places, 'place') : null, mix.eventsTotal ? plural(mix.eventsTotal, 'event') : null].filter(Boolean);
+      if (!parts.length || mode !== 'map') return '';
+      const onMap = cards.filter((x: any) => coordOf(x)).length;
+      return `${parts.join(' · ')} · ${onMap} on map`;
+    }
     if (!vres || vres.total === 0) return '';
     const curatedNow = !cat && !submitted;
     const all = curatedNow ? `${plural(vres.total, 'place')} ${placeWords}` : plural(vres.total, 'match', 'matches');
     // The map pins the top 20; List shows every result returned (up to 60).
     if (mode === 'map') return vres.total > cards.length ? `${all} · ${cards.length} on map` : all;
     return ''; // VBR_LIST_V2: the list has its own header
-  }, [loading, failed, isEvents, eres, vres, cards.length, venues.length, mode, cat, submitted, genreLabel, windowWords, placeWords, bbox, scopeAll]);
+  }, [loading, failed, isEvents, eres, vres, cards, venues.length, mode, cat, submitted, genreLabel, windowWords, placeWords, bbox, scopeAll, mix]);
 
   const notice = useMemo((): Notice | null => {
     if (hint) return { text: hint };
@@ -552,14 +659,16 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         text: 'Turn on location to search near you, or search the area on screen.',
         action: { label: 'Use my location', run: () => { locate().then((c) => { if (c) setRetry((n) => n + 1); }); } }, action2: { label: 'Search the map', run: () => { tap(); searchArea(); } },
       };
+      if (mix && mix.events > 0) return mix.notes.length ? { text: mix.notes[0] } : null; // VBR_DISCOVER_APP
       if (vres.total === 0 && vres.place && (vres.elsewhere_total || 0) > 0) return { text: growing(vres.place, vres.what), action: { label: `Show ${vres.elsewhere_total} in other areas`, run: showElsewhere } };
       if (vres.total === 0 && vres.area && (vres.wider_total || 0) > 0) return { text: growing(vres.area, vres.what), action: { label: `Show ${vres.wider_total} in other areas`, run: showElsewhere } };
       if (vres.total === 0) return { text: 'No matches. Try a neighborhood, cuisine or venue type.' };
+      if (mix && mix.notes.length) return { text: mix.notes[0] };
       if (vres.time_note) return { text: vres.time_note };
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hint, failed, loading, isEvents, eres, vres, elsewhere, genre, genreLabel, placeWords, windowWords, cards.length]);
+  }, [hint, failed, loading, isEvents, eres, vres, elsewhere, genre, genreLabel, placeWords, windowWords, cards.length, mix]);
 
   const pickCat = (k: string | null) => { if (k === cat) k = null; /* VBR_NO_FOR_YOU: tap the active chip again to clear it */ tap(); Keyboard.dismiss(); setCat(k); };
   const toggleWeekend = () => { tap(); setDay(null); setWhen((w) => (w === 'weekend' ? 'upcoming' : 'weekend')); };
@@ -570,17 +679,18 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   // VBR_MAP_STABLE: pins keep one key per slot (never re-keyed on select / same address), so the native map
   // only updates pins in place instead of removing + re-inserting them (fixes AIRMap insertReactSubview crash).
   // Pins redraw for a moment after selection or results change, then freeze again for smooth panning.
-  const [pinTrack, setPinTrack] = useState(true);
-  useEffect(() => { setPinTrack(true); const t = setTimeout(() => setPinTrack(false), 600); return () => clearTimeout(t); }, [selected, cards, evAt]);
+  // VBR_PIN_LIGHT: redrawing every pin on each tap (up to 200 event pins) overloaded the native map and could close the app.
+  // All pins redraw only when results change; on a tap, only the old and new selected pins redraw, briefly.
+  // VBR_PIN_POOL: each pin slot redraws its own bitmap briefly when what it shows changes (see MapPins.tsx).
   const playable = isFocused && appActive && !reduceMotion && mode === 'map' && sheet == null;
   const listPlay = isFocused && appActive && !reduceMotion && mode === 'list' && sheet == null;
   const directions = (x: any) => {
     const c = coordOf(x); if (!c) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    Linking.openURL(`http://maps.apple.com/?daddr=${c.latitude},${c.longitude}&q=${encodeURIComponent(String((isEvents ? x.venue_name || x.title : x.name) || ''))}`).catch(() => {});
+    Linking.openURL(`http://maps.apple.com/?daddr=${c.latitude},${c.longitude}&q=${encodeURIComponent(String((isEvents || isEv(x) ? x.venue_name || x.title : x.name) || ''))}`).catch(() => {});
   };
   // List = the same results as the map (all of them, including events without a map pin).
-  const listItems = isEvents ? cards : venues;
+  const listItems = isEvents ? cards : mix ? mix.items.filter((x: any) => mixFilter === 'all' || (mixFilter === 'events') === isEv(x)) : venues;
   const toggleMode = () => {
     tap(); Keyboard.dismiss();
     // VBR_LIST_IS_RESULTS: List always shows the places on the map (never the old For you feed)
@@ -600,27 +710,11 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         initialRegion={initialRegion}
         onMapReady={() => { regionRef.current = initialRegion; setMapReady(true); }}
         onTouchStart={() => { touchRef.current = true; Keyboard.dismiss(); if (autoRef.current) clearTimeout(autoRef.current); }}
+        onMarkerPress={() => { touchRef.current = false; progAt.current = Date.now(); }}
         onPress={() => { touchRef.current = false; }}
-        onRegionChangeComplete={(r: Region) => { regionRef.current = r; checkCoverage(r); if (touchRef.current) { touchRef.current = false; if (mode === 'map') scheduleArea(); } }}
+        onRegionChangeComplete={(r: Region) => { regionRef.current = r; checkCoverage(r); if (touchRef.current) { touchRef.current = false; if (mode === 'map' && Date.now() - progAt.current > 900) scheduleArea(); } }}
       >
-        {pins.map((p, pi) => {
-          const sel = pinOfCard[selected] === pi;
-          return (
-            <Marker key={`pin-${pi}`} coordinate={p.c}
-              onPress={() => onPin(pi)} tracksViewChanges={pinTrack} zIndex={sel ? 20 : 1} anchor={{ x: 0.5, y: sel && !isEvents ? 0.86 : 0.5 }}>
-              {isEvents ? (
-                <View style={[s.datePin, sel && s.datePinSel]}>
-                  <Text style={[s.datePinText, sel && s.datePinTextSel]}>{p.label}{p.n > 1 ? ` +${p.n - 1}` : ''}</Text>
-                </View>
-              ) : sel ? (
-                <View style={s.pinWrap}>
-                  <View style={s.pinLabel}><Text style={s.pinLabelText} numberOfLines={1}>{cards[p.first]?.name}</Text></View>
-                  <View style={s.pinSel} />
-                </View>
-              ) : <View style={[s.pin, evAt.has(cards[p.first]?.id) && s.pinEv]} />}
-            </Marker>
-          );
-        })}
+        <PinPool pins={pinsIn} selectedSlot={pinOfCard[selected] ?? -1} onPress={pinPress} styles={s} />
       </MapView>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.covTint, { opacity: tint }]} />
 
@@ -628,18 +722,18 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         <FlatList
           style={[StyleSheet.absoluteFill, { backgroundColor: C.ground }]}
           data={listItems}
-          keyExtractor={(x: any) => `${isEvents ? 'le' : 'lv'}-${x.id}`}
+          keyExtractor={(x: any) => `l-${isEvents ? `e${x.id}` : kid(x)}`}
           contentContainerStyle={{ paddingTop: topH + 4, paddingBottom: tabH + 130 }}
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={() => Keyboard.dismiss()}
           ItemSeparatorComponent={() => <View style={s.sep} />}
-          renderItem={({ item, index }) => <ListRow x={item} isEvent={isEvents} onPress={() => open(item)} ev={isEvents ? undefined : evAt.get(item.id)} featured={!isEvents && index === 0} play={listPlay && index === 0} />}
-          ListHeaderComponent={!isEvents && vres && vres.total > 0 ? <View style={s.listHead}><Text style={s.listTitle}>{`Discover ${placeWords}`}</Text><Text style={s.meta}>{`${plural(vres.total, 'place')} to explore`}</Text></View> : null}
+          renderItem={({ item, index }) => <ListRow x={item} isEvent={isEvents || isEv(item)} onPress={() => open(item)} ev={isEvents || isEv(item) ? undefined : evAt.get(item.id)} featured={!isEvents && !isEv(item) && index === 0} play={listPlay && index === 0 && !isEv(item)} />}
+          ListHeaderComponent={!isEvents && mix ? <View style={s.listHead}><Text style={s.listTitle} numberOfLines={2}>{`“${submitted}”`}</Text><Text style={s.meta}>{[mix.places ? plural(vres?.total || mix.places, 'place') : null, mix.eventsTotal ? plural(mix.eventsTotal, 'event') : null].filter(Boolean).join(' · ') || 'No results yet'}</Text></View> : !isEvents && vres && vres.total > 0 ? <View style={s.listHead}><Text style={s.listTitle}>{`Discover ${placeWords}`}</Text><Text style={s.meta}>{`${plural(vres.total, 'place')} to explore`}</Text></View> : null}
           showsVerticalScrollIndicator={false}
         />
       ) : null}
 
-      <View style={[s.top, { paddingTop: insets.top + 6 }]} pointerEvents="box-none" onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
+      <View style={[s.top, { paddingTop: insets.top + 6 }, mode === 'list' && { backgroundColor: C.ground, paddingBottom: 8 }]} pointerEvents="box-none" onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
         <View style={s.searchRow}>
           <View style={s.searchBar}>
             <Ionicons name="search" size={16} color={C.muted} />
@@ -694,6 +788,16 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
             <Ionicons name="chevron-down" size={11} color={day || when === 'tonight' || when === '7d' ? C.ink : C.muted} />
           </TouchableOpacity>
             </>
+          ) : mix && mix.places > 0 && mix.events > 0 ? (
+            ([['all', 'All', null], ['places', 'Places', vres?.total || mix.places], ['events', 'Events', mix.eventsTotal]] as [MixFilter, string, number | null][]).map(([k, label, n]) => {
+              const on = mixFilter === k;
+              return (
+                <TouchableOpacity key={k} style={[s.pill, on && s.pillOn]} onPress={() => { tap(); Keyboard.dismiss(); fitNext.current = true; setMixFilter(k); }}
+                  accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={n != null ? `${label}, ${n}` : label}>
+                  <Text style={[s.pillText, on && s.pillTextOn]}>{label}{n != null ? <Text style={[s.pillCount, on && s.pillTextOn]}>{`  ${n}`}</Text> : null}</Text>
+                </TouchableOpacity>
+              );
+            })
           ) : CATS.filter((c) => c.key !== 'events').map((c) => {
             const on = cat === c.key;
             return (
@@ -707,11 +811,11 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         {status ? <Text style={s.status} numberOfLines={1}>{status}</Text> : null}
         {cov === 'outside' && mode === 'map' ? (
           <View style={s.covBanner}>
-            <Text style={s.covTitle}>Beyond our current coverage</Text>
+            <Text style={s.covTitle}>{placeQ ? `We’re not in ${placeQ} yet` : 'Outside our service area'}</Text>
             <Text style={s.covSub}>{suggested ? `Thanks, we noted interest in ${suggested}.` : 'Viberyte curates NYC and North Jersey right now.'}</Text>
             <View style={s.bannerActions}>
               <TouchableOpacity onPress={backToCovered}><Text style={s.bannerAction}>Back to covered areas</Text></TouchableOpacity>
-              {!suggested ? <TouchableOpacity onPress={suggestArea}><Text style={s.bannerAction}>Suggest this area</Text></TouchableOpacity> : null}
+              {!suggested ? <TouchableOpacity onPress={suggestArea}><Text style={s.bannerAction}>{placeQ ? `Request ${placeQ}` : 'Request this area'}</Text></TouchableOpacity> : null}
             </View>
           </View>
         ) : cov === 'limited' && mode === 'map' ? <Text style={s.covLimited} numberOfLines={1}>Limited picks here so far — we’re still curating this area.</Text> : null}
@@ -741,7 +845,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         <Text style={s.toggleText}>{mode === 'map' ? 'List' : 'Map'}</Text>
       </TouchableOpacity>
 
-      {mode === 'map' && cards.length > 0 ? (
+      {mode === 'map' && cards.length > 0 && !(cov === 'outside' && (nearYou || placeQ)) ? (
         <FlatList
           ref={carouselRef}
           data={cards}
@@ -751,13 +855,13 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
           showsHorizontalScrollIndicator={false}
           snapToInterval={CARD_W + GAP}
           decelerationRate="fast"
-          keyExtractor={(x: any) => `${isEvents ? 'e' : 'v'}-${x.id}`}
+          keyExtractor={(x: any) => (isEvents ? `e-${x.id}` : kid(x))}
           onMomentumScrollEnd={onCarouselEnd}
           initialNumToRender={4}
           windowSize={5}
           extraData={selected + (playable ? 1000 : 0)}
           renderItem={({ item, index }) => (
-            <ReelCard x={item} isEvent={isEvents} active={playable && index === selected} onOpen={() => open(item)} onDirections={() => directions(item)} ev={isEvents ? undefined : evAt.get(item.id)} />
+            <ReelCard x={item} isEvent={isEvents || isEv(item)} active={playable && index === selected} onOpen={() => openSheet(item)} onDirections={() => directions(item)} ev={isEvents || isEv(item) ? undefined : evAt.get(item.id)} />
           )}
         />
       ) : null}
@@ -832,7 +936,14 @@ const ListRow = React.memo(function ListRow({ x, isEvent, onPress, ev, featured,
     );
     return (
       <TouchableOpacity style={s.listRow} onPress={onPress} activeOpacity={0.8}>
-        {u ? <Image source={{ uri: u }} style={s.thumb} contentFit="cover" cachePolicy="memory-disk" transition={120} /> : <View style={[s.thumb, { backgroundColor: C.raise }]} />}
+        {/* VBR_THUMB_FALLBACK: a date tile sits underneath, so a missing or broken image never leaves a blank square */}
+        <View style={[s.thumb, s.thumbBack]}>
+          {isEvent && x?.date ? (<>
+            <Text style={s.thumbMon}>{new Date(`${String(x.date).slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}</Text>
+            <Text style={s.thumbDay}>{Number(String(x.date).slice(8, 10)) || ''}</Text>
+          </>) : <Ionicons name={isEvent ? 'musical-notes' : 'location'} size={22} color={C.faint} />}
+          {u ? <Image source={{ uri: u }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={120} /> : null}
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text>
           <Text style={s.name} numberOfLines={1}>{x.name}</Text>
@@ -867,6 +978,20 @@ function ReelVideo({ uri }: { uri: string }) {
 const ReelCard = React.memo(function ReelCard({ x, isEvent, active, onOpen, onDirections, ev }: {
   x: any; isEvent: boolean; active: boolean; onOpen: () => void; onDirections: () => void; ev?: any;
 }) {
+  // VBR_SWIPE_SHEET: swipe the card up to open the full profile as a sheet (swipe down there to come back). Sideways still moves between cards.
+  const lift = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(onOpen); openRef.current = onOpen;
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => g.dy < -8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderMove: (_e, g) => lift.setValue(Math.max(-90, Math.min(0, g.dy * 0.55))),
+    onPanResponderRelease: (_e, g) => {
+      const go = g.dy < -45 || g.vy < -0.45;
+      if (go) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); openRef.current(); }
+      Animated.spring(lift, { toValue: 0, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
+    },
+    onPanResponderTerminate: () => Animated.spring(lift, { toValue: 0, useNativeDriver: true }).start(),
+  })).current;
   const video = !isEvent && x?.reel?.video ? img(x.reel.video) : null;
   const still = isEvent ? img(x.image_url) : (x?.reel?.poster ? img(x.reel.poster) : getPhotoUrl(x));
   const [live, setLive] = useState(false);
@@ -883,7 +1008,8 @@ const ReelCard = React.memo(function ReelCard({ x, isEvent, active, onOpen, onDi
   const tags = isEvent ? [x.venue_name, x.genre_label, priceOf(x)].filter(Boolean).join(' · ') : [x.vibe, known].filter(Boolean).join(' · ');
   const located = coordOf(x) != null;
   return (
-    <View style={s.card}>
+    <Animated.View style={[s.card, { transform: [{ translateY: lift }] }]} {...pan.panHandlers}>
+      <View style={s.cardGrabber} pointerEvents="none" />
       <Pressable style={s.media} onPress={onOpen} accessibilityLabel={`Open ${isEvent ? x.title : x.name}`}>
         {still ? <Image source={{ uri: still }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={150} /> : null}
         {live && video ? <ReelVideo key={video} uri={video} /> : null}
@@ -905,7 +1031,7 @@ const ReelCard = React.memo(function ReelCard({ x, isEvent, active, onOpen, onDi
           ) : null}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -946,6 +1072,7 @@ const s = StyleSheet.create({
   pillOn: { backgroundColor: C.ivory, borderColor: C.ivory },
   pillText: { color: C.ivory, fontSize: 14, fontWeight: '500' },
   pillTextOn: { color: C.ink, fontWeight: '600' },
+  pillCount: { color: C.muted, fontSize: 13, fontWeight: '500', fontVariant: ['tabular-nums'] },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 12, borderRadius: 15,
     backgroundColor: 'rgba(9,9,11,0.9)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(197,163,107,0.55)',
@@ -971,6 +1098,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(20,20,23,0.97)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(243,240,233,0.1)',
   },
   media: { width: MEDIA_W, height: '100%', backgroundColor: C.raise },
+  cardGrabber: { position: 'absolute', top: 6, alignSelf: 'center', left: '50%', marginLeft: -18, width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(245,241,234,0.35)', zIndex: 5 },
   reelBadge: {
     position: 'absolute', left: 8, top: 8, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(9,9,11,0.6)',
@@ -985,6 +1113,9 @@ const s = StyleSheet.create({
   pinLabel: { maxWidth: 160, paddingHorizontal: 8, height: 22, borderRadius: 11, justifyContent: 'center', backgroundColor: C.ivory, marginBottom: 4 },
   pinLabelText: { color: C.ink, fontSize: 12, fontWeight: '700' },
   thumb: { width: 78, height: 78, borderRadius: 12 },
+  thumbBack: { backgroundColor: C.raise, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  thumbMon: { color: C.champ, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  thumbDay: { color: C.ivory, fontSize: 26, fontWeight: '600', marginTop: -2 },
   eyebrow: { color: C.champ, fontSize: 11, fontWeight: '600', letterSpacing: 0.9 },
   name: { color: C.ivory, fontSize: 16, fontWeight: '600', marginTop: 1 },
   meta: { color: C.muted, fontSize: 13, marginTop: 2 },

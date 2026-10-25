@@ -1,11 +1,8 @@
-// app/saved.tsx — Viberyte Saved V1
-// One list for every heart in the app (cards, venue page, map), grouped by area.
-// Brand palette, honest empty states, undo on remove, pull to refresh.
+// app/saved.tsx — Viberyte Saved V2 (VBR_SAVED_V2)
+// Spots and Events in one place. iOS-native: large title, segmented control, inset grouped lists.
+// Black and ivory only. Undo on remove, pull to refresh.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet,
-  RefreshControl, Animated,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl, Animated } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,35 +12,27 @@ import * as Haptics from 'expo-haptics';
 import { getSaved, saveVenue, unsaveVenue, SavedVenue } from '../lib/saved';
 
 const C = {
-  bg: '#09090B', card: 'rgba(243,240,233,0.04)', line: 'rgba(243,240,233,0.08)',
-  ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.55)', faint: 'rgba(243,240,233,0.32)',
-  gold: '#C5A36B',
+  bg: '#09090B', group: '#1C1C1E', seg: '#1C1C1E', segOn: '#3A3A3C', line: 'rgba(243,240,233,0.10)',
+  ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.58)', faint: 'rgba(243,240,233,0.34)',
 };
 const API = 'https://viberyte.com';
-type Tab = 'venues' | 'events' | 'flows';
+type Tab = 'venues' | 'events';
 
 async function resolveUid(): Promise<number | null> {
-  // Same rule the app always used (parseInt), plus fallbacks to the stored user/profile.
   const num = (x: any) => { const n = parseInt(String(x ?? '').replace(/"/g, ''), 10); return Number.isFinite(n) && n > 0 ? n : null; };
   try {
-    const raw = await AsyncStorage.getItem('@lumina_user_id');
-    const a = num(raw); if (a) return a;
+    const a = num(await AsyncStorage.getItem('@lumina_user_id')); if (a) return a;
     for (const k of ['@lumina_user', '@lumina_profile']) {
-      try {
-        const o = JSON.parse((await AsyncStorage.getItem(k)) || 'null');
-        const b = num(o?.user_id) || num(o?.userId) || num(o?.id); if (b) return b;
-      } catch {}
+      try { const o = JSON.parse((await AsyncStorage.getItem(k)) || 'null'); const b = num(o?.user_id) || num(o?.userId) || num(o?.id); if (b) return b; } catch {}
     }
   } catch {}
   return null;
 }
-const numericUid = resolveUid;
 
 function fmtDate(s?: string) {
   if (!s) return '';
   const d = new Date(String(s).length <= 10 ? `${s}T12:00:00` : s);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 export default function SavedScreen() {
@@ -52,7 +41,6 @@ export default function SavedScreen() {
   const [tab, setTab] = useState<Tab>('venues');
   const [venues, setVenues] = useState<SavedVenue[]>([]);
   const [events, setEvents] = useState<any[]>([]);
-  const [flows, setFlows] = useState<any[]>([]);
   const [canSync, setCanSync] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,35 +50,20 @@ export default function SavedScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [v, uid, flowsRaw] = await Promise.all([
-        getSaved(), numericUid(), AsyncStorage.getItem('@lumina_saved_flows').catch(() => null),
-      ]);
-      setVenues(v);
-      setCanSync(!!uid);
-      try { setFlows(flowsRaw ? JSON.parse(flowsRaw) : []); } catch { setFlows([]); }
+      const [v, uid] = await Promise.all([getSaved(), resolveUid()]);
+      setVenues(v); setCanSync(!!uid);
       if (uid) {
-        try {
-          const r = await fetch(`${API}/api/favorites?userId=${uid}&type=event`);
-          const d = await r.json();
-          setEvents(Array.isArray(d?.saved) ? d.saved : []);
-        } catch { setEvents([]); }
+        try { const r = await fetch(`${API}/api/favorites?userId=${uid}&type=event`); const d = await r.json(); setEvents(Array.isArray(d?.saved) ? d.saved : []); }
+        catch { setEvents([]); }
       } else setEvents([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    } finally { setLoading(false); setRefreshing(false); }
   }, []);
-
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   const groups = useMemo(() => {
     const m = new Map<string, SavedVenue[]>();
-    for (const v of venues) {
-      const k = v.neighborhood || v.city || 'Other';
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(v);
-    }
+    for (const v of venues) { const k = v.neighborhood || v.city || 'Other'; if (!m.has(k)) m.set(k, []); m.get(k)!.push(v); }
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   }, [venues]);
 
@@ -98,206 +71,154 @@ export default function SavedScreen() {
     setUndo(v);
     Animated.timing(undoAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
     if (undoTimer.current) clearTimeout(undoTimer.current);
-    undoTimer.current = setTimeout(() => {
-      Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => setUndo(null));
-    }, 4000);
+    undoTimer.current = setTimeout(() => Animated.timing(undoAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => setUndo(null)), 4000);
   };
-
   const removeVenue = async (v: SavedVenue) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setVenues(list => list.filter(x => x.id !== v.id));
-    await unsaveVenue(v.id);
-    showUndo(v);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setVenues((l) => l.filter((x) => x.id !== v.id));
+    await unsaveVenue(v.id); showUndo(v);
   };
-
   const undoRemove = async () => {
-    if (!undo) return;
-    const v = undo;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!undo) return; const v = undo;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (undoTimer.current) clearTimeout(undoTimer.current);
     Animated.timing(undoAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setUndo(null));
     await saveVenue(v);
-    setVenues(list => (list.some(x => x.id === v.id) ? list : [v, ...list]));
+    setVenues((l) => (l.some((x) => x.id === v.id) ? l : [v, ...l]));
   };
-
   const eventId = (it: any) => it?.item_id ?? it?.itemId ?? it?.details?.id ?? it?.id;
-
   const removeEvent = async (it: any) => {
-    const uid = await numericUid();
-    const eid = eventId(it);
+    const uid = await resolveUid(); const eid = eventId(it);
     if (!uid || eid === undefined) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setEvents(list => list.filter(x => eventId(x) !== eid));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setEvents((l) => l.filter((x) => eventId(x) !== eid));
     fetch(`${API}/api/favorites?userId=${uid}&itemType=event&itemId=${eid}`, { method: 'DELETE' }).catch(() => {});
   };
-
   const back = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)'));
-  const counts = { venues: venues.length, events: events.length, flows: flows.length };
 
   const Empty = ({ icon, title, text, cta }: { icon: any; title: string; text: string; cta?: boolean }) => (
     <View style={s.empty}>
-      <View style={s.emptyIcon}><Ionicons name={icon} size={22} color={C.gold} /></View>
+      <Ionicons name={icon} size={40} color={C.faint} />
       <Text style={s.emptyTitle}>{title}</Text>
       <Text style={s.emptyText}>{text}</Text>
-      {cta && (
-        <TouchableOpacity style={s.cta} onPress={() => router.push('/(tabs)/explore')} activeOpacity={0.8}>
-          <Text style={s.ctaText}>Open Explore</Text>
+      {cta ? (
+        <TouchableOpacity style={s.cta} onPress={() => router.push('/(tabs)/explore')} activeOpacity={0.85}>
+          <Text style={s.ctaText}>Explore</Text>
         </TouchableOpacity>
-      )}
+      ) : null}
     </View>
+  );
+
+  const Row = ({ img, letter, icon, title, meta, onPress, onRemove, last }: { img?: string; letter?: string; icon?: any; title: string; meta?: string; onPress: () => void; onRemove: () => void; last: boolean }) => (
+    <TouchableOpacity style={s.row} activeOpacity={0.6} onPress={() => { Haptics.selectionAsync().catch(() => {}); onPress(); }}>
+      {img ? <Image source={{ uri: img }} style={s.thumb} contentFit="cover" transition={150} />
+        : <View style={[s.thumb, s.mono]}>{icon ? <Ionicons name={icon} size={18} color={C.dim} /> : <Text style={s.monoText}>{letter}</Text>}</View>}
+      <View style={[s.rowBody, !last && s.hair]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.rowTitle} numberOfLines={1}>{title}</Text>
+          {meta ? <Text style={s.rowMeta} numberOfLines={1}>{meta}</Text> : null}
+        </View>
+        <TouchableOpacity onPress={onRemove} hitSlop={12} style={s.iconBtn} accessibilityLabel={`Remove ${title} from Saved`}>
+          <Ionicons name="bookmark" size={18} color={C.ivory} />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
   );
 
   const renderVenues = () => {
     if (!venues.length) return <Empty icon="bookmark-outline" title="Nothing saved yet" text="Tap the bookmark on any spot and it lands here, sorted by area." cta />;
     return groups.map(([area, list]) => (
-      <View key={area} style={s.group}>
-        <View style={s.groupHead}>
-          <Text style={s.groupTitle}>{area}</Text>
-          <Text style={s.groupCount}>{list.length}</Text>
+      <View key={area} style={s.section}>
+        <Text style={s.sectionHead}>{area.toUpperCase()}  <Text style={{ color: C.faint }}>{list.length}</Text></Text>
+        <View style={s.group}>
+          {list.map((v, i) => (
+            <Row key={v.id} img={v.photo || undefined} letter={v.name.charAt(0).toUpperCase()} title={v.name}
+              meta={[v.category, v.city && v.city !== area ? v.city : null].filter(Boolean).join(' · ')}
+              onPress={() => router.push(`/venue/${v.id}` as any)} onRemove={() => removeVenue(v)} last={i === list.length - 1} />
+          ))}
         </View>
-        {list.map(v => (
-          <TouchableOpacity key={v.id} style={s.row} activeOpacity={0.85}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/venue/${v.id}` as any); }}>
-            {v.photo ? (
-              <Image source={{ uri: v.photo }} style={s.thumb} contentFit="cover" transition={150} />
-            ) : (
-              <View style={[s.thumb, s.mono]}><Text style={s.monoText}>{v.name.charAt(0).toUpperCase()}</Text></View>
-            )}
-            <View style={s.rowBody}>
-              <Text style={s.rowTitle} numberOfLines={1}>{v.name}</Text>
-              <Text style={s.rowMeta} numberOfLines={1}>
-                {[v.category, v.city && v.city !== area ? v.city : null].filter(Boolean).join(' · ') || 'Saved'}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => removeVenue(v)} hitSlop={12} style={s.iconBtn}
-              accessibilityLabel={`Remove ${v.name} from Saved`}>
-              <Ionicons name="bookmark" size={18} color={C.gold} />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        ))}
       </View>
     ));
   };
-
   const renderEvents = () => {
     if (!canSync) return <Empty icon="ticket-outline" title="Sign in to save events" text="Saved events live on your account so they follow you across devices." />;
     if (!events.length) return <Empty icon="ticket-outline" title="No events saved" text="Save an event from its page and it shows up here." cta />;
     return (
-      <View style={s.group}>
-        {events.map(it => {
-          const d = it?.details || it?.event || it;
-          const eid = eventId(it);
-          const img = d?.image_url || d?.cover_image_url;
-          const title = d?.name || d?.title || 'Event';
-          const meta = [fmtDate(d?.date || d?.event_date), d?.venue_name || d?.venue_name_cache].filter(Boolean).join(' · ');
-          return (
-            <TouchableOpacity key={String(eid)} style={s.row} activeOpacity={0.85} onPress={() => router.push(`/event/${eid}` as any)}>
-              {img ? <Image source={{ uri: img }} style={s.thumb} contentFit="cover" transition={150} />
-                   : <View style={[s.thumb, s.mono]}><Ionicons name="ticket-outline" size={18} color={C.gold} /></View>}
-              <View style={s.rowBody}>
-                <Text style={s.rowTitle} numberOfLines={1}>{title}</Text>
-                {!!meta && <Text style={s.rowMeta} numberOfLines={1}>{meta}</Text>}
-              </View>
-              <TouchableOpacity onPress={() => removeEvent(it)} hitSlop={12} style={s.iconBtn} accessibilityLabel={`Remove ${title} from Saved`}>
-                <Ionicons name="bookmark" size={18} color={C.gold} />
-              </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
-
-  const renderFlows = () => {
-    if (!flows.length) return <Empty icon="git-branch-outline" title="No saved flows" text="Save a night plan and it appears here." />;
-    return (
-      <View style={s.group}>
-        {flows.map((f: any, i: number) => (
-          <TouchableOpacity key={(f.slug || '') + i} style={s.row} activeOpacity={0.85} onPress={() => router.push(`/flow/${f.slug}` as any)}>
-            <View style={[s.thumb, s.mono]}><Ionicons name="git-branch-outline" size={18} color={C.gold} /></View>
-            <View style={s.rowBody}>
-              <Text style={s.rowTitle} numberOfLines={1}>{f.title || 'Flow'}</Text>
-              <Text style={s.rowMeta}>{f.savedAt ? `Saved ${fmtDate(f.savedAt)}` : 'Saved'}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={C.faint} />
-          </TouchableOpacity>
-        ))}
+      <View style={s.section}>
+        <View style={s.group}>
+          {events.map((it, i) => {
+            const d = it?.details || it?.event || it; const eid = eventId(it);
+            const title = d?.name || d?.title || 'Event';
+            const meta = [fmtDate(d?.date || d?.event_date), d?.venue_name || d?.venue_name_cache].filter(Boolean).join(' · ');
+            return <Row key={String(eid)} img={d?.image_url || d?.cover_image_url} icon="ticket-outline" title={title} meta={meta}
+              onPress={() => router.push(`/event/${eid}` as any)} onRemove={() => removeEvent(it)} last={i === events.length - 1} />;
+          })}
+        </View>
       </View>
     );
   };
 
   return (
     <View style={s.container}>
-      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[s.nav, { paddingTop: insets.top + 4 }]}>
         <TouchableOpacity onPress={back} hitSlop={12} style={s.backBtn} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={C.ivory} />
+          <Ionicons name="chevron-back" size={26} color={C.ivory} />
         </TouchableOpacity>
-        <Text style={s.title}>Saved</Text>
-        <View style={s.backBtn} />
       </View>
-
-      <View style={s.tabs}>
-        {(['venues', 'events', 'flows'] as Tab[]).map(t => (
-          <TouchableOpacity key={t} style={[s.tab, tab === t && s.tabOn]} activeOpacity={0.8}
-            onPress={() => { Haptics.selectionAsync(); setTab(t); }}>
-            <Text style={[s.tabText, tab === t && s.tabTextOn]}>
-              {t === 'venues' ? 'Spots' : t === 'events' ? 'Events' : 'Flows'}
-              {counts[t] ? `  ${counts[t]}` : ''}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 100 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.gold} />}
-      >
-        {loading ? (
-          <View style={s.empty}><ActivityIndicator color={C.gold} /></View>
-        ) : tab === 'venues' ? renderVenues() : tab === 'events' ? renderEvents() : renderFlows()}
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.ivory} />}>
+        <Text style={s.largeTitle}>Saved</Text>
+        <View style={s.seg}>
+          {(['venues', 'events'] as Tab[]).map((t) => {
+            const n = t === 'venues' ? venues.length : events.length;
+            return (
+              <TouchableOpacity key={t} style={[s.segItem, tab === t && s.segOn]} activeOpacity={0.85} onPress={() => { Haptics.selectionAsync().catch(() => {}); setTab(t); }}>
+                <Text style={[s.segText, tab === t && s.segTextOn]}>{t === 'venues' ? 'Spots' : 'Events'}{n ? ` · ${n}` : ''}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {loading ? <View style={s.empty}><ActivityIndicator color={C.ivory} /></View> : tab === 'venues' ? renderVenues() : renderEvents()}
       </ScrollView>
 
-      {undo && (
-        <Animated.View style={[s.undo, { bottom: insets.bottom + 24, opacity: undoAnim,
-          transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }]}>
+      {undo ? (
+        <Animated.View style={[s.undo, { bottom: insets.bottom + 24, opacity: undoAnim, transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }]}>
           <Text style={s.undoText} numberOfLines={1}>Removed {undo.name}</Text>
           <TouchableOpacity onPress={undoRemove} hitSlop={10}><Text style={s.undoBtn}>Undo</Text></TouchableOpacity>
         </Animated.View>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: C.ivory, fontSize: 17, fontWeight: '600', letterSpacing: 0.3 },
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 12, padding: 3, borderRadius: 12, backgroundColor: C.card, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
-  tab: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center' },
-  tabOn: { backgroundColor: 'rgba(197,163,107,0.16)' },
-  tabText: { color: C.dim, fontSize: 14, fontWeight: '500' },
-  tabTextOn: { color: C.ivory, fontWeight: '600' },
-  group: { marginTop: 14 },
-  groupHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 2 },
-  groupTitle: { color: C.gold, fontSize: 12, fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase' },
-  groupCount: { color: C.faint, fontSize: 12 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, marginBottom: 8, borderRadius: 14, backgroundColor: C.card, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
-  thumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: 'rgba(243,240,233,0.06)' },
-  mono: { alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(197,163,107,0.35)' },
-  monoText: { color: C.gold, fontSize: 20, fontWeight: '600' },
-  rowBody: { flex: 1, minWidth: 0 },
-  rowTitle: { color: C.ivory, fontSize: 15, fontWeight: '600', marginBottom: 3 },
-  rowMeta: { color: C.dim, fontSize: 13 },
-  iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
-  emptyIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(197,163,107,0.12)', marginBottom: 16 },
-  emptyTitle: { color: C.ivory, fontSize: 17, fontWeight: '600', marginBottom: 6 },
-  emptyText: { color: C.dim, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  cta: { paddingHorizontal: 20, paddingVertical: 11, borderRadius: 22, borderWidth: 1, borderColor: C.gold },
-  ctaText: { color: C.gold, fontSize: 14, fontWeight: '600' },
-  undo: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 14, backgroundColor: '#1A1A1D', borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  nav: { paddingHorizontal: 8, paddingBottom: 2 },
+  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  largeTitle: { color: C.ivory, fontSize: 34, fontWeight: '700', letterSpacing: -0.8, marginTop: 2, marginBottom: 14, marginLeft: 4 },
+  seg: { flexDirection: 'row', padding: 2, borderRadius: 9, backgroundColor: C.seg, marginBottom: 6 },
+  segItem: { flex: 1, paddingVertical: 7, borderRadius: 7, alignItems: 'center' },
+  segOn: { backgroundColor: C.segOn },
+  segText: { color: C.dim, fontSize: 14, fontWeight: '500' },
+  segTextOn: { color: C.ivory, fontWeight: '600' },
+  section: { marginTop: 22 },
+  sectionHead: { color: C.dim, fontSize: 12.5, fontWeight: '500', letterSpacing: 0.4, marginBottom: 8, marginLeft: 16 },
+  group: { backgroundColor: C.group, borderRadius: 14, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14 },
+  thumb: { width: 48, height: 48, borderRadius: 9, backgroundColor: '#2C2C2E', marginVertical: 9 },
+  mono: { alignItems: 'center', justifyContent: 'center' },
+  monoText: { color: C.dim, fontSize: 18, fontWeight: '600' },
+  rowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 12, paddingRight: 8, alignSelf: 'stretch' },
+  hair: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  rowTitle: { color: C.ivory, fontSize: 16, fontWeight: '500' },
+  rowMeta: { color: C.dim, fontSize: 13.5, marginTop: 2 },
+  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  empty: { alignItems: 'center', paddingTop: 90, paddingHorizontal: 28 },
+  emptyTitle: { color: C.ivory, fontSize: 20, fontWeight: '600', marginTop: 14, letterSpacing: -0.3 },
+  emptyText: { color: C.dim, fontSize: 15, textAlign: 'center', lineHeight: 21, marginTop: 6 },
+  cta: { marginTop: 20, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 100, backgroundColor: C.ivory },
+  ctaText: { color: '#000', fontSize: 15, fontWeight: '600' },
+  undo: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 14, backgroundColor: '#2C2C2E' },
   undoText: { color: C.ivory, fontSize: 14, flex: 1, marginRight: 12 },
-  undoBtn: { color: C.gold, fontSize: 14, fontWeight: '700' },
+  undoBtn: { color: C.ivory, fontSize: 14, fontWeight: '700' },
 });
