@@ -17,6 +17,7 @@ import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { requireAuth } from '../../utils/authGate';
 import NotesSection from '../../components/vibe/NotesSection'; // VBR_NOTES_V1
+import VenueUpcoming from '../../components/VenueUpcoming'; // VBR_VENUE_EVENTS_V1
 import { api, trackBehavior } from '../../lib/api';
 import { typeLabel } from '../../theme/editorial'; // VBR_VENUE_EDITORIAL_V1
 import tasteTracker from '../../services/tasteTracker';
@@ -409,6 +410,8 @@ export default function VenueScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
+
+        <VenueUpcoming venueId={v.id} />{/* VBR_VENUE_EVENTS_V1 */}
 
         {v.feel?.length ? (
           <View style={[s.section, s.pad]}>
