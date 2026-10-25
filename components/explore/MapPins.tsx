@@ -14,6 +14,12 @@ export const PIN_POOL = 80;
 export const PARKED = { latitude: -84.9, longitude: 0 };
 export type PinIn = { key: string; lat: number; lng: number; kind: 'place' | 'event'; label: string; name: string; gold: boolean };
 type Styles = Record<string, any>;
+const LOCAL = {
+  wrap: { alignItems: 'center' as const },
+  labelOff: { width: 0, height: 0, opacity: 0, overflow: 'hidden' as const },
+  textOff: { fontSize: 1, lineHeight: 1, color: 'transparent' },
+  off: { width: 1, height: 1, opacity: 0 },
+};
 
 // For tests: how many times slots rendered (kept tiny; only counts).
 export const pinStats = { renders: 0 };
@@ -33,6 +39,12 @@ const PinSlot = React.memo(function PinSlot({ pin, sel, onPress, styles }: { slo
   const [track, setTrack] = useState(true);
   useEffect(() => { setTrack(true); const t = setTimeout(() => setTrack(false), 500); return () => clearTimeout(t); }, [sig]);
   const on = pin != null;
+  // VBR_PIN_SHAPE_V1: one fixed view tree for every state (empty / place / selected / event), never flattened.
+  // Under the new architecture a marker whose children change shape (or get flattened away) can lose its custom view on iOS
+  // and fall back to Apple's red default pin. Here only styles and text change, so the native view never changes shape.
+  const isEv = on && pin!.kind === 'event';
+  const showLabel = on && sel && !isEv;
+  const body = !on ? LOCAL.off : isEv ? [styles.datePin, sel && styles.datePinSel] : sel ? styles.pinSel : [styles.pin, pin!.gold && styles.pinEv];
   return (
     <Marker
       coordinate={on ? { latitude: pin!.lat, longitude: pin!.lng } : PARKED}
@@ -40,18 +52,16 @@ const PinSlot = React.memo(function PinSlot({ pin, sel, onPress, styles }: { slo
       onPress={on ? () => onPress(pin!.key) : undefined}
       tracksViewChanges={track || sel} // VBR_SEL_PIN_TRACK: selected pin keeps drawing (label can finish layout)
       zIndex={sel ? 20 : on ? 1 : 0}
-      anchor={{ x: 0.5, y: sel && pin?.kind !== 'event' ? 0.86 : 0.5 }}
+      anchor={{ x: 0.5, y: showLabel ? 0.86 : 0.5 }}
     >
-      {!on ? <View style={{ width: 1, height: 1, opacity: 0 }} /> : pin!.kind === 'event' ? (
-        <View style={[styles.datePin, sel && styles.datePinSel]}>
-          <Text style={[styles.datePinText, sel && styles.datePinTextSel]}>{pin!.label}</Text>
+      <View collapsable={false} style={LOCAL.wrap}>
+        <View collapsable={false} style={showLabel ? styles.pinLabel : LOCAL.labelOff}>
+          <Text style={showLabel ? styles.pinLabelText : LOCAL.textOff} numberOfLines={1}>{showLabel ? pin!.name : ''}</Text>
         </View>
-      ) : sel ? (
-        <View style={styles.pinWrap}>
-          <View style={styles.pinLabel}><Text style={styles.pinLabelText} numberOfLines={1}>{pin!.name}</Text></View>
-          <View style={styles.pinSel} />
+        <View collapsable={false} style={body}>
+          <Text style={isEv ? [styles.datePinText, sel && styles.datePinTextSel] : LOCAL.textOff} numberOfLines={1}>{isEv ? pin!.label : ''}</Text>
         </View>
-      ) : <View style={[styles.pin, pin!.gold && styles.pinEv]} />}
+      </View>
     </Marker>
   );
 }, (a, b) => a.sel === b.sel && a.onPress === b.onPress && a.styles === b.styles && samePin(a.pin, b.pin));
