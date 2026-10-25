@@ -387,6 +387,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
     placeName(r.latitude, r.longitude, r.latitudeDelta).then((n) => { if (regionRef.current === r) setMapPlace(n); });
   };
   const scheduleArea = (ms = 600) => {
+    if (__DEV__) console.log('[area search] scheduled in', ms, 'ms'); // VBR_CAM_LOG
     if (autoRef.current) clearTimeout(autoRef.current);
     autoRef.current = setTimeout(() => { autoRef.current = null; searchArea(); }, ms);
   };
@@ -608,6 +609,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   }), [pins, cards, evAt]);
   const onCarouselEnd = (e: any) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + GAP));
+    if (__DEV__) console.log('[card swipe]', i, cards[i] ? (cards[i].name || cards[i].title) : '(none)'); // VBR_CAM_LOG
     if (i >= 0 && i < cards.length) { setSelected(i); focusCard(i); }
   };
   const openSheet = (x: any) => router.push(isEvents || isEv(x) ? `/event-sheet/${x.id}` : `/venue-sheet/${x.id}`); // VBR_SWIPE_SHEET
@@ -705,10 +707,25 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         provider={PROVIDER_DEFAULT}
         userInterfaceStyle="dark"
         showsUserLocation={userLoc != null}
-        showsPointsOfInterest={false}
+        showsPointsOfInterests={false}
         mapType="mutedStandard"
         initialRegion={initialRegion}
-        onMapReady={() => { regionRef.current = initialRegion; setMapReady(true); }}
+        onMapReady={() => {
+          regionRef.current = initialRegion; setMapReady(true);
+          // VBR_CAM_LOG: dev builds only — wrap the camera calls so each move logs its caller.
+          const m: any = mapRef.current;
+          if (__DEV__ && m && !m.__vbrCamLog) {
+            m.__vbrCamLog = true;
+            for (const k of ['animateCamera', 'animateToRegion', 'fitToCoordinates']) {
+              const f = m[k]?.bind(m); if (!f) continue;
+              m[k] = (...a: any[]) => {
+                const where = String(new Error().stack || '').split('\n').slice(2, 4).map((x) => x.trim()).join(' ← ');
+                console.log(`[camera] ${k}`, JSON.stringify(a[0]).slice(0, 140), '·', where);
+                return f(...a);
+              };
+            }
+          }
+        }}
         onTouchStart={() => { touchRef.current = true; Keyboard.dismiss(); if (autoRef.current) clearTimeout(autoRef.current); }}
         onMarkerPress={() => { touchRef.current = false; progAt.current = Date.now(); }}
         onPress={() => { touchRef.current = false; }}

@@ -558,7 +558,7 @@ export default function PlacesScreen() {
           provider={PROVIDER_DEFAULT}
           userInterfaceStyle="dark"
           showsUserLocation={near || userLoc != null}
-          showsPointsOfInterest={false}
+          showsPointsOfInterests={false}
           initialRegion={initialRegion}
           onMapReady={() => { regionRef.current = initialRegion; fitAll(); }}
           onTouchStart={() => { touchRef.current = true; Keyboard.dismiss(); }}

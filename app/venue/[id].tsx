@@ -509,7 +509,7 @@ function VenueMapSheet({ v, nearby, onClose, onDirections }: { v: any; nearby: a
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: C.ground }}>
         <MapView ref={mapRef} provider={PROVIDER_DEFAULT} style={StyleSheet.absoluteFill} userInterfaceStyle="dark"
-          initialRegion={region} showsUserLocation showsCompass={false} showsPointsOfInterest>
+          initialRegion={region} showsUserLocation showsCompass={false} showsPointsOfInterests>
           {pins.map((c: any) => (
             <Marker key={c.id} coordinate={{ latitude: c.latitude, longitude: c.longitude }} title={c.name} description={c.type}
               onCalloutPress={() => { onClose(); router.push(`/venue/${c.id}` as any); }}>
