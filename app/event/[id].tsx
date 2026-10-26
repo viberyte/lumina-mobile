@@ -483,10 +483,10 @@ export default function EventDetailScreen() {
                 <Ionicons name="chevron-forward" size={16} color={ink.faint} />
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity style={[styles.row, !!event.venue_address && styles.rowHair]} onPress={() => { tap(); setShowAddToPlan(true); }} activeOpacity={0.7}>
-              <Ionicons name="add-circle-outline" size={20} color={ink.ivory} />
-              <Text style={[styles.rowText, { flex: 1 }]}>Add to a plan</Text>
-              <Ionicons name="chevron-forward" size={16} color={ink.faint} />
+            <TouchableOpacity style={[styles.row, !!event.venue_address && styles.rowHair]} onPress={handleSaveEvent} activeOpacity={0.7} accessibilityRole="button" accessibilityState={{ selected: isSaved }}>{/* VBR_EVENT_SAVE_ROW_V1 */}
+              <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={20} color={ink.ivory} />
+              <Text style={[styles.rowText, { flex: 1 }]}>{isSaved ? 'Saved' : 'Save'}</Text>
+              {isSaved ? <Ionicons name="checkmark" size={18} color={ink.ivory} /> : null}
             </TouchableOpacity>
             <TouchableOpacity style={[styles.row, styles.rowHair]} onPress={handleShare} activeOpacity={0.7}>
               <Ionicons name="share-outline" size={20} color={ink.ivory} />
