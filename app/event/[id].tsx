@@ -113,6 +113,17 @@ interface RelatedEvent {
   genre: string | null;
 }
 
+// VBR_EVENT_COLOR_V1 helpers
+const hexRgb = (h: string) => { const m = /^#?([0-9a-f]{6})/i.exec(h || ''); if (!m) return null; const v = parseInt(m[1], 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
+const hexA = (h: string, a: number) => { const c = hexRgb(h); return c ? `rgba(${c[0]},${c[1]},${c[2]},${a})` : 'rgba(0,0,0,0)'; };
+const lum = (h: string) => { const c = hexRgb(h); if (!c) return 0; const f = (x: number) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+const satLight = (h: string) => { const c = hexRgb(h); if (!c) return [0, 0]; const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; const d = mx - mn; return [d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1)), l]; };
+const pickAccent = (r: any): string | null => {
+  const cands = [r?.primary, r?.detail, r?.secondary, r?.background, r?.vibrant, r?.dominant, r?.lightVibrant, r?.darkVibrant].filter((x) => typeof x === 'string');
+  const ok = cands.filter((h) => { const [sa, l] = satLight(h); return sa >= 0.35 && l >= 0.28 && l <= 0.72; });
+  return ok.sort((a, b) => satLight(b)[0] - satLight(a)[0])[0] || null;
+};
+
 export default function EventDetailScreen() {
   const params = useLocalSearchParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -129,6 +140,18 @@ export default function EventDetailScreen() {
   const [showAddToPlan, setShowAddToPlan] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [artRatio, setArtRatio] = useState(1.1); // VBR_EVENT_EDITORIAL_V1: artwork shown at its own shape
+  const [accent, setAccent] = useState<string | null>(null); // VBR_EVENT_COLOR_V1
+  useEffect(() => {
+    setAccent(null);
+    const url = event?.image_url; if (!url) return;
+    let alive = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getColors } = require('react-native-image-colors');
+      getColors(url, { fallback: '#000000', cache: true, key: url, quality: 'low' }).then((r: any) => { if (alive) setAccent(pickAccent(r)); }).catch(() => {});
+    } catch {}
+    return () => { alive = false; };
+  }, [event?.image_url]);
 
   const safePackages = useMemo(() => {
     return (event?.packages || []).filter(
@@ -390,6 +413,7 @@ export default function EventDetailScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: bottomAction ? 120 : 48 }}
       >
+        {accent ? <LinearGradient pointerEvents="none" colors={[hexA(accent, 0.34), hexA(accent, 0.1), 'rgba(0,0,0,0)']} locations={[0, 0.45, 1]} style={{ position: 'absolute', left: 0, right: 0, top: artH, height: 560 }} /> : null}
         {/* ── ARTWORK: shown whole, not cropped or darkened ── */}
         <View style={{ width: SCREEN_WIDTH, height: artH, backgroundColor: ink.ground }}>
           {event.image_url ? (
@@ -494,8 +518,8 @@ export default function EventDetailScreen() {
       {/* ── ONE CLEAR ACTION ── */}
       {bottomAction ? (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-          <TouchableOpacity style={styles.cta} onPress={bottomAction.run} activeOpacity={0.9} accessibilityRole="button">
-            <Text style={styles.ctaText}>{bottomAction.label}</Text>
+          <TouchableOpacity style={[styles.cta, accent ? { backgroundColor: accent } : null]} onPress={bottomAction.run} activeOpacity={0.9} accessibilityRole="button">
+            <Text style={[styles.ctaText, accent ? { color: lum(accent) > 0.3 ? '#000' : '#FFF' } : null]}>{bottomAction.label}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
