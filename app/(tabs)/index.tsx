@@ -45,7 +45,7 @@ const SIDE_PAD = 16;
 const CARD_GAP = 10;
 const CARD_WIDTH = (SCREEN_WIDTH - SIDE_PAD * 2 - CARD_GAP) / 2.15;
 const CARD_IMAGE_HEIGHT = CARD_WIDTH;
-const HERO_HEIGHT = 260;
+const HERO_HEIGHT = Math.round((SCREEN_WIDTH - 32) * 1.05); // VBR_HOME_EDITORIAL_V1: the image carries the screen
 const SECTION_GAP = 28;
 const FLOW_CARD_WIDTH = SCREEN_WIDTH * 0.82;
 const FOLLOW_SIZE = 64;
@@ -237,11 +237,9 @@ function HeroCarousel({ picks, playing, onOpen }: { picks: any[]; playing: boole
             <View style={s.heroImageWrap}>
               <Image source={{ uri: item.still || item.image }} style={s.heroImage} contentFit="cover" cachePolicy="memory-disk" transition={300} />
               {index === active && item.video ? <HomeReel key={item.video} uri={item.video} playing={playing} /> : null}
-              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.75)']} locations={[0.35, 0.6, 1]} style={StyleSheet.absoluteFillObject} />
-              <View style={s.heroOverlay}><Text style={s.heroLabel}>{index === 0 ? "TONIGHT'S PICK" : 'ALSO TONIGHT'}</Text></View>
             </View>
             <View style={s.heroInfo}>
-              {item.headline ? <Text style={s.heroHeadline}>{item.headline}</Text> : null}
+              <Text style={s.heroLabel}>{index === 0 ? "TONIGHT'S PICK" : 'ALSO TONIGHT'}</Text>
               <Text style={s.heroName} numberOfLines={1}>{item.name}</Text>
               <Text style={s.heroMeta} numberOfLines={1}>
                 {[item.neighborhood, item.label, typeof item.distance_mi === 'number' ? fmtDistance(item.distance_mi) : null].filter(Boolean).join(' · ')}
@@ -323,7 +321,7 @@ const CompactEventCard = React.memo(({ event, onPress }: { event: any; onPress: 
 
   return (
     <AnimatedPressable style={s.compactCard} onPress={onPress}>
-      <View style={s.compactImageWrap}>
+      <View style={[s.compactImageWrap, s.flyerWrap]}>
         {imageUrl ? (
           <Image
             source={{ uri: imageUrl }}
@@ -335,11 +333,6 @@ const CompactEventCard = React.memo(({ event, onPress }: { event: any; onPress: 
         ) : (
           <View style={[s.compactImage, { backgroundColor: '#1a1a1f' }]} />
         )}
-        {genre ? (
-          <View style={s.genrePill}>
-            <Text style={s.genrePillText} numberOfLines={1}>{genre}</Text>
-          </View>
-        ) : null}
       </View>
       <Text style={s.compactName} numberOfLines={1}>{event.title || event.name}</Text>
       <Text style={s.compactMeta} numberOfLines={1}>
@@ -358,7 +351,7 @@ const SectionHeader = ({ title, subtitle, onSeeAll }: { title: string; subtitle?
     </View>
     {onSeeAll && (
       <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Text style={s.seeAll}>See All</Text>
+        <Text style={s.seeAll}>See all</Text>
       </TouchableOpacity>
     )}
   </View>
@@ -411,14 +404,6 @@ const IntentPill = React.memo(({ intentKey, active, onPress }: { intentKey: stri
       onPress={onPress}
       activeOpacity={0.7}
     >
-      {intent.icon ? (
-        <Ionicons
-          name={intent.icon as any}
-          size={14}
-          color={active ? '#F5F1EA' : 'rgba(245,241,234,0.55)'}
-          style={{ marginRight: 6 }}
-        />
-      ) : null}
       <Text style={[s.intentPillText, active && s.intentPillTextActive]}>
         {intent.label}
       </Text>
@@ -764,6 +749,7 @@ export default function HomeScreen() {
 
   // ── City change ─────────────────────────────────────────────────
   const handleCityChange = async (newCity: string) => {
+    Haptics.selectionAsync().catch(() => {}); // VBR_HOME_EDITORIAL_V1
     setShowCitySelector(false);
     if (newCity === userCity) return;
     setIsReloading(true);
@@ -963,8 +949,8 @@ export default function HomeScreen() {
         return (
           <View key="your-kind" style={s.section}>
             <SectionHeader
-              title="You might love these"
-              subtitle="Based on places you've saved and viewed"
+              title="For you" // VBR_COPY_V1
+              subtitle="Based on what you've saved and opened"
               onSeeAll={() => openCollection('yourKind', 'You might love these', yourKindVenues)}
             />
             <CollectionRow
@@ -1028,6 +1014,7 @@ export default function HomeScreen() {
           <View key="tonight-picks" style={s.section}>
             <SectionHeader
               title="Worth going out for"
+              subtitle="Places worth getting dressed for"
               onSeeAll={() => openCollection('tonight', 'Worth going out for', picksData)}
             />
             <CollectionRow
@@ -1044,7 +1031,7 @@ export default function HomeScreen() {
         if (nearYouVenues.length === 0 || locationMode === false) return null; // Around you only in Near Me mode (VIBERYTE_TRUST_V1)
         return (
           <View key="near-you" style={s.section}>
-            <SectionHeader title="Around You" subtitle={distanceRange(aroundData)} onSeeAll={openNear} />
+            <SectionHeader title="Around you" subtitle={distanceRange(aroundData)} onSeeAll={openNear} />
             <CollectionRow
               data={aroundData}
               keyPrefix="ny"
@@ -1060,8 +1047,8 @@ export default function HomeScreen() {
         return (
           <View key="flows" style={s.section}>
             <SectionHeader
-              title="Flow of the Night"
-              subtitle="Multi-stop plans, curated for you"
+              title="Plan the whole night"
+              subtitle="Dinner, drinks, then somewhere to dance"
               onSeeAll={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/all-flows' as any); }}
             />
             <ScrollView
@@ -1092,7 +1079,7 @@ export default function HomeScreen() {
           }));
           return (
             <View key="events" style={s.section}>
-              <SectionHeader title="Happening Soon" onSeeAll={() => router.push(`/explore?filter=events&when=${day}` as any)} />
+              <SectionHeader title="Happening soon" subtitle="Parties, live music and pop-ups" onSeeAll={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); router.push(`/explore?filter=events&when=${day}` as any); }} />
               <View style={s.dayRow}>
                 {tabs.map((t) => (
                   <TouchableOpacity key={t.key} style={[s.dayChip, day === t.key && s.dayChipOn]} activeOpacity={0.8}
@@ -1117,11 +1104,11 @@ export default function HomeScreen() {
         if (happeningNow.length === 0 && featuredEvents.length === 0) return null;
         const eventsToShow = happeningNow.length > 0 ? happeningNow : featuredEvents.slice(0, 6);
         const eventsTitle = happeningNow.length > 0
-          ? (isLateNight ? 'Live Now' : 'Events Tonight')
-          : 'Featured Events';
+          ? (isLateNight ? 'On right now' : 'On tonight')
+          : 'Coming up';
         return (
           <View key="events" style={s.section}>
-            <SectionHeader title={eventsTitle} onSeeAll={() => router.push('/explore?filter=events')} />
+            <SectionHeader title={eventsTitle} onSeeAll={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); router.push('/explore?filter=events'); }} />
             <CollectionRow
               data={eventsToShow}
               keyPrefix="ev"
@@ -1137,7 +1124,7 @@ export default function HomeScreen() {
         if (isLateNight && lateData.length > 0) {
           return (
             <View key="contextual" style={s.section}>
-              <SectionHeader title="Still Going" onSeeAll={() => openCollection('stillGoing', 'Still going', lateData)} />
+              <SectionHeader title="Still going" subtitle="Late kitchens and dance floors" onSeeAll={() => openCollection('stillGoing', 'Still going', lateData)} />
               <CollectionRow
                 data={lateData}
                 keyPrefix="ln"
@@ -1151,7 +1138,7 @@ export default function HomeScreen() {
         if (isEvening && dateNightPicks.length > 0) {
           return (
             <View key="contextual" style={s.section}>
-              <SectionHeader title="Date Night" onSeeAll={() => openCollection('dateNightRow', 'Date night', dateNightPicks)} />
+              <SectionHeader title="Date night" subtitle="Low light and good wine" onSeeAll={() => openCollection('dateNightRow', 'Date night', dateNightPicks)} />
               <CollectionRow
                 data={dateNightPicks}
                 keyPrefix="dn"
@@ -1186,13 +1173,11 @@ export default function HomeScreen() {
           {/* ───── CONTEXTUAL HEADER ───── */}
           <View style={s.header}>
             <View style={{ flex: 1 }}>
-              <Text style={s.dayEyebrow}>{dayCopy.eyebrow}</Text>
-              <Text style={s.greeting} numberOfLines={2}>{dayCopy.headline}</Text>
-              <Text style={s.contextLine}>{dayCopy.subline}</Text>
-              <TouchableOpacity style={s.locationPill} onPress={() => setShowCitySelector(true)} activeOpacity={0.7} accessibilityLabel={`Location: ${placeLabel}. Change`}>
-                <Ionicons name={locationMode ? 'navigate' : 'location'} size={12} color={colors.lux.champagne} />
-                <Text style={s.locationText}>{placeLabel}</Text>
-                <Ionicons name="chevron-down" size={12} color="rgba(245,241,234,0.5)" />
+              <Text style={s.dayEyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}</Text>
+              <Text style={s.greeting}>{hour >= 5 && hour < 11 ? 'This morning in' : hour >= 11 && hour < 17 ? 'This afternoon in' : 'Tonight in'}</Text>
+              <TouchableOpacity style={s.placeRow} onPress={() => { Haptics.selectionAsync().catch(() => {}); setShowCitySelector(true); }} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={`Location: ${placeLabel}. Change`}>
+                <Text style={[s.greeting, s.placeText]} numberOfLines={1}>{placeLabel}</Text>
+                <Ionicons name="chevron-down" size={24} color="rgba(245,241,234,0.45)" style={{ marginTop: 6 }} />
               </TouchableOpacity>
             </View>
           </View>
@@ -1207,10 +1192,9 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <Ionicons name="search" size={18} color="rgba(245,241,234,0.55)" />
-            <Text style={s.searchPlaceholder}>Restaurants, events, or a night out…</Text>
+            <Text style={s.searchPlaceholder}>Search places and events</Text>
           </TouchableOpacity>
 
-          <Text style={s.moodLabel}>What are you in the mood for?</Text>
           {/* ───── QUICK INTENT PILLS ───── */}
           <ScrollView
             horizontal
@@ -1256,21 +1240,13 @@ export default function HomeScreen() {
                 {displayHero.__home && displayHero.video && !reduceMotion ? (
                   <HomeReel key={displayHero.video} uri={displayHero.video} playing={isFocused && !showCitySelector} />
                 ) : null}
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.75)']}
-                  locations={[0.35, 0.6, 1]}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View style={s.heroOverlay}>
-                  <Text style={s.heroLabel}>
-                    {activeIntent
-                      ? (activeIntent === 'nearMe' ? 'CLOSEST TO YOU' : (INTENT_MAP[activeIntent]?.label || '').toUpperCase())
-                      : (hour >= 17 || hour < 4 ? "TONIGHT'S PICK" : "TODAY'S PICK")}
-                  </Text>
-                </View>
               </View>
               <View style={s.heroInfo}>
-                {displayHero.__home && displayHero.headline ? <Text style={s.heroHeadline}>{displayHero.headline}</Text> : null}
+                <Text style={s.heroLabel}>
+                  {activeIntent
+                    ? (activeIntent === 'nearMe' ? 'CLOSEST TO YOU' : (INTENT_MAP[activeIntent]?.label || '').toUpperCase())
+                    : (hour >= 17 || hour < 4 ? "TONIGHT'S PICK" : "TODAY'S PICK")}
+                </Text>
                 <Text style={s.heroName}>{displayHero.name}</Text>
                 <Text style={s.heroMeta} numberOfLines={1}>
                   {displayHero.__home
@@ -1298,7 +1274,7 @@ export default function HomeScreen() {
               <Text style={{ color: '#F5F1EA', fontSize: 18, fontWeight: '700' }}>Viberyte isn't in this area yet</Text>
               <Text style={{ color: 'rgba(245,241,234,0.62)', fontSize: 14, marginTop: 6, lineHeight: 20 }}>We're curating NYC and North Jersey right now. Pick a city to explore.</Text>
               <TouchableOpacity onPress={() => setShowCitySelector(true)} activeOpacity={0.85}
-                style={{ alignSelf: 'flex-start', marginTop: 14, height: 40, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#C5A36B', justifyContent: 'center' }}>
+                style={{ alignSelf: 'flex-start', marginTop: 14, height: 40, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#F3F0E9', justifyContent: 'center' }}>
                 <Text style={{ color: '#0A0A0C', fontSize: 15, fontWeight: '700' }}>Choose a city</Text>
               </TouchableOpacity>
             </View>
@@ -1317,12 +1293,7 @@ export default function HomeScreen() {
       {/* ───── CITY SWITCH OVERLAY ───── */}
       {isReloading && (
         <Animated.View style={[s.reloadOverlay, { opacity: reloadOpacity }]}>
-          <Text style={s.reloadBrand}>VIBERYTE</Text>
-          <View style={s.reloadCityRow}>
-            <View style={s.reloadLine} />
-            <Text style={s.reloadCity}>{reloadingCity.toUpperCase()}</Text>
-            <View style={s.reloadLine} />
-          </View>
+          <Text style={s.reloadCity}>{reloadingCity}</Text>
         </Animated.View>
       )}
     </View>
@@ -1343,20 +1314,17 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingHorizontal: SIDE_PAD,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 14,
+    paddingBottom: 22,
   },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  greeting: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#FAFAFA',
-    letterSpacing: -0.5,
-  },
+  greeting: { fontSize: 38, lineHeight: 42, fontWeight: '700', color: '#F3F0E9', letterSpacing: -1.1 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
+  placeText: { flexShrink: 1 },
   contextLine: {
     fontSize: 15,
     color: 'rgba(245,241,234,0.62)',
@@ -1388,17 +1356,15 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: SIDE_PAD,
-    marginBottom: 14,
-    height: 44,
-    backgroundColor: '#121216',
+    marginBottom: 12,
+    height: 46,
+    backgroundColor: '#161618',
     borderRadius: 12,
     paddingHorizontal: 14,
     gap: 10,
-    borderWidth: 1,
-    borderColor: '#1a1a1f',
   },
   searchPlaceholder: {
-    fontSize: 14,
+    fontSize: 16,
     color: 'rgba(245,241,234,0.55)',
     fontWeight: '400',
   },
@@ -1407,7 +1373,7 @@ const s = StyleSheet.create({
   intentScroll: {
     flexGrow: 0,
     marginHorizontal: -SIDE_PAD,
-    marginBottom: 24,
+    marginBottom: 30,
   },
   intentRow: {
     flexDirection: 'row',
@@ -1418,16 +1384,13 @@ const s = StyleSheet.create({
   intentPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 36,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    backgroundColor: '#141417',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
+    height: 34,
+    paddingHorizontal: 15,
+    borderRadius: 17,
+    backgroundColor: '#161618',
   },
   intentPillActive: {
-    backgroundColor: '#1C1C1E',
-    borderColor: 'rgba(243, 240, 233, 0.35)',
+    backgroundColor: '#F3F0E9',
   },
   intentPillText: {
     fontSize: 15,
@@ -1436,7 +1399,8 @@ const s = StyleSheet.create({
     letterSpacing: -0.1,
   },
   intentPillTextActive: {
-    color: '#F5F1EA',
+    color: '#0A0A0B',
+    fontWeight: '600',
   },
 
   // ── Editorial Hero ──────────────────────────────────────────────
@@ -1447,7 +1411,7 @@ const s = StyleSheet.create({
   heroImageWrap: {
     width: '100%',
     height: HERO_HEIGHT,
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a1f',
   },
@@ -1464,14 +1428,9 @@ const s = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
-  heroLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#F5F1EA',
-    letterSpacing: 1.4,
-  },
+  heroLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(243,240,233,0.5)', letterSpacing: 1.1, marginBottom: 6 },
   heroInfo: {
-    paddingTop: 10,
+    paddingTop: 14,
     paddingHorizontal: 2,
   },
   heroHeadline: { fontSize: 13, fontWeight: '600', color: '#C5A36B', letterSpacing: 0.2, marginBottom: 3 },
@@ -1480,18 +1439,8 @@ const s = StyleSheet.create({
   dayChipOn: { backgroundColor: '#F5F1EA' },
   dayChipText: { fontSize: 14, fontWeight: '500', color: 'rgba(245,241,234,0.7)' },
   dayChipTextOn: { color: '#0A0A0C', fontWeight: '600' },
-  heroName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FAFAFA',
-    letterSpacing: -0.3,
-  },
-  heroMeta: {
-    fontSize: 13,
-    color: '#71717A',
-    marginTop: 2,
-    fontWeight: '400',
-  },
+  heroName: { fontSize: 26, lineHeight: 30, fontWeight: '700', color: '#F3F0E9', letterSpacing: -0.6 },
+  heroMeta: { fontSize: 15, color: 'rgba(243,240,233,0.6)', marginTop: 4, fontWeight: '400' },
 
   // ── Following ───────────────────────────────────────────────────
   followItem: {
@@ -1520,7 +1469,7 @@ const s = StyleSheet.create({
 
   // ── Sections ────────────────────────────────────────────────────
   section: {
-    marginBottom: SECTION_GAP,
+    marginBottom: 36,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1529,23 +1478,14 @@ const s = StyleSheet.create({
     paddingHorizontal: SIDE_PAD,
     marginBottom: 14,
   },
-  sectionTitle: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: '#FAFAFA',
-    letterSpacing: -0.3,
-  },
+  sectionTitle: { fontSize: 23, lineHeight: 28, fontWeight: '700', color: '#F3F0E9', letterSpacing: -0.5 },
   sectionSubtitle: {
     fontSize: 13,
-    color: '#52525B',
+    color: 'rgba(243,240,233,0.5)',
     fontWeight: '400',
     marginTop: 2,
   },
-  seeAll: {
-    fontSize: 14,
-    color: '#C5A36B',
-    fontWeight: '500',
-  },
+  seeAll: { fontSize: 15, color: 'rgba(243,240,233,0.6)', fontWeight: '500' },
 
   // ── Compact Card (Apple Music style) ────────────────────────────
   dayEyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 1.4, color: 'rgba(245,241,234,0.5)', marginBottom: 6 },
@@ -1578,18 +1518,9 @@ const s = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  compactName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FAFAFA',
-    letterSpacing: -0.1,
-    marginBottom: 1,
-  },
-  compactMeta: {
-    fontSize: 12,
-    color: '#71717A',
-    fontWeight: '400',
-  },
+  compactName: { fontSize: 15, fontWeight: '600', color: '#F3F0E9', letterSpacing: -0.2, marginBottom: 2 },
+  compactMeta: { fontSize: 13, color: 'rgba(243,240,233,0.55)', fontWeight: '400' },
+  flyerWrap: { height: Math.round(CARD_WIDTH * 1.25) },
 
   // ── Genre pill on event cards ───────────────────────────────────
   genrePill: {
@@ -1633,11 +1564,6 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: '#3F3F46',
   },
-  reloadCity: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#C5A36B',
-    letterSpacing: 2,
-  },
+  reloadCity: { fontSize: 34, fontWeight: '700', color: '#F3F0E9', letterSpacing: -0.9 },
 });
 
