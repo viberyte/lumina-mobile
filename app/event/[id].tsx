@@ -87,6 +87,8 @@ interface EventDetail {
   genre: string | null;
   image_url: string | null;
   ticket_url: string | null;
+  price_low?: number | null; // VBR_EVENT_PRICE_V1
+  is_free?: boolean;
   venue_id: number | null;
   venue_name: string | null;
   venue_address: string | null;
@@ -275,6 +277,8 @@ export default function EventDetailScreen() {
         genre: result.event.genre,
         image_url: result.event.imageUrl || result.event.image_url,
         ticket_url: result.event.ticket_url || null,
+        price_low: (() => { const p = Number(result.event.price_low ?? result.event.priceLow ?? result.event.price_min ?? NaN); return Number.isFinite(p) && p > 0 ? p : null; })(),
+        is_free: result.event.is_free === 1 || result.event.is_free === true || result.event.isFree === true,
         venue_id: result.event.venue?.id || null,
         venue_name: result.event.venue?.name || null,
         venue_address: result.event.venue?.address || null,
@@ -330,8 +334,15 @@ export default function EventDetailScreen() {
   };
 
   if (loading) {
+    // Skeleton in the page's own shape: artwork, title, facts (no spinner)
+    const bar = (w: number | string, h: number, mt = 0) => <View style={{ width: w as any, height: h, borderRadius: 6, backgroundColor: ink.raise, marginTop: mt }} />;
     return (
-      <LoadingScreen />
+      <View style={{ flex: 1, backgroundColor: ink.black }}>
+        <View style={{ width: SCREEN_WIDTH, height: Math.round(SCREEN_WIDTH * 1.1), backgroundColor: ink.ground }} />
+        <View style={{ paddingHorizontal: 20, paddingTop: 22 }}>
+          {bar('78%', 30)}{bar('52%', 30, 8)}{bar('44%', 16, 18)}{bar('60%', 14, 10)}
+        </View>
+      </View>
     );
   }
 
@@ -355,7 +366,7 @@ export default function EventDetailScreen() {
   const artH = Math.round(SCREEN_WIDTH * Math.min(1.3, Math.max(0.8, artRatio)));
   const tap = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   const bottomAction = primaryCTA === 'tickets'
-    ? { label: 'Get tickets', run: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); Linking.openURL(event.ticket_url!); } }
+    ? { label: event.is_free ? 'Get tickets · Free' : event.price_low ? `Get tickets · from ${Math.round(event.price_low)}` : 'Get tickets', run: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); Linking.openURL(event.ticket_url!); } }
     : event.venue_address ? { label: 'Directions', run: openDirections } : null;
 
   return (
