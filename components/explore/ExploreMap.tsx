@@ -25,6 +25,7 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import MapView, { PROVIDER_DEFAULT } from 'react-native-maps';
 import { PinPool, PIN_POOL, indexForKey, type PinIn } from './MapPins'; // VBR_PIN_POOL
+import { HotspotOverlays, HotspotSheet, useHotspots, type Hotspot } from './Hotspots'; // VBR_HOTSPOTS_V1
 import { getPhotoUrl } from '../../utils/photoHelper';
 import { API_BASE } from '../../config';
 
@@ -215,6 +216,9 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   const [mode, setMode] = useState<'map' | 'list'>('map');
   const [topH, setTopH] = useState(180);
   const isEvents = cat === 'events';
+  // VBR_HOTSPOTS_V1: Events · map only. Server flag decides; dev builds preview.
+  const [hsOpen, setHsOpen] = useState<Hotspot | null>(null);
+  const hotspots = useHotspots(isEvents && mode === 'map', when === 'weekend' ? 'weekend' : 'tonight');
   // VBR_HOME_SHORTCUTS: a Home pill tap switches the mode even when Explore is already open
   useEffect(() => {
     if (!moodSignal || !initialMood || !CATS.some((c) => c.key === initialMood)) return;
@@ -745,6 +749,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         onPress={() => { touchRef.current = false; }}
         onRegionChangeComplete={(r: Region) => { regionRef.current = r; checkCoverage(r); if (touchRef.current) { touchRef.current = false; if (mode === 'map' && Date.now() - progAt.current > 900) scheduleArea(); } }}
       >
+        <HotspotOverlays hotspots={hotspots} onPress={(h) => { tap(); touchRef.current = false; progAt.current = Date.now(); setHsOpen(h); }} />
         <PinPool pins={pinsIn} selectedSlot={pinOfCard[selected] ?? -1} onPress={pinPress} styles={s} />
       </MapView>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.covTint, { opacity: tint }]} />
@@ -899,6 +904,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
         />
       ) : null}
 
+      <HotspotSheet hotspot={hsOpen} onClose={() => setHsOpen(null)} bottomInset={insets.bottom} />
       <Modal visible={sheet != null} transparent animationType="slide" onRequestClose={() => setSheet(null)}>
         <Pressable style={s.backdrop} onPress={() => setSheet(null)} />
         <View style={[s.sheet, { paddingBottom: insets.bottom + 16 }]}>
