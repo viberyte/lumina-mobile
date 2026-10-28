@@ -25,7 +25,7 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import MapView, { PROVIDER_DEFAULT } from 'react-native-maps';
 import { PinPool, PIN_POOL, indexForKey, type PinIn } from './MapPins'; // VBR_PIN_POOL
-import { HotspotOverlays, HotspotSheet, useHotspots, type Hotspot } from './Hotspots'; // VBR_HOTSPOTS_V1
+import { HotspotOverlays, HotspotSheet, useHotspots, type HotspotGroup } from './Hotspots'; // VBR_HOTSPOTS_V2
 import { getPhotoUrl } from '../../utils/photoHelper';
 import { API_BASE } from '../../config';
 
@@ -217,7 +217,7 @@ export default function ExploreMap({ region, hood, nearYou = false, initialMood,
   const [topH, setTopH] = useState(180);
   const isEvents = cat === 'events';
   // VBR_HOTSPOTS_V1: Events · map only. Server flag decides; dev builds preview.
-  const [hsOpen, setHsOpen] = useState<Hotspot | null>(null);
+  const [hsOpen, setHsOpen] = useState<HotspotGroup | null>(null);
   const hotspots = useHotspots(isEvents && mode === 'map', when === 'weekend' ? 'weekend' : 'tonight');
   // VBR_HOME_SHORTCUTS: a Home pill tap switches the mode even when Explore is already open
   useEffect(() => {
