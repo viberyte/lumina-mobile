@@ -8,6 +8,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../services/auth';
 import { View, ActivityIndicator } from 'react-native';
 import { colors } from '../theme';
+import * as Location from 'expo-location';
+import LoadingSequence from '../components/LoadingSequence';
 
 function RootLayoutNav() {
   const router = useRouter();
@@ -30,9 +32,9 @@ function RootLayoutNav() {
         AsyncStorage.getItem('@lumina_user_id'),
       ]);
 
-      const hasAuth = !!(authToken && authToken !== '') || 
-                      !!(userData && userData !== '') || 
-                      isGuest === 'true' || 
+      const hasAuth = !!(authToken && authToken !== '') ||
+                      !!(userData && userData !== '') ||
+                      isGuest === 'true' ||
                       !!(persona && persona !== '') ||
                       !!(userId && userId !== '');
 
@@ -57,41 +59,28 @@ function RootLayoutNav() {
     }
   };
 
-  // Re-check auth when navigating to tabs, with delay if coming from onboarding
   useEffect(() => {
     if (!isReady) return;
-    
     const currentSegment = segments[0];
     const inTabs = currentSegment === '(tabs)';
     const wasOnboarding = previousSegment === 'onboarding';
-    
     if (inTabs && wasOnboarding) {
-      // Coming from onboarding - wait 300ms for AsyncStorage to finish
-      setTimeout(() => {
-        checkAuthStatus();
-      }, 300);
+      setTimeout(() => { checkAuthStatus(); }, 300);
     } else if (inTabs) {
-      // Regular navigation to tabs
       checkAuthStatus();
     }
-    
     setPreviousSegment(currentSegment);
   }, [segments, isReady]);
 
-  // Handle redirects
   useEffect(() => {
     if (!isReady || isLoggedIn === null) return;
-
     const inLogin = segments[0] === 'login';
     const inRegister = segments[0] === 'register';
     const inOnboarding = segments[0] === 'onboarding';
     const inPartnerOnboarding = segments[0] === 'partner-onboarding';
     const inForgotPassword = segments[0] === 'forgot-password';
-
     const isAuthScreen = inLogin || inRegister || inOnboarding || inPartnerOnboarding || inForgotPassword;
-
     if (!isLoggedIn && !isAuthScreen) {
-      // VIBERYTE_CONSUMER_ONLY_V1: browse as guest instead of a login wall
       authService.continueAsGuest().then(() => setIsLoggedIn(true)).catch(() => router.replace('/login'));
     }
   }, [isReady, isLoggedIn, segments]);
@@ -122,13 +111,57 @@ function RootLayoutNav() {
   );
 }
 
+// VBR_INTRO_ONCE_V1: the intro and its location ask play on first launch only.
+// Skipped when it has been seen, or when iOS already has an answer for location (existing users).
+const INTRO_KEY = '@vbr_intro_seen_v1';
+
 export default function RootLayout() {
+  const [intro, setIntro] = useState<'check' | 'show' | 'done'>('check');
+  const introDone = intro === 'done';
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [seen, perm] = await Promise.all([
+          AsyncStorage.getItem(INTRO_KEY),
+          Location.getForegroundPermissionsAsync().catch(() => null),
+        ]);
+        if (seen === '1' || (perm && perm.status !== 'undetermined')) {
+          AsyncStorage.setItem(INTRO_KEY, '1').catch(() => {});
+          setIntro('done');
+          return;
+        }
+      } catch {}
+      setIntro('show');
+    })();
+  }, []);
+
+  const setIntroDone = (_: boolean) => setIntro('done');
+
+  const handleIntroComplete = async (shareLocation: boolean) => {
+    await AsyncStorage.multiSet([[INTRO_KEY, '1'], ['@vbr_loc_not_now', shareLocation ? '0' : '1']]).catch(() => {});
+    if (shareLocation) {
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch (e) {
+        console.log('Location permission error:', e);
+      }
+    }
+    setIntroDone(true);
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ToastProvider>
           <StatusBar style="light" />
-          <RootLayoutNav />
+          {intro === 'check' ? (
+            <View style={{ flex: 1, backgroundColor: '#0a0a0a' }} />
+          ) : !introDone ? (
+            <LoadingSequence onComplete={handleIntroComplete} />
+          ) : (
+            <RootLayoutNav />
+          )}
         </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

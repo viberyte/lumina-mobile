@@ -14,6 +14,7 @@ import MapView, { PROVIDER_DEFAULT } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+import { dayPart } from '../constants/intents';
 
 const C = { bg: '#09090B', ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.62)', faint: 'rgba(243,240,233,0.38)', hair: 'rgba(243,240,233,0.12)' };
 const { height: H } = Dimensions.get('window');
@@ -47,7 +48,10 @@ export default function Welcome() {
       Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2400, easing: Easing.out(Easing.quad), useNativeDriver: true })).start();
     }).catch(() => {});
     // Already allowed (reinstall, or asked elsewhere)? Don't ask twice.
-    Location.getForegroundPermissionsAsync().then((p) => { if (p.granted) locate(); }).catch(() => {});
+    // VBR_INTRO_ONCE_V1: the intro already asked. Granted → glide to them; answered or "Not now" → straight in.
+    Promise.all([Location.getForegroundPermissionsAsync().catch(() => null), AsyncStorage.getItem('@vbr_loc_not_now').catch(() => null)])
+      .then(([p, nn]) => { if (p?.granted) locate(); else if ((p && p.status !== 'undetermined') || nn === '1') finish(router); })
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const locate = async () => {
@@ -87,7 +91,7 @@ export default function Welcome() {
     transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 3.2 + k] }) }],
   });
 
-  const title = state === 'found' ? (place ? `Tonight in ${place}` : 'You’re all set')
+  const title = state === 'found' ? (place ? `${dayPart().greeting} ${place}` : 'You’re all set')
     : state === 'denied' ? 'No problem' : 'See what’s good\nnearby';
   const body = state === 'found' ? 'Pulling up what’s good around you…'
     : state === 'denied' ? 'You can still explore every neighborhood on the map. Turn on location anytime in Settings to see what’s closest.'

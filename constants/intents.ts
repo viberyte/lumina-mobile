@@ -44,6 +44,24 @@ export const intentHeadline = (key: string | null, list: any[]): string => {
 };
 
 const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+// VBR_DAYPART_V1: one voice for the time of day, everywhere. The hero speaks for right now
+// (this morning, brunch, lunch, dinner, tonight); other rows may speak for later.
+export type DayPart = { key: 'morning' | 'brunch' | 'lunch' | 'afternoon' | 'dinner' | 'night'; pick: string; also: string; greeting: string; eyebrow: string; word: 'morning' | 'day' | 'night'; isDay: boolean };
+export const dayPart = (d: Date = new Date()): DayPart => {
+  const h = d.getHours();
+  const dow = d.getDay();
+  const weekend = dow === 0 || dow === 6;
+  const night = DAYS[h < 4 ? (dow + 6) % 7 : dow]; // 1am Saturday is still Friday night
+  const mk = (key: DayPart['key'], pick: string, also: string, greeting: string, part: string, word: DayPart['word']): DayPart =>
+    ({ key, pick, also, greeting, eyebrow: `${key === 'night' ? night : DAYS[dow]} ${part}`, word, isDay: key !== 'dinner' && key !== 'night' });
+  if (h >= 4 && h < 11 && weekend === false) return mk('morning', "This morning's pick", 'Also this morning', 'This morning in', 'MORNING', 'morning');
+  if (h >= 4 && h < 15 && weekend) return mk('brunch', 'Brunch pick', 'Also for brunch', h < 11 ? 'This morning in' : 'This afternoon in', h < 11 ? 'MORNING' : 'AFTERNOON', h < 11 ? 'morning' : 'day');
+  if (h >= 11 && h < 15) return mk('lunch', 'Lunch pick', 'Also for lunch', 'This afternoon in', 'AFTERNOON', 'day');
+  if (h >= 15 && h < 17) return mk('afternoon', "This afternoon's pick", 'Also this afternoon', 'This afternoon in', 'AFTERNOON', 'day');
+  if (h >= 17 && h < 21) return mk('dinner', 'Dinner pick', 'Also for dinner', 'This evening in', 'EVENING', 'night');
+  return mk('night', "Tonight's pick", 'Also tonight', 'Tonight in', 'NIGHT', 'night');
+};
+
 export const homeDayCopy = (d: Date) => {
   const h = d.getHours();
   const day = DAYS[d.getDay()];

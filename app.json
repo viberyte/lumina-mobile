@@ -62,7 +62,8 @@
         {
           "locationWhenInUsePermission": "Viberyte uses your location to show venues near you."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "runtimeVersion": {
       "policy": "appVersion"

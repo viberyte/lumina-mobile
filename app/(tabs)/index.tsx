@@ -34,7 +34,7 @@ import personaService, { sortEventsByMusicPreference } from '../../services/pers
 import { useUserFollows } from '../../hooks/useFollow';
 import favoritesService from '../../services/favorites';
 import tasteTracker from '../../services/tasteTracker';
-import { INTENT_MAP, intentOrder, fmtDistance, distanceRange, venueMeta, qualityScore, intentHeadline, homeDayCopy, reasonLine } from '../../constants/intents';
+import { INTENT_MAP, intentOrder, fmtDistance, distanceRange, venueMeta, qualityScore, intentHeadline, homeDayCopy, reasonLine, dayPart } from '../../constants/intents';
 import type { LocStatus } from '../../constants/intents';
 import { putCollection } from '../../services/collectionStore';
 
@@ -174,7 +174,7 @@ const shortDay = (d?: string | null) => {
 };
 type EvDay = 'tonight' | 'tomorrow' | 'weekend';
 const EV_TABS: { key: EvDay; label: string }[] = [
-  { key: 'tonight', label: 'Tonight' }, { key: 'tomorrow', label: 'Tomorrow' }, { key: 'weekend', label: 'This Weekend' },
+  { key: 'tonight', label: 'Tonight' }, { key: 'tomorrow', label: 'Tomorrow' }, { key: 'weekend', label: 'This weekend' },
 ];
 
 // Hero reel: one player, muted, fades in only when ready; still image stays underneath.
@@ -218,6 +218,7 @@ const scrollBus = { subs: new Set<() => void>() };
 const HERO_CARD_W = SCREEN_WIDTH - SIDE_PAD * 2;
 function HeroCarousel({ picks, playing, onOpen }: { picks: any[]; playing: boolean; onOpen: (p: any) => void }) {
   const [active, setActive] = useState(0);
+  const dp = dayPart(); // VBR_DAYPART_V1
   return (
     <View style={{ marginBottom: SECTION_GAP }}>
       <FlatList
@@ -239,7 +240,7 @@ function HeroCarousel({ picks, playing, onOpen }: { picks: any[]; playing: boole
               {index === active && item.video ? <HomeReel key={item.video} uri={item.video} playing={playing} /> : null}
             </View>
             <View style={s.heroInfo}>
-              <Text style={s.heroLabel}>{index === 0 ? "TONIGHT'S PICK" : 'ALSO TONIGHT'}</Text>
+              <Text style={s.heroLabel}>{(index === 0 ? dp.pick : dp.also).toUpperCase()}</Text>
               <Text style={s.heroName} numberOfLines={1}>{item.name}</Text>
               <Text style={s.heroMeta} numberOfLines={1}>
                 {[item.neighborhood, item.label, typeof item.distance_mi === 'number' ? fmtDistance(item.distance_mi) : null].filter(Boolean).join(' · ')}
@@ -483,7 +484,8 @@ export default function HomeScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const notNow = (await AsyncStorage.getItem('@vbr_loc_not_now').catch(() => null)) === '1'; // VBR_INTRO_ONCE_V1
+        const { status } = notNow ? await Location.getForegroundPermissionsAsync() : await Location.requestForegroundPermissionsAsync();
         if ((status === 'granted') === false) { setLocStatus('denied'); return; }
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
@@ -1013,9 +1015,9 @@ export default function HomeScreen() {
         return (
           <View key="tonight-picks" style={s.section}>
             <SectionHeader
-              title="Worth going out for"
+              title={dayPart().isDay ? 'For later tonight' : 'Worth going out for'} // VBR_DAYPART_V1
               subtitle="Places worth getting dressed for"
-              onSeeAll={() => openCollection('tonight', 'Worth going out for', picksData)}
+              onSeeAll={() => openCollection('tonight', dayPart().isDay ? 'For later tonight' : 'Worth going out for', picksData)}
             />
             <CollectionRow
               data={picksData}
@@ -1104,7 +1106,7 @@ export default function HomeScreen() {
         if (happeningNow.length === 0 && featuredEvents.length === 0) return null;
         const eventsToShow = happeningNow.length > 0 ? happeningNow : featuredEvents.slice(0, 6);
         const eventsTitle = happeningNow.length > 0
-          ? (isLateNight ? 'On right now' : 'On tonight')
+          ? (isLateNight ? 'On right now' : dayPart().isDay ? 'Later today' : 'On tonight')
           : 'Coming up';
         return (
           <View key="events" style={s.section}>
@@ -1174,7 +1176,7 @@ export default function HomeScreen() {
           <View style={s.header}>
             <View style={{ flex: 1 }}>
               <Text style={s.dayEyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}</Text>
-              <Text style={s.greeting}>{hour >= 5 && hour < 11 ? 'This morning in' : hour >= 11 && hour < 17 ? 'This afternoon in' : 'Tonight in'}</Text>
+              <Text style={s.greeting}>{dayPart().greeting}</Text>
               <TouchableOpacity style={s.placeRow} onPress={() => { Haptics.selectionAsync().catch(() => {}); setShowCitySelector(true); }} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={`Location: ${placeLabel}. Change`}>
                 <Text style={[s.greeting, s.placeText]} numberOfLines={1}>{placeLabel}</Text>
                 <Ionicons name="chevron-down" size={24} color="rgba(245,241,234,0.45)" style={{ marginTop: 6 }} />
@@ -1245,7 +1247,7 @@ export default function HomeScreen() {
                 <Text style={s.heroLabel}>
                   {activeIntent
                     ? (activeIntent === 'nearMe' ? 'CLOSEST TO YOU' : (INTENT_MAP[activeIntent]?.label || '').toUpperCase())
-                    : (hour >= 17 || hour < 4 ? "TONIGHT'S PICK" : "TODAY'S PICK")}
+                    : dayPart().pick.toUpperCase()}
                 </Text>
                 <Text style={s.heroName}>{displayHero.name}</Text>
                 <Text style={s.heroMeta} numberOfLines={1}>
