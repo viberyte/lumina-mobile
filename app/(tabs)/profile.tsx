@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileIdentity from '../../components/profile/ProfileIdentity';
 import { type VibeAccount } from '../../services/vibe';
 import { getSaved } from '../../lib/saved';
+import { readGoing } from '../../components/GoingButton'; // VBR_GOING_V1
 
 const C = { bg: '#09090B', group: '#1C1C1E', line: 'rgba(243,240,233,0.10)', ivory: '#F3F0E9', dim: 'rgba(243,240,233,0.58)', faint: 'rgba(243,240,233,0.32)' };
 const tap = () => Haptics.selectionAsync().catch(() => {});
@@ -26,7 +27,7 @@ export default function ProfileScreen() {
     try {
       const [prof, fav] = await Promise.all([AsyncStorage.getItem('@lumina_profile'), getSaved().catch(() => [])]);
       try { const p = prof ? JSON.parse(prof) : null; setName(p?.name && p.name !== 'Guest' ? p.name : 'Viberyte Member'); } catch {}
-      setSaved(Array.isArray(fav) ? fav.length : 0);
+      setSaved((await readGoing()).length); // VBR_GOING_V1: the Going list is the saved list
     } catch {}
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -55,13 +56,13 @@ export default function ProfileScreen() {
         <ProfileIdentity fallbackName={name} onChange={load} onAccount={onAccount} />
 
         <View style={s.stats}>
-          <Stat n={saved} label="Saved places" onPress={() => router.push('/saved')} />
+          <Stat n={saved} label="Going" onPress={() => router.push('/going')} />
           <View style={s.statDivider} />
           <Stat n={notes} label="Insider notes" onPress={() => router.push('/my-notes' as any)} />
         </View>
 
         <View style={s.group}>
-          <Row icon="bookmark-outline" label="Saved places" onPress={() => router.push('/saved')} />
+          <Row icon="checkmark-circle-outline" label="Going" onPress={() => router.push('/going')} />
           <Row icon="create-outline" label="My insider notes" onPress={() => router.push('/my-notes' as any)} last />
         </View>
 
