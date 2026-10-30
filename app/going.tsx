@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { getPushToken } from '../lib/push';
+import { getPushToken, PUSH_AVAILABLE } from '../lib/push';
 import { API, KEY, NAME_KEY, PLANS, SEEN, TOKEN_KEY, readJ, writeJ, fetchPlan, type Item, type MyPlan, type PlanData } from '../lib/plans';
 
 const IVORY = '#F3F0E9', MUTED = 'rgba(243,240,233,0.62)', FAINT = 'rgba(243,240,233,0.38)', LINE = 'rgba(243,240,233,0.10)', CARD = '#141416', BG = '#09090B';
@@ -82,7 +82,7 @@ export default function GoingScreen() {
       const next = editing ? plans.map((p) => (p.id === mine.id ? mine : p)) : [mine, ...plans].slice(0, 40); setPlans(next); await writeJ(PLANS, next);
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       const wasEdit = !!editing; setMode('list'); reset();
-      if (!wasEdit) { await Share.share(Platform.OS === 'ios' ? { url: j.url, message: headline } : { message: `${headline}\n${j.url}` }).catch(() => {}); if (!token) setPushAsk({ plan: mine, body }); }
+      if (!wasEdit) { await Share.share(Platform.OS === 'ios' ? { url: j.url, message: headline } : { message: `${headline}\n${j.url}` }).catch(() => {}); if (!token && PUSH_AVAILABLE) setPushAsk({ plan: mine, body }); }
     } catch (e: any) { setErr(e?.message || 'Something went wrong'); } finally { setBusy(false); }
   };
   const turnOnPush = async () => {

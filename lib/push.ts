@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TOKEN_KEY } from './plans';
 
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
+export const PUSH_AVAILABLE = true; // false in the 1.3.2 OTA stub (no push entitlement in that binary)
 const RE = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,64}\]$/;
 
 /** Returns the stored/valid token. With ask=true, shows the iOS permission prompt if not yet decided. */
