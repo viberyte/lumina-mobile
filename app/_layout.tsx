@@ -10,10 +10,12 @@ import { View, ActivityIndicator } from 'react-native';
 import { colors } from '../theme';
 import * as Location from 'expo-location';
 import LoadingSequence from '../components/LoadingSequence';
+import { usePlanNotificationTaps } from '../lib/push'; // Make a Plan: a tapped "Mia is in" notification opens that plan
 
 function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
+  usePlanNotificationTaps((planId) => router.push(`/go/${planId}` as any));
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [previousSegment, setPreviousSegment] = useState<string | undefined>();
