@@ -1,3 +1,4 @@
+import GoingButton from "../../components/GoingButton"; // VBR_GOING_V1
 // VIBERYTE_VENUE_V3: cinematic venue page + Inside the vibe. Data: GET /api/venues/:id/detail
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -463,7 +464,9 @@ export default function VenueScreen() {
         <Rail title="Next stop" items={data.rails.next_stop} size="medium"
           sub={/cafe|coffee|bakery|bagel|breakfast|brunch|tea/i.test(`${(v as any).type || ''} ${(v as any).cuisine || ''}`) ? 'Where to go after' : 'Where the night can go from here'} />
         {/* VBR_VENUE_MAP_V1: Same feel removed */}
+      <View style={{ height: 96 }} />{/* VBR_GOING_V1 spacer */}
       </Animated.ScrollView>
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: Platform.OS === "ios" ? 30 : 14, backgroundColor: "#09090B", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(243,240,233,0.1)", flexDirection: "row" }}><GoingButton slug={`v${(v as any).id}`} name={v.name} sub={[typeLabel(v.type), v.neighborhood].filter(Boolean).join(" · ")} href={`/venue/${(v as any).id}`} image={(v as any).image_url} /></View>{/* VBR_GOING_V1 */}
 
       {mapOpen && v.latitude != null && v.longitude != null ? (
         <VenueMapSheet v={v} nearby={data.rails.nearby} onClose={() => setMapOpen(false)} onDirections={directions} />

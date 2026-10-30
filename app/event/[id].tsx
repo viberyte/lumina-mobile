@@ -1,3 +1,4 @@
+import GoingButton from "../../components/GoingButton"; // VBR_GOING_V1
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
@@ -517,10 +518,11 @@ export default function EventDetailScreen() {
 
       {/* ── ONE CLEAR ACTION ── */}
       {bottomAction ? (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-          <TouchableOpacity style={[styles.cta, accent ? { backgroundColor: accent } : null]} onPress={bottomAction.run} activeOpacity={0.9} accessibilityRole="button">
-            <Text style={[styles.ctaText, accent ? { color: lum(accent) > 0.3 ? '#000' : '#FFF' } : null]}>{bottomAction.label}</Text>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10, flexDirection: 'row', gap: 10 }]}>
+          <TouchableOpacity style={[styles.cta, { flex: 1 }]} onPress={bottomAction.run} activeOpacity={0.9} accessibilityRole="button">
+            <Text style={styles.ctaText}>{bottomAction.label}</Text>
           </TouchableOpacity>
+<GoingButton slug={`e${event.id}`} name={event.title} sub={[event.venue_name, dateLine].filter(Boolean).join(" · ")} href={`/event/${event.id}`} image={event.image_url} compact />{/* VBR_GOING_V1 */}
         </View>
       ) : null}
 
