@@ -112,12 +112,12 @@ export default function GoingScreen() {
       {mode === 'list' && owned.length ? (
         <View style={{ marginTop: 16 }}>
           <Lbl t="YOUR PLANS" />
-          {owned.map((p) => { const st = status[p.id]; const n = st?.ins.filter((i) => i.status === 'in').length ?? 0; const fresh = n > (seen[p.id] ?? 0); return (
+          {owned.map((p) => { const st = status[p.id]; const host = (st?.from_name || '').toLowerCase(); const others = (st?.ins || []).filter((i) => i.status === 'in' && i.name.toLowerCase() !== host).map((i) => i.name); const n = others.length; const fresh = n > (seen[p.id] ?? 0); return (
             <Pressable key={p.id} onPress={() => openPlan(p.id)} style={s.row}>
               <View style={s.thumb}>{st?.first_image ? <Image source={{ uri: st.first_image.startsWith('http') ? st.first_image : API + st.first_image }} style={{ width: '100%', height: '100%' }} /> : null}{fresh ? <View style={s.dot} /> : null}</View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={s.name}>{p.headline}</Text>
-                <Text numberOfLines={1} style={[s.meta, fresh && { color: IVORY, fontWeight: '600' }]}>{st ? (n ? st.line : 'No one’s in yet — share it again') : ' '}</Text>
+                <Text numberOfLines={1} style={[s.meta, fresh && { color: IVORY, fontWeight: '600' }]}>{st ? (n ? (n === 1 ? `${others[0]} is in` : `${others.slice(0, -1).join(', ')} and ${others[n - 1]} are in`) : 'No one’s in yet — share it again') : ' '}</Text>
               </View>
               <Text style={{ color: FAINT, fontSize: 13, fontWeight: '600' }}>{n ? `${n} in` : ''}</Text>
             </Pressable>

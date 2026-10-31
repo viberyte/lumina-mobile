@@ -19,7 +19,7 @@ export default function GoScreen() {
 
   const load = useCallback(async () => {
     const r = await fetchPlan(pid);
-    if (r.status === 200 && r.data?.id) { setPlan(r.data); setState('ok'); } else if (r.status === 410) setState('gone'); else if (r.status === 404) setState('missing'); else if (!plan) setState('missing');
+    if (r.status === 200 && r.data?.id) { setPlan(r.data); setState('ok'); if (r.data.owner && r.data.from_name) setMe(r.data.from_name); } else if (r.status === 410) setState('gone'); else if (r.status === 404) setState('missing'); else if (!plan) setState('missing');
     try { const m = (await readJ<Record<string, string>>(INKEY, {}))[pid]; if (m) setMe(m); const n = await AsyncStorage.getItem(NAME_KEY); if (n) setName(n); } catch {}
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -97,7 +97,13 @@ export default function GoScreen() {
           ))}
         </View>
 
-        {inY ? (
+        {plan.owner ? (
+          <View style={s.card}>
+            <Text style={{ color: IVORY, fontSize: 16, fontWeight: '700' }}>Your plan.</Text>
+            <Text style={{ color: MUTED, fontSize: 14, marginTop: 4 }}>{plan.ins.filter((i) => i.status === 'in' && i.name.toLowerCase() !== me.toLowerCase()).length ? inLine(plan.ins.filter((i) => i.name.toLowerCase() !== me.toLowerCase()), '') : 'No one’s in yet — share it.'}</Text>
+          </View>
+        ) : null}
+        {inY && !plan.owner ? (
           <View style={s.card}><Text style={{ color: IVORY, fontSize: 16, fontWeight: '700' }}>You’re in, {me}.</Text>
             <Text style={{ color: MUTED, fontSize: 14, marginTop: 4 }}>{plan.from_name || 'They'} can see you’re coming. These places are on your list now.</Text>
             <Pressable onPress={() => send('out')} disabled={busy} style={{ marginTop: 12 }}><Text style={{ color: FAINT, fontSize: 14, fontWeight: '600' }}>Can’t make it</Text></Pressable>
@@ -126,8 +132,12 @@ export default function GoScreen() {
       </Modal>
 
       <View style={s.bar}>
+        {plan.owner ? (
+          <Pressable onPress={share} style={[s.cta, { flex: 1 }]}><Text style={s.ctaT}>Share plan</Text></Pressable>
+        ) : (<>
         <Pressable onPress={inY ? undefined : () => { tap(); me ? send('in') : setAsking(true); }} style={[s.cta, { flex: 1 }, inY && s.ctaDone]}><Text style={[s.ctaT, inY && { color: IVORY }]}>{inY ? '✓  You’re in' : 'I’m in'}</Text></Pressable>
         <Pressable onPress={share} style={s.shareBtn}><Text style={{ color: IVORY, fontSize: 13, fontWeight: '700' }}>Share</Text></Pressable>
+        </>)}
       </View>
     </View>
   );

@@ -17,5 +17,5 @@ export async function fetchPlan(id: string): Promise<{ status: number; data: any
 export const inLine = (ins: In[], me: string) => {
   const n = ins.filter((i) => i.status === 'in').map((i) => (me && i.name.toLowerCase() === me.toLowerCase() ? 'you' : i.name));
   if (!n.length) return ''; if (n.length === 1) return n[0] === 'you' ? 'You’re in.' : `${n[0]} is in.`;
-  const last = n.pop()!; return `${n.join(', ')} and ${last} are in.`;
+  const last = n.pop()!; const out = `${n.join(', ')} and ${last} are in.`; return out.charAt(0).toUpperCase() + out.slice(1);
 };
