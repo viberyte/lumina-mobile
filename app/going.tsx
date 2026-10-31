@@ -1,6 +1,6 @@
 // app/going.tsx — Make a Plan: Your plans (native, who's in, new-join banner), your list, 3-step compose (headline first), edit mode, push opt-in after the first plan.
 import React, { useCallback, useState } from 'react';
-import { View, Text, FlatList, Image, Pressable, TextInput, ScrollView, Share, ActivityIndicator, Platform, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Image, Pressable, TextInput, ScrollView, Share, ActivityIndicator, Platform, StyleSheet, KeyboardAvoidingView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -166,10 +166,10 @@ export default function GoingScreen() {
   ) : null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: BG }}>
       <FlatList
         data={list || []} keyExtractor={(x) => x.slug} ListHeaderComponent={Header} ListFooterComponent={Footer}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 64 : 36, paddingBottom: 150 }} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 64 : 36, paddingBottom: 150 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         ListEmptyComponent={list === null ? null : (
           <View style={s.empty}>
             <Text style={{ color: IVORY, fontSize: 17, fontWeight: '700' }}>Nothing here yet</Text>
@@ -208,7 +208,7 @@ export default function GoingScreen() {
           )}
         </View>
       ) : null}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
