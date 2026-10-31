@@ -36,6 +36,7 @@ export default function GoScreen() {
       const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Try again');
       setPlan(j); setMe(n); setAsking(false); try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       await AsyncStorage.setItem(NAME_KEY, n).catch(() => {}); const m = await readJ<Record<string, string>>(INKEY, {}); m[pid] = n; await writeJ(INKEY, m);
+      if (status === 'in') { const mp = await readJ<MyPlan[]>(PLANS, []); if (!mp.some((x) => x.id === pid)) await writeJ(PLANS, [{ id: pid, headline: j.headline, at: Date.now(), from_name: j.from_name, role: 'in' as const }, ...mp].slice(0, 60)); }
       if (status === 'in') { const l = await readJ<Item[]>(KEY, []); const have = new Set(l.map((x) => x.slug)); const add: Item[] = j.stops.filter((s: any) => !have.has(s.slug)).map((s: any) => ({ slug: s.slug, name: s.name, sub: s.sub, href: s.href, image: s.image, at: Date.now() })); if (add.length) await writeJ(KEY, [...add, ...l].slice(0, 60)); }
     } catch (e: any) { setErr(e?.message || 'Try again'); } finally { setBusy(false); }
   };

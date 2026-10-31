@@ -44,7 +44,7 @@ export default function GoingScreen() {
       await Promise.all(p.map(async (x) => { const r = await fetchPlan(x.id); if (r.status === 200 && r.data?.id) st[x.id] = r.data; else if (r.status === 410 || r.status === 404) gone.push(x.id); }));
       if (gone.length) { const keep = p.filter((x) => !gone.includes(x.id)); setPlans(keep); await writeJ(PLANS, keep); }
       setStatus(st);
-      const fresh = p.find((x) => (st[x.id]?.ins.filter((i) => i.status === 'in').length ?? 0) > (sn[x.id] ?? 0));
+      const fresh = p.filter((x) => !!x.owner_key).find((x) => (st[x.id]?.ins.filter((i) => i.status === 'in').length ?? 0) > (sn[x.id] ?? 0));
       if (fresh) { const ins = st[fresh.id].ins.filter((i) => i.status === 'in'); setBanner({ id: fresh.id, text: `${ins[ins.length - 1]?.name} is in · ${fresh.headline}` }); try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {} }
       // Edit mode: prefill from the live plan (only if we hold its owner key).
       const target = edit && p.find((x) => x.id === edit && x.owner_key);
@@ -60,6 +60,7 @@ export default function GoingScreen() {
   const markSeen = async (id: string) => { const sn = { ...seen, [id]: status[id]?.ins.filter((i) => i.status === 'in').length ?? 0 }; setSeen(sn); await writeJ(SEEN, sn); };
   const openPlan = (id: string) => { markSeen(id); setBanner(null); router.push(`/go/${id}` as any); };
   const headline = [who, when].filter(Boolean).join(' · ');
+  const owned = plans.filter((p) => !!p.owner_key); const joined = plans.filter((p) => !p.owner_key);
   const toggle = (slug: string) => { tap(); setOrder((o) => (o.includes(slug) ? o.filter((x) => x !== slug) : [...o, slug])); };
   const reset = () => { setOrder([]); setTimes({}); setWho(''); setWhen(''); setNote(''); setErr(''); setEditing(null); if (edit) router.setParams({ edit: '' } as any); };
   const remove = async (slug: string) => { const next = (list || []).filter((x) => x.slug !== slug); setList(next); await writeJ(KEY, next); };
@@ -108,15 +109,31 @@ export default function GoingScreen() {
         </View>
       ) : null}
 
-      {mode === 'list' && plans.length ? (
+      {mode === 'list' && owned.length ? (
         <View style={{ marginTop: 16 }}>
           <Lbl t="YOUR PLANS" />
-          {plans.map((p) => { const st = status[p.id]; const n = st?.ins.filter((i) => i.status === 'in').length ?? 0; const fresh = n > (seen[p.id] ?? 0); return (
+          {owned.map((p) => { const st = status[p.id]; const n = st?.ins.filter((i) => i.status === 'in').length ?? 0; const fresh = n > (seen[p.id] ?? 0); return (
             <Pressable key={p.id} onPress={() => openPlan(p.id)} style={s.row}>
               <View style={s.thumb}>{st?.first_image ? <Image source={{ uri: st.first_image.startsWith('http') ? st.first_image : API + st.first_image }} style={{ width: '100%', height: '100%' }} /> : null}{fresh ? <View style={s.dot} /> : null}</View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={s.name}>{p.headline}</Text>
                 <Text numberOfLines={1} style={[s.meta, fresh && { color: IVORY, fontWeight: '600' }]}>{st ? (n ? st.line : 'No one’s in yet — share it again') : ' '}</Text>
+              </View>
+              <Text style={{ color: FAINT, fontSize: 13, fontWeight: '600' }}>{n ? `${n} in` : ''}</Text>
+            </Pressable>
+          ); })}
+        </View>
+      ) : null}
+
+      {mode === 'list' && joined.length ? (
+        <View style={{ marginTop: 16 }}>
+          <Lbl t="PLANS YOU’RE IN" />
+          {joined.map((p) => { const st = status[p.id]; const n = st?.ins.filter((i) => i.status === 'in').length ?? 0; const from = st?.from_name || p.from_name; return (
+            <Pressable key={p.id} onPress={() => openPlan(p.id)} style={s.row}>
+              <View style={s.thumb}>{st?.first_image ? <Image source={{ uri: st.first_image.startsWith('http') ? st.first_image : API + st.first_image }} style={{ width: '100%', height: '100%' }} /> : null}</View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} style={s.name}>{st?.headline || p.headline}</Text>
+                <Text numberOfLines={1} style={s.meta}>{from ? `From ${from}` : ''}{st && n ? `${from ? ' · ' : ''}${st.line}` : ''}</Text>
               </View>
               <Text style={{ color: FAINT, fontSize: 13, fontWeight: '600' }}>{n ? `${n} in` : ''}</Text>
             </Pressable>
@@ -183,7 +200,7 @@ export default function GoingScreen() {
       {list && list.length ? (
         <View style={s.bar}>
           {mode === 'list' ? (
-            <Pressable onPress={() => { tap(); reset(); setMode('plan'); }} style={s.cta}><Text style={s.ctaT}>{plans.length ? 'Make another plan' : 'Make a plan'}</Text></Pressable>
+            <Pressable onPress={() => { tap(); reset(); setMode('plan'); }} style={s.cta}><Text style={s.ctaT}>{owned.length ? 'Make another plan' : 'Make a plan'}</Text></Pressable>
           ) : (
             <Pressable onPress={share} disabled={busy} style={[s.cta, busy && { opacity: 0.6 }]}>
               {busy ? <ActivityIndicator color={BG} /> : <Text style={s.ctaT}>{!headline ? 'Pick a headline first' : !order.length ? 'Tap places in order' : editing ? 'Save changes' : `Share plan · ${order.length}`}</Text>}

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const API = 'https://viberyte.com';
 export const KEY = '@vbr_going_v1', NAME_KEY = '@vbr_name', PLANS = '@vbr_plans_v1', SEEN = '@vbr_plans_seen_v1', TOKEN_KEY = '@vbr_push_token', INKEY = '@vbr_in_v1';
 export type Item = { slug: string; name: string; sub?: string | null; href: string; image?: string | null; at: number };
-export type MyPlan = { id: string; headline: string; at: number; owner_key?: string };
+export type MyPlan = { id: string; headline: string; at: number; owner_key?: string; from_name?: string | null; role?: 'in' };
 export type Stop = { slug: string; name: string; sub: string | null; href: string; image: string | null; time: string | null };
 export type In = { name: string; at: string; status: 'in' | 'out' };
 export type PlanData = { id: string; headline: string; from_name: string | null; who: string; when_label: string; note: string | null; stops: Stop[]; first_image: string | null; ins: In[]; line: string; url: string; owner?: boolean };
